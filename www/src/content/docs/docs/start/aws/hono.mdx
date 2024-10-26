@@ -197,7 +197,7 @@ const app = new Hono()
 Let's try uploading a file from your project root. Make sure to use your API URL.
 
 ```bash
-curl --upload-file package.json "$(curl https://gyrork2ll35rsuml2yr4lifuqu0tsjft.lambda-url.us-east-1.on.aws)"
+curl -H "Content-Type: application/json" -T "package.json" "$(curl https://gyrork2ll35rsuml2yr4lifuqu0tsjft.lambda-url.us-east-1.on.aws)"
 ```
 
 Now head over to `https://gyrork2ll35rsuml2yr4lifuqu0tsjft.lambda-url.us-east-1.on.aws/latest` in your browser and it'll download the file you just uploaded.
@@ -370,7 +370,7 @@ Let's update the `/` route.
 ```ts title="index.ts"
 if (url.pathname === "/" && req.method === "GET") {
   const counter = await redis.incr("counter");
-  return new Response(`Hit counter: ${counter}`);
+  return c.text(`Hit counter: ${counter}`);
 }
 ```
 
