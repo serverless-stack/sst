@@ -261,6 +261,7 @@ export class Service extends Component implements Link.Linkable {
           volumes: args.volumes,
           command: args.command,
           entrypoint: args.entrypoint,
+          healthCheck: args.healthCheck,
           dev: args.dev,
         },
       ];
@@ -701,6 +702,7 @@ export class Service extends Component implements Link.Linkable {
           })(),
           command: container.command,
           entrypoint: container.entrypoint,
+          healthCheck: container.healthCheck,
           pseudoTerminal: true,
           portMappings: [{ containerPortRange: "1-65535" }],
           logConfiguration: {

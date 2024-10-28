@@ -1080,6 +1080,25 @@ export interface ClusterServiceArgs {
    */
   command?: Input<Input<string>[]>;
   /**
+   * The health check command and associated configuration parameters for the container. This
+   * parameter maps to HealthCheck in the Create a container section of the Docker Remote API and the
+   * HEALTHCHECK parameter of docker run.
+   *
+   * https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_HealthCheck.html
+   * @example
+   * ```js
+   * {
+   *   healthCheck: {
+   *     command: ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"],
+   *     timeout: 5,
+   *     interval: 30,
+   *     retries: 3,
+   *   }
+   * }
+   * ```
+   */
+  healthCheck?: Input<ecs.HealthCheck>;
+  /**
    * The entrypoint to override the default entrypoint in the container.
    * @example
    * ```js
@@ -1271,6 +1290,11 @@ export interface ClusterServiceArgs {
      * [`command`](#command).
      */
     command?: Input<string[]>;
+    /**
+     * Configure the container-level health check. Same as the top-level
+     * [`healthCheck`](#healthCheck).
+     */
+    healthCheck?: Input<ecs.HealthCheck>;
     /**
      * The entrypoint to override the default entrypoint in the container. Same as the top-level
      * [`entrypoint`](#entrypoint).
