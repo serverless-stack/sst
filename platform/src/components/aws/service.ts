@@ -90,7 +90,7 @@ export class Service extends Component implements Link.Linkable {
   constructor(
     name: string,
     args: ServiceArgs,
-    opts?: ComponentResourceOptions
+    opts?: ComponentResourceOptions,
   ) {
     super(__pulumiType, name, args, opts);
 
@@ -140,11 +140,9 @@ export class Service extends Component implements Link.Linkable {
       : output(undefined);
     this._url = !self.loadBalancer
       ? undefined
-      : all([
-          self.domain,
-          self.loadBalancer?.dnsName,
-        ]).apply(([domain, loadBalancer]) =>
-          domain ? `https://${domain}/` : `http://${loadBalancer}`
+      : all([self.domain, self.loadBalancer?.dnsName]).apply(
+          ([domain, loadBalancer]) =>
+            domain ? `https://${domain}/` : `http://${loadBalancer}`,
         );
 
     this.registerOutputs({ _hint: this._url });
@@ -163,7 +161,7 @@ export class Service extends Component implements Link.Linkable {
       // "vpc" is a Vpc.v1 component
       if (args.vpc instanceof VpcV1) {
         throw new VisibleError(
-          `You are using the "Vpc.v1" component. Please migrate to the latest "Vpc" component.`
+          `You are using the "Vpc.v1" component. Please migrate to the latest "Vpc" component.`,
         );
       }
 
@@ -199,8 +197,8 @@ export class Service extends Component implements Link.Linkable {
         if (!supportedCpus[v]) {
           throw new Error(
             `Unsupported CPU: ${v}. The supported values for CPU are ${Object.keys(
-              supportedCpus
-            ).join(", ")}`
+              supportedCpus,
+            ).join(", ")}`,
           );
         }
         return v;
@@ -212,8 +210,8 @@ export class Service extends Component implements Link.Linkable {
         if (!(v in supportedMemories[cpu])) {
           throw new Error(
             `Unsupported memory: ${v}. The supported values for memory for a ${cpu} CPU are ${Object.keys(
-              supportedMemories[cpu]
-            ).join(", ")}`
+              supportedMemories[cpu],
+            ).join(", ")}`,
           );
         }
         return v;
@@ -225,7 +223,7 @@ export class Service extends Component implements Link.Linkable {
         const storage = toGBs(v);
         if (storage < 21 || storage > 200)
           throw new Error(
-            `Unsupported storage: ${v}. The supported value for storage is between "21 GB" and "200 GB"`
+            `Unsupported storage: ${v}. The supported value for storage is between "21 GB" and "200 GB"`,
           );
         return v;
       });
@@ -246,7 +244,7 @@ export class Service extends Component implements Link.Linkable {
         (args.image || args.logging || args.environment || args.volumes)
       ) {
         throw new VisibleError(
-          `You cannot provide both "containers" and "image", "logging", "environment" or "volumes".`
+          `You cannot provide both "containers" and "image", "logging", "environment" or "volumes".`,
         );
       }
 
@@ -275,17 +273,18 @@ export class Service extends Component implements Link.Linkable {
           };
 
           function normalizeVolumes() {
-            return output(v.volumes).apply((volumes) =>
-              volumes?.map((volume) => ({
-                path: volume.path,
-                efs:
-                  volume.efs instanceof Efs
-                    ? {
-                        fileSystem: volume.efs.id,
-                        accessPoint: volume.efs.accessPoint,
-                      }
-                    : volume.efs,
-              }))
+            return output(v.volumes).apply(
+              (volumes) =>
+                volumes?.map((volume) => ({
+                  path: volume.path,
+                  efs:
+                    volume.efs instanceof Efs
+                      ? {
+                          fileSystem: volume.efs.id,
+                          accessPoint: volume.efs.accessPoint,
+                        }
+                      : volume.efs,
+                })),
             );
           }
 
@@ -302,7 +301,7 @@ export class Service extends Component implements Link.Linkable {
                       ? Platform.Linux_arm64
                       : Platform.Linux_amd64,
                 };
-              }
+              },
             );
           }
 
@@ -312,7 +311,7 @@ export class Service extends Component implements Link.Linkable {
               retention: logging?.retention ?? "1 month",
             }));
           }
-        })
+        }),
       );
     }
 
@@ -324,7 +323,7 @@ export class Service extends Component implements Link.Linkable {
           // validate ports
           if (!pub.ports || pub.ports.length === 0)
             throw new VisibleError(
-              `You must provide the ports to expose via "public.ports".`
+              `You must provide the ports to expose via "public.ports".`,
             );
 
           // validate container defined when multiple containers exists
@@ -332,7 +331,7 @@ export class Service extends Component implements Link.Linkable {
             pub.ports.forEach((v) => {
               if (!v.container)
                 throw new VisibleError(
-                  `You must provide a container name in "public.ports" when there is more than one container.`
+                  `You must provide a container name in "public.ports" when there is more than one container.`,
                 );
             });
           }
@@ -354,24 +353,24 @@ export class Service extends Component implements Link.Linkable {
           const appProtocols = ports.filter(
             (port) =>
               ["http", "https"].includes(port.listenProtocol) &&
-              ["http", "https"].includes(port.forwardProtocol)
+              ["http", "https"].includes(port.forwardProtocol),
           );
           if (appProtocols.length > 0 && appProtocols.length < ports.length)
             throw new VisibleError(
-              `Protocols must be either all http/https, or all tcp/udp/tcp_udp/tls.`
+              `Protocols must be either all http/https, or all tcp/udp/tcp_udp/tls.`,
             );
 
           // validate certificate exists for https/tls protocol
           ports.forEach((port) => {
             if (["https", "tls"].includes(port.listenProtocol) && !pub.domain) {
               throw new VisibleError(
-                `You must provide a custom domain for ${port.listenProtocol.toUpperCase()} protocol.`
+                `You must provide a custom domain for ${port.listenProtocol.toUpperCase()} protocol.`,
               );
             }
           });
 
           return ports;
-        }
+        },
       );
 
       const domain = output(args.public).apply((pub) => {
@@ -416,8 +415,8 @@ export class Service extends Component implements Link.Linkable {
               },
             ],
           },
-          { parent: self }
-        )
+          { parent: self },
+        ),
       );
 
       const loadBalancer = new lb.LoadBalancer(
@@ -429,14 +428,14 @@ export class Service extends Component implements Link.Linkable {
             loadBalancerType: pub.ports.apply((ports) =>
               ports[0].listenProtocol.startsWith("http")
                 ? "application"
-                : "network"
+                : "network",
             ),
             subnets: vpc.loadBalancerSubnets,
             securityGroups: [securityGroup.id],
             enableCrossZoneLoadBalancing: true,
           },
-          { parent: self }
-        )
+          { parent: self },
+        ),
       );
 
       const ret = all([pub.ports, certificateArn]).apply(([ports, cert]) => {
@@ -469,8 +468,8 @@ export class Service extends Component implements Link.Linkable {
                   vpcId: vpc.id,
                   healthCheck: args.healthCheck,
                 },
-                { parent: self }
-              )
+                { parent: self },
+              ),
             );
           targets[targetId] = target;
 
@@ -497,8 +496,8 @@ export class Service extends Component implements Link.Linkable {
                     },
                   ],
                 },
-                { parent: self }
-              )
+                { parent: self },
+              ),
             );
           listeners[listenerId] = listener;
         });
@@ -522,7 +521,7 @@ export class Service extends Component implements Link.Linkable {
             domainName: domain.name,
             dns: domain.dns!,
           },
-          { parent: self }
+          { parent: self },
         ).arn;
       });
     }
@@ -533,7 +532,7 @@ export class Service extends Component implements Link.Linkable {
           `${name}TaskRole`,
           args.taskRole,
           {},
-          { parent: self }
+          { parent: self },
         );
 
       const policy = all([
@@ -557,7 +556,7 @@ export class Service extends Component implements Link.Linkable {
               resources: ["*"],
             },
           ],
-        })
+        }),
       );
 
       return new iam.Role(
@@ -575,11 +574,11 @@ export class Service extends Component implements Link.Linkable {
                   }:root`,
                 }),
             inlinePolicies: policy.apply(({ statements }) =>
-              statements ? [{ name: "inline", policy: policy.json }] : []
+              statements ? [{ name: "inline", policy: policy.json }] : [],
             ),
           },
-          { parent: self }
-        )
+          { parent: self },
+        ),
       );
     }
 
@@ -589,7 +588,7 @@ export class Service extends Component implements Link.Linkable {
           `${name}ExecutionRole`,
           args.executionRole,
           {},
-          { parent: self }
+          { parent: self },
         );
 
       return new iam.Role(
@@ -604,8 +603,8 @@ export class Service extends Component implements Link.Linkable {
               "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
             ],
           },
-          { parent: self }
-        )
+          { parent: self },
+        ),
       );
     }
 
@@ -646,7 +645,7 @@ export class Service extends Component implements Link.Linkable {
                       },
                     },
                   };
-                })
+                }),
               );
             }),
             containerDefinitions: $jsonStringify(
@@ -702,7 +701,7 @@ export class Service extends Component implements Link.Linkable {
 
                     const contextPath = path.join(
                       $cli.paths.root,
-                      container.image.context
+                      container.image.context,
                     );
                     const dockerfile =
                       container.image.dockerfile ?? "Dockerfile";
@@ -711,10 +710,10 @@ export class Service extends Component implements Link.Linkable {
                       : path.join(
                           $cli.paths.root,
                           container.image.context,
-                          "Dockerfile"
+                          "Dockerfile",
                         );
                     const dockerIgnorePath = fs.existsSync(
-                      path.join(contextPath, `${dockerfile}.dockerignore`)
+                      path.join(contextPath, `${dockerfile}.dockerignore`),
                     )
                       ? path.join(contextPath, `${dockerfile}.dockerignore`)
                       : path.join(contextPath, ".dockerignore");
@@ -726,7 +725,7 @@ export class Service extends Component implements Link.Linkable {
                     if (!lines.find((line) => line === ".sst")) {
                       fs.writeFileSync(
                         dockerIgnorePath,
-                        [...lines, "", "# sst", ".sst"].join("\n")
+                        [...lines, "", "# sst", ".sst"].join("\n"),
                       );
                     }
 
@@ -752,7 +751,7 @@ export class Service extends Component implements Link.Linkable {
                                 {
                                   registryId: bootstrapData.assetEcrRegistryId,
                                 },
-                                { parent: self }
+                                { parent: self },
                               )
                               .apply((authToken) => ({
                                 address: authToken.proxyEndpoint,
@@ -762,8 +761,8 @@ export class Service extends Component implements Link.Linkable {
                           ],
                           push: true,
                         },
-                        { parent: self }
-                      )
+                        { parent: self },
+                      ),
                     );
 
                     return interpolate`${bootstrapData.assetEcrUrl}@${image.digest}`;
@@ -779,16 +778,16 @@ export class Service extends Component implements Link.Linkable {
                           retentionInDays:
                             RETENTION[container.logging.retention],
                         },
-                        { parent: self }
-                      )
+                        { parent: self },
+                      ),
                     );
                   }
-                })
-              )
+                }),
+              ),
             ),
           },
-          { parent: self }
-        )
+          { parent: self },
+        ),
       );
     }
 
@@ -804,7 +803,7 @@ export class Service extends Component implements Link.Linkable {
             dnsRecords: [{ ttl: 60, type: "A" }],
           },
         },
-        { parent: self }
+        { parent: self },
       );
     }
 
@@ -838,16 +837,16 @@ export class Service extends Component implements Link.Linkable {
                   targetGroupArn: target.arn,
                   containerName: target.port.apply(
                     (port) =>
-                      ports.find((p) => p.forwardPort === port)!.container
+                      ports.find((p) => p.forwardPort === port)!.container,
                   ),
                   containerPort: target.port.apply((port) => port!),
-                }))
+                })),
               ),
             enableExecuteCommand: true,
             serviceRegistries: { registryArn: cloudmapService.arn },
           },
-          { parent: self }
-        )
+          { parent: self },
+        ),
       );
     }
 
@@ -861,7 +860,7 @@ export class Service extends Component implements Link.Linkable {
           maxCapacity: scaling.max,
           minCapacity: scaling.min,
         },
-        { parent: self }
+        { parent: self },
       );
 
       new appautoscaling.Policy(
@@ -878,7 +877,7 @@ export class Service extends Component implements Link.Linkable {
             targetValue: scaling.cpuUtilization,
           },
         },
-        { parent: self }
+        { parent: self },
       );
 
       new appautoscaling.Policy(
@@ -895,7 +894,7 @@ export class Service extends Component implements Link.Linkable {
             targetValue: scaling.memoryUtilization,
           },
         },
-        { parent: self }
+        { parent: self },
       );
     }
 
@@ -912,7 +911,7 @@ export class Service extends Component implements Link.Linkable {
             aliasName: loadBalancer!.dnsName,
             aliasZone: loadBalancer!.zoneId,
           },
-          { parent: self }
+          { parent: self },
         );
       });
     }
@@ -1002,7 +1001,7 @@ export class Service extends Component implements Link.Linkable {
       get taskDefinition() {
         if (self.dev)
           throw new VisibleError(
-            "Cannot access `nodes.taskDefinition` in dev mode."
+            "Cannot access `nodes.taskDefinition` in dev mode.",
           );
         return self.taskDefinition!;
       },
@@ -1012,11 +1011,11 @@ export class Service extends Component implements Link.Linkable {
       get loadBalancer() {
         if (self.dev)
           throw new VisibleError(
-            "Cannot access `nodes.loadBalancer` in dev mode."
+            "Cannot access `nodes.loadBalancer` in dev mode.",
           );
         if (!self.loadBalancer)
           throw new VisibleError(
-            "Cannot access `nodes.loadBalancer` when no public ports are exposed."
+            "Cannot access `nodes.loadBalancer` when no public ports are exposed.",
           );
         return self.loadBalancer;
       },
