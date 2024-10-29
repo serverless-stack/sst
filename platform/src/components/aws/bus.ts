@@ -118,6 +118,11 @@ export interface BusSubscriberArgs {
   };
 }
 
+interface BusRef {
+  ref: boolean;
+  bus: cloudwatch.EventBus;
+}
+
 /**
  * The `Bus` component lets you add an [Amazon EventBridge Event Bus](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-event-bus.html) to your app.
  *
@@ -178,10 +183,16 @@ export class Bus extends Component implements Link.Linkable {
 
     const parent = this;
 
-    const bus = createBus();
-
     this.constructorName = name;
     this.constructorOpts = opts;
+
+    if (args && "ref" in args) {
+      const ref = args as unknown as BusRef;
+      this.bus = ref.bus;
+      return;
+    }
+
+    const bus = createBus();
     this.bus = bus;
 
     function createBus() {
@@ -462,6 +473,17 @@ export class Bus extends Component implements Link.Linkable {
         ...args,
       });
     });
+  }
+
+  public static get(
+    name: string,
+    busName: Input<string>,
+    opts?: ComponentResourceOptions,
+  ) {
+    return new Bus(name, {
+      ref: true,
+      bus: cloudwatch.EventBus.get(`${name}Bus`, busName, undefined, opts),
+    } satisfies BusRef as unknown as BusArgs);
   }
 
   /** @internal */
