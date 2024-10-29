@@ -16,7 +16,11 @@ import (
 )
 
 var logFile = (func() *os.File {
-	logFile, err := os.CreateTemp("", "sst-"+time.Now().Format("2006-01-02-15-04-05-*")+".log")
+	tmpPath := flag.SST_LOG
+	if tmpPath == "" {
+		tmpPath = filepath.Join(os.TempDir(), "sst-"+time.Now().Format("2006-01-02-15-04-05-*")+".log")
+	}
+	logFile, err := os.Create(tmpPath)
 	if err != nil {
 		panic(err)
 	}
@@ -46,29 +50,30 @@ func (c *Cli) InitProject() (*project.Project, error) {
 	}
 	godotenv.Load(filepath.Join(p.PathRoot(), ".env"))
 
-	_, err = logFile.Seek(0, 0)
-	if err != nil {
-		return nil, err
+	if flag.SST_LOG == "" {
+		_, err = logFile.Seek(0, 0)
+		if err != nil {
+			return nil, err
+		}
+		sstLog := p.PathLog("sst")
+		logPath := p.PathLog("")
+		os.RemoveAll(logPath)
+		os.MkdirAll(logPath, 0755)
+		nextLogFile, err := os.Create(sstLog)
+		if err != nil {
+			return nil, util.NewReadableError(err, "Could not create log file")
+		}
+		_, err = io.Copy(nextLogFile, logFile)
+		if err != nil {
+			return nil, util.NewReadableError(err, "Could not copy log file")
+		}
+		logFile.Close()
+		err = os.RemoveAll(filepath.Join(os.TempDir(), logFile.Name()))
+		if err != nil {
+			return nil, err
+		}
+		logFile = nextLogFile
 	}
-
-	sstLog := p.PathLog("sst")
-	logPath := p.PathLog("")
-	os.RemoveAll(logPath)
-	os.MkdirAll(logPath, 0755)
-	nextLogFile, err := os.Create(sstLog)
-	if err != nil {
-		return nil, util.NewReadableError(err, "Could not create log file")
-	}
-	_, err = io.Copy(nextLogFile, logFile)
-	if err != nil {
-		return nil, util.NewReadableError(err, "Could not copy log file")
-	}
-	logFile.Close()
-	err = os.RemoveAll(filepath.Join(os.TempDir(), logFile.Name()))
-	if err != nil {
-		return nil, err
-	}
-	logFile = nextLogFile
 	c.configureLog()
 
 	spin := spinner.New(spinner.CharSets[14], 100*time.Millisecond)

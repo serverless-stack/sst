@@ -518,6 +518,7 @@ func (p *Project) Run(ctx context.Context, input *StackInput) error {
 
 	slog.Info("running stack command", "cmd", input.Command)
 	var summary auto.UpdateSummary
+	started := time.Now().Format(time.RFC3339)
 	defer func() {
 		if input.Command == "diff" {
 			return
@@ -527,6 +528,9 @@ func (p *Project) Run(ctx context.Context, input *StackInput) error {
 		parsed.Version = p.Version()
 		parsed.UpdateID = updateID
 		parsed.TimeStarted = summary.StartTime
+		if parsed.TimeStarted == "" {
+			parsed.TimeStarted = started
+		}
 		parsed.TimeCompleted = time.Now().Format(time.RFC3339)
 		if summary.EndTime != nil {
 			parsed.TimeCompleted = *summary.EndTime

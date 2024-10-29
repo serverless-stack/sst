@@ -15,6 +15,7 @@ export default $config({
       link: [bucket],
       handler: "index.handler",
     });
+
     return {
       api: hono.url,
     };

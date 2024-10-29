@@ -93,10 +93,6 @@ func (c *Collection) Runtime(input string) (Runtime, bool) {
 func (c *Collection) Build(ctx context.Context, input *BuildInput) (*BuildOutput, error) {
 	slog.Info("building function", "runtime", input.Runtime, "functionID", input.FunctionID)
 	defer slog.Info("function built", "runtime", input.Runtime, "functionID", input.FunctionID)
-	runtime, ok := c.Runtime(input.Runtime)
-	if !ok {
-		return nil, fmt.Errorf("Runtime not found: %v", input.Runtime)
-	}
 	out := input.Out()
 	var result *BuildOutput
 
@@ -116,6 +112,10 @@ func (c *Collection) Build(ctx context.Context, input *BuildInput) (*BuildOutput
 		err = os.MkdirAll(out, 0755)
 		if err != nil {
 			return nil, err
+		}
+		runtime, ok := c.Runtime(input.Runtime)
+		if !ok {
+			return nil, fmt.Errorf("Runtime not found: %v", input.Runtime)
 		}
 		result, err = runtime.Build(ctx, input)
 		if err != nil {

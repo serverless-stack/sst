@@ -70,23 +70,22 @@ Now that you are ready to work on your app and your `sst.config.ts`, let's take 
 Infrastructure as Code or _IaC_ is a process of automating the management of infrastructure through code. Rather than doing it manually through a console or user interface.
 
 :::tip
-You won't ever need to use the AWS Console to configure your SST app.
+You won't need to use the AWS Console to configure your SST app.
 :::
 
-Say your app has an API and an S3 bucket, you would define that in your `sst.config.ts`.
+Say your app has a Function and an S3 bucket, you would define that in your `sst.config.ts`.
 
 ```ts title="sst.config.ts"
 const bucket = new sst.aws.Bucket("MyBucket");
 
-const api = new sst.aws.ApiGatewayV2("MyApi");
-api.route("GET /", {
+new sst.aws.Function("MyFunction", {
   handler: "index.handler"
 });
 ```
 
-You won't ever need to go to the API Gateway and S3 parts of the AWS Console. SST will do the work for you.
+You won't need to go to the Lambda and S3 parts of the AWS Console. SST will do the work for you.
 
-In the above snippets, `sst.aws.ApiGatewayV2` and `sst.aws.Bucket` are called Components. Learn more about [Components](/docs/components/).
+In the above snippets, `sst.aws.Function` and `sst.aws.Bucket` are called Components. Learn more about [Components](/docs/components/).
 
 ---
 
@@ -94,23 +93,23 @@ In the above snippets, `sst.aws.ApiGatewayV2` and `sst.aws.Bucket` are called Co
 
 The reason this works is because when SST deploys the above app, it'll convert it into a set of commands. These then call AWS with your credentials to create the underlying resources. So the above components get transformed into a list of low level resources in AWS.
 
-:::note
+:::tip
 You are not directly responsible for the low level resources that SST creates.
 :::
 
-If you login to your AWS Console you can see what gets created internally. While these might look a little intimidating, they are all managed by SST and you are not directly responsible for them.
+If you log in to your AWS Console you can see what gets created internally. While these might look a little intimidating, they are all managed by SST and you are not directly responsible for them.
 
-SST will create, track, and remove all the low level resources created by your app.
+SST will create, track, and remove all the low level resources defined in your app.
 
 ---
 
 #### Exceptions
 
-There are some exceptions to this. You might have resources that are not created by your SST config. These could include resources that were:
+There are some exceptions to this. You might have resources that are not defined in your SST config. These could include the following resources:
 
 1. **Previously created**
 
-   You might've created some resources by hand in the past that you would like to use in your new SST app. You can import these resources into your app and moving forward, SST can mange them for you. Learn more about [importing resources](/docs/import-resources/).
+   You might've previously created some resources by hand that you would like to use in your new SST app. You can import these resources into your app. Moving forward, SST will manage them for you. Learn more about [importing resources](/docs/import-resources/).
 
 2. **Externally managed**
 
@@ -118,24 +117,24 @@ There are some exceptions to this. You might have resources that are not created
 
 3. **Shared across stages**
 
-   If you are creating preview environments, you might not want to make copies of certain components like your database. You might want to share these across stages. Learn more about [sharing across stages](/docs/share-across-stages/).
+   If you are creating preview environments, you might not want to make copies of certain resources, like your database. You might want to share these across stages. Learn more about [sharing across stages](/docs/share-across-stages/).
 
 ---
 
 ### Linking
 
-Let's say you wanted your API from the above example to upload a file to the S3 bucket, you'd need to hardcode the name of the bucket in your API.
+Let's say you wanted your function from the above example to upload a file to the S3 bucket, you'd need to hardcode the name of the bucket in your API.
 
 SST avoids this by allowing you to **link resources** together.
 
 ```ts title="sst.config.ts" {3}
-api.route("GET /", {
+new sst.aws.Function("MyFunction", {
   handler: "index.handler",
   link: [bucket]
 });
 ```
 
-Now in your API you can access the bucket using SST's [SDK](/docs/reference/sdk/).
+Now in your function you can access the bucket using SST's [SDK](/docs/reference/sdk/).
 
 ```ts title="index.ts" "Resource.MyBucket.name"
 import { Resource } from "sst";
@@ -158,7 +157,7 @@ The _link_ allows you to access your **infrastructure** in your **runtime code**
 When you make a change to your `sst.config.ts`, like we did above. SST only deploys the changes.
 
 ```diff lang="ts" title="sst.config.ts"
-api.route("GET /", {
+new sst.aws.Function("MyFunction", {
   handler: "index.handler",
 +  link: [bucket]
 });
@@ -172,13 +171,13 @@ The state is stored in a file locally and backed up to a bucket in your AWS (or 
 You can view the state of your app and its history in the SST Console. 
 :::
 
-A word of caution, if for some reason you delete your state locally and in your provider, SST won't be able to manage the resources anymore. To SST this app doesn't exist anymore.
+A word of caution, if for some reason you delete your state locally and in your provider, SST won't be able to manage the resources anymore. To SST this app won't exist anymore.
 
 :::danger
 Do not delete the bucket that stores your app's state.
 :::
 
-To fix this you'll have to manually re-import all those resources back into your app. Learn more about [how state works](/docs/state/).
+To fix this, you'll have to manually re-import all those resources back into your app. Learn more about [how state works](/docs/state/).
 
 ---
 
@@ -204,7 +203,7 @@ So now that we know how IaC works, a lot of the workflow and concepts will begin
 
 ### Name
 
-Every app has a name. The name is used as a namespace. It allows SST to deploy multiple apps to the same AWS account, while isolating the resources in an app.
+Every app has a name. The name is used as a namespace. It allows SST to deploy multiple apps to the same cloud provider account, while isolating the resources in an app.
 
 If you change the name of your app in your `sst.config.ts`, SST will create a completely new set of resources for it. It **does not** rename the resources.
 
@@ -214,8 +213,8 @@ To rename an app, you'll need to remove the resources from the old one and deplo
 
 So if you:
 
-1. Create a new app with the name `my-sst-app` in your `sst.config.ts`, deploy it.
-2. Rename the app in your `sst.config.ts` to `my-new-sst-app`, deploy again.
+1. Create an app with the name `my-sst-app` in your `sst.config.ts` and deploy it.
+2. Rename the app in your `sst.config.ts` to `my-new-sst-app` and deploy again.
 
 You will now have two apps in your AWS account called `my-sst-app` and `my-new-sst-app`.
 
@@ -241,7 +240,7 @@ Similar to app names, stages cannot be renamed. So if you wanted to rename a `de
 
 #### Personal stages
 
-By default, if no stage is passed in, SST creates a stage using the username in your computer. This called a **personal stage**. Personal stages are typically used in _dev_ mode and every developer on your team should use their own personal stage.
+By default, if no stage is passed in, SST creates a stage using the username in your computer. This is called a **personal stage**. Personal stages are typically used in _dev_ mode and every developer on your team should use their own personal stage.
 
 We'll look at this in detail below.
 
@@ -276,7 +275,7 @@ Similar to the app and stage, if you want to switch regions; you'll need to remo
 
 ## Commands
 
-Now with the above background let's look at what the workflow of building an SST app.
+Now with the above background let's look at the workflow of building an SST app.
 
 Let's say you've created an app by running.
 
@@ -294,27 +293,31 @@ To start with, you'll run your app in dev.
 sst dev
 ```
 
-This deploys your app to your _personal_ stage in _dev mode_. It brings up a multiplexer that deploys your app, runs your functions, and starts your frontends in dev mode as well.
+This deploys your app to your _personal_ stage in _dev mode_. It brings up a multiplexer that deploys your app, runs your functions, creates a tunnel, and starts your frontend and container services.
 
 :::note
-The `sst dev` CLI starts your entire app. Including your infrastructure, functions, and frontends.
+The `sst dev` CLI deploys your app a little differently for local dev.
 :::
 
-This deploys your app a little differently and is optimized for local development.
+It deploys your app a little differently and is optimized for local development.
 
-One of the things it does is it runs the functions in your app [_Live_](/docs/live/). This proxies any requests to your local machine and runs the functions locally.
+1. It runs the functions in your app [_Live_](/docs/live/) by deploying a **_stub_ version**. These proxy any requests to your local machine.
+2. It **does not deploy** your frontends or container services. Instead, it starts them locally.
+3. It also creates a [_tunnel_](/docs/reference/cli#tunnel) that allows them to connect to any resources that are deployed in a VPC.
 
 :::tip
 Only use `sst dev` in your personal stage.
 :::
 
-For this reason we recommend only using your personal stage for local development. And instead deploying to a separate stage when you want to share your app with your users. Learn more about [`sst dev`](/docs/reference/cli/#dev).
+For this reason we recommend only using your personal stage for local development. And instead deploying to a separate stage when you want to share your app with your users.
+
+Learn more about [`sst dev`](/docs/reference/cli/#dev).
 
 ---
 
 ### Deploy
 
-Once you are ready to go to production run.
+Once you are ready to go to production you can run.
 
 ```bash
 sst deploy --stage production
@@ -332,7 +335,7 @@ If you want to remove your app and all the resources in it, you can run.
 sst remove --stage <name>
 ```
 
-You want to be careful while running this command because it permanently removes all the resources from your AWS (or Cloudflare) account.
+You want to be careful while running this command because it permanently removes all the resources from your AWS (or cloud provider) account.
 
 :::caution
 Be careful while running `sst remove` since it permanently removes all your resources.
@@ -344,13 +347,15 @@ To prevent accidental removal, our template `sst.config.ts` comes with the follo
 removal: input?.stage === "production" ? "retain" : "remove",
 ```
 
-This is telling SST that if the stage is called `production` then on remove, retain critical resources like buckets and databases. This should avoid any accidental data loss. Learn more about [removal policies](/docs/reference/config/#removal).
+This is telling SST that if the stage is called `production` then on remove, retain critical resources like buckets and databases. This should avoid any accidental data loss.
+
+Learn more about [removal policies](/docs/reference/config/#removal).
 
 ---
 
 ## With a team
 
-The SST workflow really shines when working with a team. Let's look at what it looks like with a basic git workflow.
+This workflow really shines when working with a team. Let's look at what it looks like with a basic git workflow.
 
 1. Every developer on the team uses `sst dev` to work in their own isolated personal stage.
 2. You commit your changes to a branch called `dev`.

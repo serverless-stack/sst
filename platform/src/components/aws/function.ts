@@ -1112,6 +1112,10 @@ export interface FunctionArgs {
    * @internal
    */
   _skipMetadata?: boolean;
+  /**
+   * @internal
+   */
+  _skipHint?: boolean;
 }
 
 /**
@@ -1321,7 +1325,9 @@ export class Function extends Component implements Link.Linkable {
         handler: args.handler,
         internal: args._skipMetadata,
       },
-      _hint: fnUrl.apply((fnUrl) => fnUrl?.functionUrl),
+      _hint: args._skipHint
+        ? undefined
+        : fnUrl.apply((fnUrl) => fnUrl?.functionUrl),
     });
 
     function normalizeDev() {

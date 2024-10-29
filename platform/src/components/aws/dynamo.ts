@@ -718,6 +718,7 @@ export class Dynamo extends Component implements Link.Linkable {
    *
    * @param name The name of the component.
    * @param tableName The name of the DynamoDB Table.
+   * @param opts? Resource options.
    *
    * @example
    * Imagine you create a table in the `dev` stage. And in your personal stage `frank`,
@@ -738,10 +739,14 @@ export class Dynamo extends Component implements Link.Linkable {
    * };
    * ```
    */
-  public static get(name: string, tableName: Input<string>) {
+  public static get(
+    name: string,
+    tableName: Input<string>,
+    opts?: ComponentResourceOptions,
+  ) {
     return new Dynamo(name, {
       ref: true,
-      table: dynamodb.Table.get(`${name}Table`, tableName),
+      table: dynamodb.Table.get(`${name}Table`, tableName, undefined, opts),
     } satisfies DynamoRef as unknown as DynamoArgs);
   }
 

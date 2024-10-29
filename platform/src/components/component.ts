@@ -170,6 +170,7 @@ export class Component extends ComponentResource {
               "aws:sesv2/configurationSetEventDestination:ConfigurationSetEventDestination",
               "aws:sesv2/emailIdentity:EmailIdentity",
               "aws:sns/topicSubscription:TopicSubscription",
+              "aws:sqs/queuePolicy:QueuePolicy",
               "cloudflare:index/record:Record",
               "cloudflare:index/workerDomain:WorkerDomain",
               "docker-build:index:Image",

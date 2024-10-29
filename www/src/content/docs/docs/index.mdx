@@ -20,9 +20,11 @@ With SST, **everything is automated**.
 
 ---
 
-## Frontend
+## Components
 
-You start by defining parts of your app, _**in code**_. For example, your frontend. Or if you don't have a frontend, your API.
+You start by defining parts of your app, _**in code**_.
+
+For example, you can add your frontend and set the domain you want to use.
 
 <Tabs>
   <TabItem label="Next.js">
@@ -60,24 +62,37 @@ You start by defining parts of your app, _**in code**_. For example, your fronte
   });
   ```
   </TabItem>
-  <TabItem label="API">
+</Tabs>
+
+Just like the frontend, you can configure backend features _in code_. Like Postgres, Redis, S3 Buckets, cron jobs, or your API deployed in container.
+
+<Tabs>
+  <TabItem label="Containers">
   ```ts title="sst.config.ts"
-  new sst.aws.ApiGatewayV2("MyApi", {
-    domain: "api.my-app.com"
+  const cluster = new sst.aws.Cluster("MyCluster", { vpc });
+
+  cluster.addService("MyService", {
+    loadBalancer: {
+      ports: [{ listen: "80/http" }]
+    }
   });
   ```
   </TabItem>
-</Tabs>
-
-Your app might even have multiple frontends.
-
----
-
-## Backend
-
-Just like the frontend, you can configure backend features _in code_. Features like cron jobs, buckets, queues, databases, and more.
-
-<Tabs>
+  <TabItem label="Postgres">
+  ```ts title="sst.config.ts"
+  new sst.aws.Postgres("MyDatabase", { vpc });
+  ```
+  </TabItem>
+  <TabItem label="Redis">
+  ```ts title="sst.config.ts"
+  new sst.aws.Redis("MyRedis", { vpc });
+  ```
+  </TabItem>
+  <TabItem label="Bucket">
+  ```ts title="sst.config.ts"
+  new sst.aws.Bucket("MyBucket");
+  ```
+  </TabItem>
   <TabItem label="Cron">
   ```ts title="sst.config.ts"
   new sst.aws.Cron("MyCronJob", {
@@ -86,38 +101,21 @@ Just like the frontend, you can configure backend features _in code_. Features l
   });
   ```
   </TabItem>
-  <TabItem label="Bucket">
-  ```ts title="sst.config.ts"
-  new sst.aws.Bucket("MyBucket");
-  ```
-  </TabItem>
-  <TabItem label="Email">
-  ```ts title="sst.config.ts"
-  new sst.aws.Email("MyEmail", {
-    sender: "example.com"
-  });
-  ```
-  </TabItem>
-  <TabItem label="Realtime">
-  ```ts title="sst.config.ts"
-  new sst.aws.Realtime("MyServer", {
-    authorizer: "src/authorizer.handler"
-  });
-  ```
-  </TabItem>
-  <TabItem label="Queue">
-  ```ts title="sst.config.ts"
-  const myQueue = new sst.aws.Queue("MyQueue");
-
-  myQueue.subscribe("src/subscriber.handler");
-  ```
-  </TabItem>
-  <TabItem label="Postgres">
-  ```ts title="sst.config.ts"
-  new sst.aws.Postgres("MyDatabase");
-  ```
-  </TabItem>
 </Tabs>
+
+
+You can even set up Stripe webhooks in code.
+
+```ts title="sst.config.ts"
+new stripe.WebhookEndpoint("MyStripeWebhook", {
+  url: "https://example.com/webhook",
+  enabledEvents: [
+    "payment_method.attached",
+    "payment_method.detached",
+    "payment_method.updated"
+  ]
+});
+```
 
 You can check out the full list of components in the sidebar.
 
@@ -168,7 +166,7 @@ Learn more about [transforms](/docs/components#transforms).
 
 SST has built-in components for AWS and Cloudflare that make these services easier to use.
 
-However it also supports components from any one of the 150+ Pulumi/Terraform providers. For example, you can use Vercel for your frontends.
+However it also supports components from any one of the **150+ Pulumi/Terraform providers**. For example, you can use Vercel for your frontends.
 
 ```ts title="sst.config.ts"
 new vercel.Project("MyFrontend", {
@@ -232,7 +230,7 @@ View an <a href={`${github}/tree/dev/examples/aws-nextjs`}>example Next.js</a> a
 
 ### Monorepo
 
-Alternatively, you can use SST in a monorepo. This is useful if you have multiple frontends or you are working on a large project. In this case the `sst.config.ts` is in the root of your monorepo.
+Alternatively, you can use SST in a monorepo. This is useful if you have a backend and a frontend or you are working on a large project. In this case the `sst.config.ts` is in the root of your monorepo.
 
 ```txt {2}
 my-sst-app
@@ -241,7 +239,7 @@ my-sst-app
 ├─ packages
 │  ├─ functions
 │  ├─ frontend
-│  ├─ scripts
+│  ├─ backend
 │  └─ core
 └─ infra
 ```
@@ -280,18 +278,19 @@ The CLI includes a `dev` command that starts a local development environment.
 sst dev
 ```
 
-This brings up a multiplexer that:
+This brings up a _multiplexer_ that:
 
 1. Starts a watcher that deploys any infrastructure changes.
-2. Runs your functions [_Live_](/docs/live/); letting you make and test changes to your functions, without having to redeploy them.
-3. Starts up your frontend in dev mode and links it to your infrastructure
+2. Runs your functions [_Live_](/docs/live/), letting you make and test changes without having to redeploy them.
+3. Creates a [_tunnel_](/docs/reference/cli#tunnel) to connect your local machine to any resources in a VPC.
+4. Starts your frontend and container services in dev mode and links it to your infrastructure.
 
 
 :::tip
 The `sst dev` command runs your functions _**live**_, letting you test changes to your functions in milliseconds. [Learn more](/docs/live/).
 :::
 
-The `sst dev` CLI makes it so that you won’t have to start your frontend or your container applications separately. Learn more about [`sst dev`](/docs/reference/cli/#dev).
+The `sst dev` CLI makes it so that you won’t have to start your frontend or container applications separately. Learn more about [`sst dev`](/docs/reference/cli/#dev).
 
 ---
 
@@ -307,17 +306,19 @@ sst deploy --stage production
 
 #### Stages
 
-The `deploy` command can deploy your app to a specific stage or environment.
+The stage name is used to namespace different environments of your app. So you can create one for dev.
 
 ```bash
-# Deploy to dev
-npx sst deploy --stage dev
-
-# Deploy a PR environment
-npx sst deploy --stage pr-123
+sst deploy --stage dev
 ```
 
-This lets you create separate environments for your app. Learn more about [stages](/docs/reference/cli#stage).
+Or for a pull request.
+
+```bash
+sst deploy --stage pr-123
+```
+
+Learn more about [stages](/docs/reference/cli#stage).
 
 ---
 
@@ -361,7 +362,7 @@ In a nutshell, SST is for developers, while CDKTF and Pulumi are primarily for D
 
 3. Dev mode
 
-   Finally, SST features a unified local developer environment that deploys your app through a watcher, runs your functions [_Live_](/docs/live/), and starts your frontend, all together.
+   Finally, SST features a unified local developer environment that deploys your app through a watcher, runs your functions [_Live_](/docs/live/), creates a [_tunnel_](/docs/reference/cli#tunnel) to your VPC, starts your frontend and backend, all together.
 
 ---
 
@@ -373,8 +374,8 @@ While SST is open-source and free to use, we also have the [Console](/docs/conso
 
 #### Next steps
 
-1. Create your first SST app
-   - [Deploy a Next.js app to AWS](/docs/start/aws/nextjs/)
-   - [Send emails from your API](/docs/start/aws/email/)
-   - [Build a Hono API on Cloudflare](/docs/start/cloudflare/hono/)
-2. [Learn about the SST workflow](/docs/workflow/)
+1. [Learn about the SST workflow](/docs/workflow/)
+2. Create your first SST app
+   - [Build a Next.js app in AWS](/docs/start/aws/nextjs/)
+   - [Deploy Bun in a container to AWS](/docs/start/aws/bun/)
+   - [Build a Hono API with Cloudflare Workers](/docs/start/cloudflare/hono/)

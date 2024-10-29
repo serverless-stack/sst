@@ -39,15 +39,15 @@ INSTALL_DIR=$HOME/.sst/bin
 mkdir -p "$INSTALL_DIR"
 
 if [ -z "$requested_version" ]; then
-    url="https://github.com/sst/ion/releases/latest/download/$filename"
-    specific_version=$(curl -s https://api.github.com/repos/sst/ion/releases/latest | awk -F'"' '/"tag_name": "/ {gsub(/^v/, "", $4); print $4}')
+    url="https://github.com/sst/sst/releases/latest/download/$filename"
+    specific_version=$(curl -s https://api.github.com/repos/sst/sst/releases/latest | awk -F'"' '/"tag_name": "/ {gsub(/^v/, "", $4); print $4}')
 
     if [[ $? -ne 0 ]]; then
         echo "${RED}Failed to fetch version information${NC}"
         exit 1
     fi
 else
-    url="https://github.com/sst/ion/releases/download/v${requested_version}/$filename"
+    url="https://github.com/sst/sst/releases/download/v${requested_version}/$filename"
     specific_version=$requested_version
 fi
 
@@ -87,7 +87,7 @@ check_version() {
 }
 
 download_and_install() {
-    print_message info "Downloading ${ORANGE}SST ❍ ion ${GREEN}version: ${YELLOW}$specific_version ${GREEN}..."
+    print_message info "Downloading ${ORANGE}SST ${GREEN}version: ${YELLOW}$specific_version ${GREEN}..."
     mkdir -p ssttmp && cd ssttmp
     curl -# -L $url | tar xz
     mv sst $INSTALL_DIR
@@ -105,7 +105,7 @@ add_to_path() {
     if [[ -w $config_file ]]; then
         echo -e "\n# sst" >> "$config_file"
         echo "$command" >> "$config_file"
-        print_message info "Successfully added ${ORANGE}SST ❍ ion ${GREEN}to \$PATH in $config_file"
+        print_message info "Successfully added ${ORANGE}SST ${GREEN}to \$PATH in $config_file"
     else
         print_message warning "Manually add the directory to $config_file (or similar):"
         print_message info "  $command"

@@ -16,7 +16,6 @@ const sidebar = [
   {
     label: "Get Started",
     items: [
-      { label: "API", slug: "docs/start/aws/api" },
       { label: "Bun", slug: "docs/start/aws/bun" },
       { label: "Nuxt", slug: "docs/start/aws/nuxt" },
       { label: "Solid", slug: "docs/start/aws/solid" },

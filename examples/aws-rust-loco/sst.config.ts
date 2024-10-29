@@ -17,14 +17,10 @@ export default $config({
 
     const redis = new sst.aws.Redis("LocoRedis", { vpc });
 
-    const DATABASE_URL = $interpolate`postgres://${
-      database.username
-    }:${database.password.apply(encodeURIComponent)}@${database.host}:${
-      database.port
-    }/${database.database}`;
-    const REDIS_URL = $interpolate`redis://${
-      redis.username
-    }:${redis.password.apply(encodeURIComponent)}@${redis.host}:${redis.port}`;
+    const DATABASE_URL = $interpolate`postgres://${database.username}:${database.password.apply(encodeURIComponent)
+      }@${database.host}:${database.port}/${database.database}`;
+    const REDIS_URL = $interpolate`redis://${redis.username}:${redis.password.apply(encodeURIComponent)
+      }@${redis.host}:${redis.port}`;
 
     const locoCluster = new sst.aws.Cluster("LocoCluster", { vpc });
 
@@ -33,7 +29,7 @@ export default $config({
       architecture: "x86_64",
       scaling: { min: 2, max: 4 },
       command: ["start"],
-      public: {
+      loadBalancer: {
         ports: [{ listen: "80/http", forward: "5150/http" }],
       },
       environment: {

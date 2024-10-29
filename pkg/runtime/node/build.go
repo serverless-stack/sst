@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	esbuild "github.com/evanw/esbuild/pkg/api"
 	"github.com/sst/ion/internal/fs"
 	"github.com/sst/ion/pkg/js"
+	"github.com/sst/ion/pkg/process"
 	"github.com/sst/ion/pkg/project/path"
 	"github.com/sst/ion/pkg/runtime"
 )
@@ -141,6 +141,7 @@ func (r *Runtime) Build(ctx context.Context, input *runtime.BuildInput) (*runtim
 				properties.Banner,
 			}, "\n"),
 		},
+		NodePaths: properties.ESBuild.NodePaths,
 	}
 
 	if !isESM {
@@ -272,7 +273,7 @@ func (r *Runtime) Build(ctx context.Context, input *runtime.BuildInput) (*runtim
 			if slices.Contains(installPackages, "sharp") {
 				cmd = append(cmd, "--libc=glibc")
 			}
-			proc := exec.Command("npm", cmd...)
+			proc := process.Command("npm", cmd...)
 			proc.Dir = input.Out()
 			err = proc.Run()
 			if err != nil {

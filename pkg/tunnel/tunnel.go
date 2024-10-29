@@ -12,6 +12,7 @@ import (
 	"github.com/xjasonlyu/tun2socks/v2/engine"
 
 	"github.com/sst/ion/internal/util"
+	"github.com/sst/ion/pkg/process"
 )
 
 var BINARY_PATH = "/opt/sst/sst" + "1"
@@ -57,9 +58,9 @@ func Install() error {
 	}
 	var cmd *exec.Cmd
 	if runtime.GOOS == "darwin" {
-		cmd = exec.Command("visudo", "-cf", sudoersPath)
+		cmd = process.Command("visudo", "-cf", sudoersPath)
 	} else {
-		cmd = exec.Command("visudo", "-c", "-f", sudoersPath)
+		cmd = process.Command("visudo", "-c", "-f", sudoersPath)
 	}
 	slog.Info("running visudo", "cmd", cmd.Args)
 	err = cmd.Run()
@@ -74,7 +75,7 @@ func Install() error {
 func runCommands(cmds [][]string) error {
 	for _, item := range cmds {
 		slog.Info("running command", "command", item)
-		cmd := exec.Command(item[0], item[1:]...)
+		cmd := process.Command(item[0], item[1:]...)
 		err := cmd.Run()
 		if err != nil {
 			slog.Error("failed to execute command", "command", item, "error", err)

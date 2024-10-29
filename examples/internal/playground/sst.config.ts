@@ -22,6 +22,9 @@ export default $config({
     //const postgres = addPostgres();
     //const redis = addRedis();
     //const cron = addCron();
+    //const queue = addQueue();
+    //const topic = addTopic();
+    //const bus = addBus();
 
     return ret;
 
@@ -78,18 +81,6 @@ export default $config({
       return ret;
     }
 
-    function addCron() {
-      const cron = new sst.aws.Cron("MyCron", {
-        schedule: "rate(1 minute)",
-        job: {
-          handler: "functions/handler-example/index.handler",
-          link: [bucket],
-        },
-      });
-      ret.cron = cron.nodes.job.name;
-      return cron;
-    }
-
     function addApiV1() {
       const api = new sst.aws.ApiGatewayV1("MyApiV1");
       api.route("GET /", {
@@ -123,7 +114,7 @@ export default $config({
     function addService() {
       const cluster = new sst.aws.Cluster("MyCluster", { vpc });
       const service = cluster.addService("MyService", {
-        public: {
+        loadBalancer: {
           ports: [{ listen: "80/http" }],
         },
         image: {
@@ -155,6 +146,59 @@ export default $config({
         link: [redis],
       });
       return redis;
+    }
+
+    function addCron() {
+      const cron = new sst.aws.Cron("MyCron", {
+        schedule: "rate(1 minute)",
+        job: {
+          handler: "functions/handler-example/index.handler",
+          link: [bucket],
+        },
+      });
+      ret.cron = cron.nodes.job.name;
+      return cron;
+    }
+
+    function addQueue() {
+      const queue = new sst.aws.Queue("MyQueue");
+      queue.subscribe("functions/queue/index.subscriber");
+      return queue;
+    }
+
+    function addTopic() {
+      const topic = new sst.aws.SnsTopic("MyTopic");
+      topic.subscribe("functions/topic/index.subscriber", {
+        filter: {
+          color: ["red"],
+        },
+      });
+
+      new sst.aws.Function("MyTopicPublisher", {
+        handler: "functions/topic/index.publisher",
+        link: [topic],
+        url: true,
+      });
+
+      return topic;
+    }
+
+    function addBus() {
+      const bus = new sst.aws.Bus("MyBus");
+      bus.subscribe("functions/bus/index.subscriber", {
+        pattern: {
+          source: ["app.myevent"],
+        },
+      });
+      bus.subscribeQueue("test", queue);
+
+      new sst.aws.Function("MyBusPublisher", {
+        handler: "functions/bus/index.publisher",
+        link: [bus],
+        url: true,
+      });
+
+      return bus;
     }
   },
 });

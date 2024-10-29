@@ -70,13 +70,13 @@ export interface EfsArgs {
    * ```
    */
   vpc:
-  | Vpc
-  | Input<{
-    /**
-     * A list of subnet IDs in the VPC to create the EFS mount targets in.
-     */
-    subnets: Input<Input<string>[]>;
-  }>;
+    | Vpc
+    | Input<{
+        /**
+         * A list of subnet IDs in the VPC to create the EFS mount targets in.
+         */
+        subnets: Input<Input<string>[]>;
+      }>;
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.
@@ -182,7 +182,7 @@ export class Efs extends Component {
       all(targets.map((target) => target.urn)).apply(() => ({
         fileSystem,
         accessPoint,
-      }))
+      })),
     );
     this._fileSystem = waited.fileSystem;
     this._accessPoint = waited.accessPoint;
@@ -206,7 +206,7 @@ export class Efs extends Component {
           `${name}FileSystem`,
           {
             performanceMode: performance.apply((v) =>
-              v === "general-purpose" ? "generalPurpose" : "maxIO"
+              v === "general-purpose" ? "generalPurpose" : "maxIO",
             ),
             throughputMode: throughput,
             encrypted: true,
@@ -228,7 +228,7 @@ export class Efs extends Component {
               },
               { parent },
             ),
-        )
+        ),
       );
     }
 
@@ -294,6 +294,7 @@ export class Efs extends Component {
    *
    * @param name The name of the component.
    * @param fileSystemID The ID of the existing EFS file system.
+   * @param opts? Resource options.
    *
    * @example
    * Imagine you create a EFS file system in the `dev` stage. And in your personal stage
@@ -315,23 +316,31 @@ export class Efs extends Component {
    * };
    * ```
    */
-  public static get(name: string, fileSystemID: Input<string>) {
-    const fileSystem = efs.FileSystem.get(`${name}FileSystem`, fileSystemID);
+  public static get(
+    name: string,
+    fileSystemID: Input<string>,
+    opts?: ComponentResourceOptions,
+  ) {
+    const fileSystem = efs.FileSystem.get(
+      `${name}FileSystem`,
+      fileSystemID,
+      undefined,
+      opts,
+    );
     const accessPointId = efs
-      .getAccessPointsOutput({ fileSystemId: fileSystem.id })
+      .getAccessPointsOutput({ fileSystemId: fileSystem.id }, opts)
       .apply((accessPoints) => accessPoints.ids[0]);
     const accessPoint = efs.AccessPoint.get(
       `${name}AccessPoint`,
       accessPointId,
+      undefined,
+      opts,
     );
-    return new Efs(
-      name,
-      {
-        ref: true,
-        fileSystem,
-        accessPoint,
-      } satisfies EfsRef as unknown as EfsArgs,
-    );
+    return new Efs(name, {
+      ref: true,
+      fileSystem,
+      accessPoint,
+    } satisfies EfsRef as unknown as EfsArgs);
   }
 }
 

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"github.com/sst/ion/internal/util"
 	"github.com/sst/ion/pkg/flag"
 	"github.com/sst/ion/pkg/js"
+	"github.com/sst/ion/pkg/process"
 	"github.com/sst/ion/pkg/project/provider"
 	"github.com/sst/ion/pkg/runtime"
 	"github.com/sst/ion/pkg/runtime/node"
@@ -153,7 +153,7 @@ console.log("~j" + JSON.stringify(mod.app({
 	defer js.Cleanup(buildResult)
 
 	slog.Info("evaluating config")
-	node := exec.Command("node", "--no-warnings", string(buildResult.OutputFiles[1].Path))
+	node := process.Command("node", "--no-warnings", string(buildResult.OutputFiles[1].Path))
 	output, err := node.CombinedOutput()
 	slog.Info("config evaluated")
 	if err != nil {
@@ -263,7 +263,7 @@ func (proj *Project) LoadHome() error {
 		}
 		err := match.Init(proj.app.Name, proj.app.Stage, args.(map[string]interface{}))
 		if err != nil {
-			return util.NewReadableError(err, err.Error())
+			return util.NewReadableError(err, key+": "+err.Error())
 		}
 		env, err := match.Env()
 		if err != nil {

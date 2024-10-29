@@ -14,7 +14,7 @@ import (
 	"sync"
 
 	"github.com/BurntSushi/toml"
-	"github.com/sst/ion/internal/util"
+	"github.com/sst/ion/pkg/process"
 	"github.com/sst/ion/pkg/project/path"
 	"github.com/sst/ion/pkg/runtime"
 )
@@ -27,7 +27,7 @@ type Worker struct {
 
 func (w *Worker) Stop() {
 	// Terminate the whole process group
-	util.TerminateProcess(w.cmd.Process.Pid)
+	process.Kill(w.cmd.Process)
 }
 
 func (w *Worker) Logs() io.ReadCloser {
@@ -167,12 +167,10 @@ func (r *PythonRuntime) Build(ctx context.Context, input *runtime.BuildInput) (*
 			// 1. Install python dependencies locally with the correct versions
 			// TOOD: walln - when uv supports specifying the platform that would be a good idea
 			// but its not there yet
-			uvSyncCmd := exec.CommandContext(
+			uvSyncCmd := process.CommandContext(
 				ctx,
 				"uv",
 				"sync")
-			util.SetProcessGroupID(uvSyncCmd)
-			util.SetProcessCancel(uvSyncCmd)
 
 			// use the output pyproject.toml directory as the working directory
 			workDir := filepath.Dir(filepath.Join(targetDir, filepath.Base(pyProjectFile)))
@@ -186,14 +184,12 @@ func (r *PythonRuntime) Build(ctx context.Context, input *runtime.BuildInput) (*
 			}
 
 			// 2. Convert the virtualenv to site-packages so that lambda can find the packages
-			sitePackagesCmd := exec.CommandContext(
+			sitePackagesCmd := process.CommandContext(
 				ctx,
 				"cp",
 				"-r",
 				filepath.Join(workDir, ".venv", "lib", "python3.*", "site-packages", "*"),
 				filepath.Join(targetDir))
-			util.SetProcessGroupID(sitePackagesCmd)
-			util.SetProcessCancel(sitePackagesCmd)
 
 			slog.Info("starting build site packages", "env", sitePackagesCmd.Env, "args", sitePackagesCmd.Args)
 			sitePackagesCmd.Dir = workDir
@@ -204,16 +200,11 @@ func (r *PythonRuntime) Build(ctx context.Context, input *runtime.BuildInput) (*
 			}
 
 			// 3. Remove the virtualenv because it does not need to be included in the zip
-			removeVirtualEnvCmd := exec.CommandContext(
+			removeVirtualEnvCmd := process.CommandContext(
 				ctx,
 				"rm",
 				"-rf",
 				filepath.Join(workDir, ".venv"))
-			util.SetProcessGroupID(removeVirtualEnvCmd)
-			util.SetProcessCancel(removeVirtualEnvCmd)
-			removeVirtualEnvCmd.Cancel = func() error {
-				return util.TerminateProcess(removeVirtualEnvCmd.Process.Pid)
-			}
 
 			slog.Info("starting build remove virtual env", "env", removeVirtualEnvCmd.Env, "args", removeVirtualEnvCmd.Args)
 			removeVirtualEnvCmd.Dir = workDir
@@ -339,16 +330,10 @@ func (r *PythonRuntime) Run(ctx context.Context, input *runtime.RunInput) (runti
 		input.WorkerID,
 	)
 
-	cmd := exec.CommandContext(
+	cmd := process.CommandContext(
 		ctx,
 		"uv",
 		args...)
-	util.SetProcessGroupID(cmd)
-	util.SetProcessCancel(cmd)
-	cmd.Cancel = func() error {
-		return util.TerminateProcess(cmd.Process.Pid)
-	}
-
 	cmd.Env = append(input.Env, "AWS_LAMBDA_RUNTIME_API="+input.Server)
 	slog.Info("starting worker", "env", cmd.Env, "args", cmd.Args)
 	cmd.Dir = input.Build.Out

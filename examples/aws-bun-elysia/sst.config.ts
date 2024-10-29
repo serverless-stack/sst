@@ -17,7 +17,7 @@
  *
  * ```ts title="sst.config.ts"
  * cluster.addService("MyService", {
- *   public: {
+ *   loadBalancer: {
  *     ports: [{ listen: "80/http", forward: "3000/http" }],
  *   },
  *   dev: {
@@ -55,7 +55,7 @@ export default $config({
 
     const cluster = new sst.aws.Cluster("MyCluster", { vpc });
     cluster.addService("MyService", {
-      public: {
+      loadBalancer: {
         ports: [{ listen: "80/http", forward: "3000/http" }],
       },
       dev: {

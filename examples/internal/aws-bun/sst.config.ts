@@ -15,7 +15,7 @@ export default $config({
 
     cluster.addService("MyService", {
       link: [redis],
-      public: {
+      loadBalancer: {
         ports: [{ listen: "80/http", forward: "3000/http" }],
       },
       dev: {

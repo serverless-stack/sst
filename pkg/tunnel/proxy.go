@@ -31,7 +31,6 @@ func StartProxy(ctx context.Context, username string, host string, key []byte) e
 		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			fmt.Println(ui.TEXT_INFO_BOLD.Render(("| "), ui.TEXT_NORMAL.Render("Tunneling", network, addr)))
 			return sshClient.Dial(network, addr)
-			// return net.Dial(network, addr)
 		},
 	})
 	if err != nil {
@@ -39,8 +38,7 @@ func StartProxy(ctx context.Context, username string, host string, key []byte) e
 	}
 	errChan := make(chan error, 1)
 	go func() {
-		err := server.ListenAndServe("tcp", fmt.Sprintf("%s:%d", "127.0.0.1", 1080))
-		errChan <- err
+		errChan <- server.ListenAndServe("tcp", fmt.Sprintf("%s:%d", "127.0.0.1", 1080))
 	}()
 	select {
 	case err := <-errChan:

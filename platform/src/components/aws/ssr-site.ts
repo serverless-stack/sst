@@ -343,8 +343,8 @@ export interface SsrSiteArgs extends BaseSsrSiteArgs {
 
 export function prepare(parent: ComponentResource, args: SsrSiteArgs) {
   const sitePath = normalizeSitePath();
-  const partition = normalizePartition();
-  const region = normalizeRegion();
+  const partition = getPartitionOutput(undefined, { parent }).partition;
+  const region = getRegionOutput(undefined, { parent }).name;
   checkSupportedRegion();
 
   return {
@@ -362,14 +362,6 @@ export function prepare(parent: ComponentResource, args: SsrSiteArgs) {
       }
       return sitePath;
     });
-  }
-
-  function normalizePartition() {
-    return getPartitionOutput(undefined, { parent }).partition;
-  }
-
-  function normalizeRegion() {
-    return getRegionOutput(undefined, { parent }).name;
   }
 
   function checkSupportedRegion() {
@@ -557,6 +549,7 @@ export function createServersAndDistribution(
             bucketName: bucket.name,
             files: bucketFiles,
             purge: false,
+            region: getRegionOutput(undefined, { parent }).name,
           },
           { parent },
         );
@@ -720,6 +713,7 @@ export function createServersAndDistribution(
             ]),
             url: true,
             dev: false,
+            _skipHint: true,
           },
           { parent },
         ),
@@ -762,6 +756,7 @@ export function createServersAndDistribution(
             url: true,
             dev: false,
             _skipMetadata: true,
+            _skipHint: true,
           },
           { parent },
         ),

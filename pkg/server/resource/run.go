@@ -7,12 +7,12 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"strconv"
 
 	"github.com/sst/ion/cmd/sst/mosaic/ui/common"
 	"github.com/sst/ion/pkg/bus"
 	"github.com/sst/ion/pkg/flag"
+	"github.com/sst/ion/pkg/process"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -69,7 +69,7 @@ func (r *Run) Update(input *UpdateInput[RunInputs, RunOutputs], output *UpdateRe
 func (r *Run) executeCommand(input *RunInputs) error {
 	r.lock.Acquire(context.Background(), 1)
 	defer r.lock.Release(1)
-	cmd := exec.Command("sh", "-c", input.Command)
+	cmd := process.Command("sh", "-c", input.Command)
 	cmd.Dir = input.Cwd
 	cmd.Env = os.Environ()
 	if len(input.Env) > 0 {

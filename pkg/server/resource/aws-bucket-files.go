@@ -24,12 +24,14 @@ type BucketFilesInputs struct {
 	BucketName string       `json:"bucketName"`
 	Files      []BucketFile `json:"files"`
 	Purge      bool         `json:"purge"`
+	Region     string       `json:"region"`
 }
 
 type BucketFilesOutputs struct {
 	BucketName string       `json:"bucketName,omitempty"`
 	Files      []BucketFile `json:"files,omitempty"`
 	Purge      bool         `json:"purge,omitempty"`
+	Region     string       `json:"region,omitempty"`
 }
 
 func (r *BucketFiles) Create(input *BucketFilesInputs, output *CreateResult[BucketFilesOutputs]) error {
@@ -37,6 +39,7 @@ func (r *BucketFiles) Create(input *BucketFilesInputs, output *CreateResult[Buck
 	if err != nil {
 		return err
 	}
+	cfg.Region = input.Region
 	s3Client := s3.NewFromConfig(cfg)
 
 	if err := r.upload(s3Client, input.BucketName, input.Files, nil); err != nil {
@@ -49,6 +52,7 @@ func (r *BucketFiles) Create(input *BucketFilesInputs, output *CreateResult[Buck
 			BucketName: input.BucketName,
 			Files:      input.Files,
 			Purge:      input.Purge,
+			Region:     input.Region,
 		},
 	}
 	return nil
@@ -59,6 +63,7 @@ func (r *BucketFiles) Update(input *UpdateInput[BucketFilesInputs, BucketFilesOu
 	if err != nil {
 		return err
 	}
+	cfg.Region = input.News.Region
 	s3Client := s3.NewFromConfig(cfg)
 
 	oldFiles := input.Olds.Files
@@ -81,6 +86,7 @@ func (r *BucketFiles) Update(input *UpdateInput[BucketFilesInputs, BucketFilesOu
 			BucketName: input.News.BucketName,
 			Files:      input.News.Files,
 			Purge:      input.News.Purge,
+			Region:     input.News.Region,
 		},
 	}
 	return nil
@@ -94,6 +100,10 @@ func (r *BucketFiles) Delete(input *DeleteInput[BucketFilesOutputs], output *int
 	cfg, err := r.config()
 	if err != nil {
 		return err
+	}
+	// input.Outs.Region can be empty if last deployed in version is 3.2.59 or earlier
+	if input.Outs.Region != "" {
+		cfg.Region = input.Outs.Region
 	}
 	s3Client := s3.NewFromConfig(cfg)
 

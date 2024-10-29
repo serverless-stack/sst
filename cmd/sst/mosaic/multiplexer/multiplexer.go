@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"runtime/debug"
 	"strings"
 	"syscall"
@@ -15,6 +14,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/gdamore/tcell/v2/views"
 	tcellterm "github.com/sst/ion/cmd/sst/mosaic/multiplexer/tcell-term"
+	"github.com/sst/ion/pkg/process"
 )
 
 var PAD_HEIGHT = 0
@@ -27,7 +27,7 @@ type Multiplexer struct {
 	width     int
 	height    int
 	selected  int
-	processes []*process
+	processes []*pane
 	screen    tcell.Screen
 	root      *views.ViewPort
 	main      *views.ViewPort
@@ -40,7 +40,7 @@ type Multiplexer struct {
 func New(ctx context.Context) *Multiplexer {
 	result := &Multiplexer{}
 	result.ctx = ctx
-	result.processes = []*process{}
+	result.processes = []*pane{}
 	result.screen, _ = tcell.NewScreen()
 	result.screen.Init()
 	result.screen.EnableMouse()
@@ -53,7 +53,7 @@ func New(ctx context.Context) *Multiplexer {
 	result.stack = views.NewBoxLayout(views.Vertical)
 	result.stack.SetView(result.root)
 	if os.Getenv("TMUX") != "" {
-		exec.Command("tmux", "set-option", "-p", "set-clipboard", "on").Run()
+		process.Command("tmux", "set-option", "-p", "set-clipboard", "on").Run()
 	}
 	return result
 }
@@ -75,9 +75,9 @@ func (s *Multiplexer) resize(width int, height int) {
 
 func (s *Multiplexer) Start() {
 	defer func() {
-		for _, p := range s.processes {
-			p.Kill()
-		}
+		// for _, p := range s.processes {
+		// 	p.Kill()
+		// }
 		s.screen.Fini()
 	}()
 
@@ -110,7 +110,7 @@ func (s *Multiplexer) Start() {
 							return
 						}
 					}
-					proc := &process{
+					proc := &pane{
 						icon:     evt.Icon,
 						key:      evt.Key,
 						dir:      evt.Cwd,
@@ -130,7 +130,7 @@ func (s *Multiplexer) Start() {
 						proc.start()
 					}
 					if !evt.Autostart {
-						proc.vt.Start(exec.Command("echo", evt.Key+" has auto-start disabled, press enter to start."))
+						proc.vt.Start(process.Command("echo", evt.Key+" has auto-start disabled, press enter to start."))
 						proc.dead = true
 					}
 					s.processes = append(s.processes, proc)
@@ -222,7 +222,7 @@ func (s *Multiplexer) Start() {
 					for index, proc := range s.processes {
 						if proc.vt == evt.VT() {
 							if !proc.dead {
-								proc.vt.Start(exec.Command("echo", "\n[process exited]"))
+								proc.vt.Start(process.Command("echo", "\n[process exited]"))
 								proc.dead = true
 								s.sort()
 								if index == s.selected {
@@ -357,7 +357,7 @@ func (s *Multiplexer) copy() {
 	// check if mac terminal
 	if os.Getenv("TERM_PROGRAM") == "Apple_Terminal" {
 		// use pbcopy
-		cmd := exec.Command("pbcopy")
+		cmd := process.Command("pbcopy")
 		cmd.Stdin = strings.NewReader(data)
 		err := cmd.Run()
 		if err != nil {

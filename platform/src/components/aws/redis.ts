@@ -160,9 +160,9 @@ interface RedisRef {
  * ### Cost
  *
  * By default this component uses _On-demand nodes_ with a single `cache.t4g.micro` instance;
- * $0.0128 per hour.
+ * $0.016 per hour.
  *
- * That works out to $0.0128 x 24 x 30 or **$9 per month**.
+ * That works out to $0.016 x 24 x 30 or **$12 per month**.
  *
  * Adjust this for the `instance` type and number of `nodes` you are using.
  *
@@ -327,6 +327,7 @@ export class Redis extends Component implements Link.Linkable {
    *
    * @param name The name of the component.
    * @param clusterID The id of the existing Redis cluster.
+   * @param opts? Resource options.
    *
    * @example
    * Imagine you create a cluster in the `dev` stage. And in your personal stage `frank`,
@@ -347,10 +348,16 @@ export class Redis extends Component implements Link.Linkable {
    * };
    * ```
    */
-  public static get(name: string, clusterID: Input<string>) {
+  public static get(
+    name: string,
+    clusterID: Input<string>,
+    opts?: ComponentResourceOptions,
+  ) {
     const cluster = elasticache.ReplicationGroup.get(
       `${name}Cluster`,
       clusterID,
+      undefined,
+      opts,
     );
     return new Redis(name, { ref: true, cluster } as unknown as RedisArgs);
   }

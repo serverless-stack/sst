@@ -56,11 +56,22 @@ func (a *AwsProvider) Init(app string, stage string, args map[string]interface{}
 	if os.Getenv("SST_AWS_NO_PROFILE") != "" {
 		delete(args, "profile")
 	}
+	if val, ok := args["profile"]; ok && val != "" {
+		delete(args, "profile")
+		// if profile is set in args it gets saved to the provider and always used for removing resources
+		// this isn't ideal because people may use different profile names for the same stage
+		// so we wipe it from args and put it in env which is not saved to the state
+		a.profile = val.(string)
+	}
+	if value := os.Getenv("AWS_PROFILE"); value != "" {
+		a.profile = value
+	}
+
 	cfg, err := config.LoadDefaultConfig(
 		ctx,
 		func(lo *config.LoadOptions) error {
-			if profile, ok := args["profile"].(string); ok && profile != "" {
-				lo.SharedConfigProfile = profile
+			if a.profile != "" {
+				lo.SharedConfigProfile = a.profile
 			}
 			if region, ok := args["region"].(string); ok && region != "" {
 				lo.Region = region
@@ -87,15 +98,8 @@ func (a *AwsProvider) Init(app string, stage string, args map[string]interface{}
 	if cfg.Region == "" {
 		cfg.Region = "us-east-1"
 	}
-	slog.Info("aws credentials found", "region", cfg.Region)
+	slog.Info("aws credentials found", "region", cfg.Region, "profile", a.profile)
 	a.config = cfg
-	// if profile is set in args it gets saved to the provider and always used for removing resources
-	// this isn't ideal because people may use different profile names for the same stage
-	// so we wipe it from args and put it in env which is not saved to the state
-	if profile, ok := args["profile"].(string); ok && profile != "" {
-		a.profile = profile
-		delete(args, "profile")
-	}
 	defaultTags, ok := args["defaultTags"].(map[string]interface{})
 	if !ok {
 		defaultTags = map[string]interface{}{}

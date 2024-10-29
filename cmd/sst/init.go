@@ -15,6 +15,7 @@ import (
 	"github.com/manifoldco/promptui"
 	"github.com/sst/ion/cmd/sst/cli"
 	"github.com/sst/ion/internal/util"
+	"github.com/sst/ion/pkg/process"
 	"github.com/sst/ion/pkg/project"
 )
 
@@ -216,16 +217,16 @@ func CmdInit(cli *cli.Cli) error {
 	}
 
 	if _, err := os.Stat("package-lock.json"); err == nil {
-		cmd = exec.Command("npm", "install")
+		cmd = process.Command("npm", "install")
 	}
 	if _, err := os.Stat("yarn.lock"); err == nil {
-		cmd = exec.Command("yarn", "install")
+		cmd = process.Command("yarn", "install")
 	}
 	if _, err := os.Stat("pnpm-lock.yaml"); err == nil {
-		cmd = exec.Command("pnpm", "install")
+		cmd = process.Command("pnpm", "install")
 	}
 	if _, err := os.Stat("bun.lockb"); err == nil {
-		cmd = exec.Command("bun", "install")
+		cmd = process.Command("bun", "install")
 	}
 	if cmd != nil {
 		spin.Suffix = "  Installing dependencies..."

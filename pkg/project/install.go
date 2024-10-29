@@ -7,13 +7,13 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/sst/ion/pkg/flag"
 	"github.com/sst/ion/pkg/global"
 	"github.com/sst/ion/pkg/npm"
+	"github.com/sst/ion/pkg/process"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -158,7 +158,7 @@ func (p *Project) fetchDeps() error {
 	if flag.NO_BUN {
 		manager = "npm"
 	}
-	cmd := exec.Command(manager, "install")
+	cmd := process.Command(manager, "install")
 	cmd.Dir = p.PathPlatformDir()
 	output, err := cmd.CombinedOutput()
 	if err != nil {

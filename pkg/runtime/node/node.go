@@ -14,8 +14,8 @@ import (
 
 	"github.com/evanw/esbuild/pkg/api"
 	esbuild "github.com/evanw/esbuild/pkg/api"
-	"github.com/sst/ion/internal/util"
 	"github.com/sst/ion/pkg/flag"
+	"github.com/sst/ion/pkg/process"
 	"github.com/sst/ion/pkg/project/path"
 	"github.com/sst/ion/pkg/runtime"
 	"golang.org/x/sync/semaphore"
@@ -84,8 +84,7 @@ type Worker struct {
 }
 
 func (w *Worker) Stop() {
-	// Terminate the whole process group
-	util.TerminateProcess(w.cmd.Process.Pid)
+	process.Kill(w.cmd.Process)
 }
 
 func (w *Worker) Logs() io.ReadCloser {
@@ -126,7 +125,7 @@ type NodeProperties struct {
 var NODE_EXTENSIONS = []string{".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"}
 
 func (r *Runtime) Run(ctx context.Context, input *runtime.RunInput) (runtime.Worker, error) {
-	cmd := exec.CommandContext(
+	cmd := process.CommandContext(
 		ctx,
 		"node",
 		"--enable-source-maps",
@@ -137,8 +136,6 @@ func (r *Runtime) Run(ctx context.Context, input *runtime.RunInput) (runtime.Wor
 		filepath.Join(input.Build.Out, input.Build.Handler),
 		input.WorkerID,
 	)
-	util.SetProcessGroupID(cmd)
-	util.SetProcessCancel(cmd)
 	cmd.Env = input.Env
 	cmd.Env = append(cmd.Env, "NODE_OPTIONS="+os.Getenv("NODE_OPTIONS"))
 	cmd.Env = append(cmd.Env, "VSCODE_INSPECTOR_OPTIONS="+os.Getenv("VSCODE_INSPECTOR_OPTIONS"))

@@ -3,6 +3,7 @@ import {
   all,
   output,
   jsonStringify,
+  Output,
 } from "@pulumi/pulumi";
 import { Component, Transform, transform } from "../component";
 import { Link } from "../link";
@@ -12,7 +13,7 @@ import { VisibleError } from "../error";
 import { hashStringToPrettyString, logicalName } from "../naming";
 import { parseQueueArn } from "./helpers/arn";
 import { QueueLambdaSubscriber } from "./queue-lambda-subscriber";
-import { lambda, sqs } from "@pulumi/aws";
+import { iam, lambda, sqs } from "@pulumi/aws";
 import { DurationHours, DurationMinutes, toSeconds } from "../duration";
 import { permission } from "./permission.js";
 
@@ -587,6 +588,42 @@ export class Queue extends Component implements Link.Linkable {
         }),
       ],
     };
+  }
+
+  /** @internal */
+  static createPolicy(
+    name: string,
+    arn: Output<string>,
+    opts?: ComponentResourceOptions,
+  ) {
+    return new sqs.QueuePolicy(
+      name,
+      {
+        queueUrl: arn.apply((arn) => parseQueueArn(arn).queueUrl),
+        policy: iam.getPolicyDocumentOutput({
+          statements: [
+            {
+              actions: ["sqs:SendMessage"],
+              resources: [arn],
+              principals: [
+                {
+                  type: "Service",
+                  identifiers: [
+                    "sns.amazonaws.com",
+                    "s3.amazonaws.com",
+                    "events.amazonaws.com",
+                  ],
+                },
+              ],
+            },
+          ],
+        }).json,
+      },
+      {
+        retainOnDelete: true,
+        ...opts,
+      },
+    );
   }
 }
 

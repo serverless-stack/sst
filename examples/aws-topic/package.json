@@ -13,7 +13,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "sst": "3.0.1-7"
+    "sst": "latest"
   },
   "dependencies": {
     "@aws-sdk/client-sns": "^3.515.0"

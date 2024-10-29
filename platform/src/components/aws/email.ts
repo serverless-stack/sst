@@ -489,6 +489,7 @@ export class Email extends Component implements Link.Linkable {
    *
    * @param name The name of the component.
    * @param sender The email address or domain name of the existing SES identity.
+   * @param opts? Resource options.
    *
    * @example
    * Imagine you create an Email component in the `dev` stage. And in your personal stage `frank`,
@@ -502,11 +503,22 @@ export class Email extends Component implements Link.Linkable {
    *     });
    * ```
    */
-  public static get(name: string, sender: Input<string>) {
-    const identity = sesv2.EmailIdentity.get(`${name}Identity`, sender);
+  public static get(
+    name: string,
+    sender: Input<string>,
+    opts?: ComponentResourceOptions,
+  ) {
+    const identity = sesv2.EmailIdentity.get(
+      `${name}Identity`,
+      sender,
+      undefined,
+      opts,
+    );
     const configSet = sesv2.ConfigurationSet.get(
       `${name}Config`,
       identity.configurationSetName.apply((v) => v!),
+      undefined,
+      opts,
     );
 
     return new Email(name, {

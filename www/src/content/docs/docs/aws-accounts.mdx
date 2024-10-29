@@ -261,6 +261,12 @@ export default $config({
 
 This will use the `acme-production` profile just for production and use `acme-dev` for everything else.
 
+:::note
+The `AWS_PROFILE` environment variable will override the profile set in your `sst.config.ts`.
+:::
+
+If you've configured AWS credentials previously through the `AWS_PROFILE` environment variable or through a `.env` file, it will override the profile set in your `sst.config.ts`. So make sure to remove any references to `AWS_PROFILE`.
+
 Now to deploy to your production account you just pass in the stage.
 
 ```bash

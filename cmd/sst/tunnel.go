@@ -5,16 +5,15 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"os/user"
 	"strings"
 
 	"github.com/sst/ion/cmd/sst/cli"
 	"github.com/sst/ion/cmd/sst/mosaic/ui"
 	"github.com/sst/ion/internal/util"
+	"github.com/sst/ion/pkg/process"
 	"github.com/sst/ion/pkg/project"
 	"github.com/sst/ion/pkg/tunnel"
-	"golang.org/x/sync/errgroup"
 )
 
 var CmdTunnel = &cli.Command{
@@ -79,7 +78,7 @@ var CmdTunnel = &cli.Command{
 		}
 		subnets := strings.Join(tun.Subnets, ",")
 		// run as root
-		tunnelCmd := exec.CommandContext(
+		tunnelCmd := process.CommandContext(
 			c.Context,
 			"sudo", "-n", "-E",
 			tunnel.BINARY_PATH, "tunnel", "start",
@@ -95,8 +94,6 @@ var CmdTunnel = &cli.Command{
 			"SSH_PRIVATE_KEY="+tun.PrivateKey,
 		)
 		tunnelCmd.Stdout = os.Stdout
-		util.SetProcessGroupID(tunnelCmd)
-		util.SetProcessCancel(tunnelCmd)
 		slog.Info("starting tunnel", "cmd", tunnelCmd.Args)
 		fmt.Println(ui.TEXT_HIGHLIGHT_BOLD.Render("Tunnel"))
 		fmt.Println()
@@ -206,24 +203,18 @@ var CmdTunnel = &cli.Command{
 					port = "22"
 				}
 				slog.Info("starting tunnel", "subnet", subnets, "host", host, "port", port)
-				var wg errgroup.Group
-				wg.Go(func() error {
-					defer c.Cancel()
-					return tunnel.StartProxy(
-						c.Context,
-						user,
-						host+":"+port,
-						[]byte(os.Getenv("SSH_PRIVATE_KEY")),
-					)
-				})
 				err := tunnel.Start(subnets...)
 				if err != nil {
 					return err
 				}
+				defer tunnel.Stop()
 				slog.Info("tunnel started")
-				<-c.Context.Done()
-				tunnel.Stop()
-				err = wg.Wait()
+				err = tunnel.StartProxy(
+					c.Context,
+					user,
+					host+":"+port,
+					[]byte(os.Getenv("SSH_PRIVATE_KEY")),
+				)
 				if err != nil {
 					slog.Error("failed to start tunnel", "error", err)
 				}

@@ -2,14 +2,14 @@ package project
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/sst/ion/pkg/global"
+	"github.com/sst/ion/pkg/process"
 )
 
 func (p *Project) Add(pkg string, version string) error {
-	cmd := exec.Command(global.BunPath(), filepath.Join(p.PathPlatformDir(), "src/ast/add.ts"),
+	cmd := process.Command(global.BunPath(), filepath.Join(p.PathPlatformDir(), "src/ast/add.ts"),
 		p.PathConfig(),
 		pkg,
 		version,

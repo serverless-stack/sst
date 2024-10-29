@@ -32,7 +32,8 @@ type Properties struct {
 }
 
 type unenv struct {
-	Alias map[string]string `json:"alias"`
+	Alias    map[string]string `json:"alias"`
+	Polyfill []string          `json:"polyfill"`
 }
 
 //go:embed unenv.json
@@ -101,6 +102,7 @@ func (w *Runtime) Build(ctx context.Context, input *runtime.BuildInput) (*runtim
 			filepath.Join(path.ResolvePlatformDir(input.CfgPath), "node_modules"),
 		},
 		Alias:             w.unenv.Alias,
+		Inject:            w.unenv.Polyfill,
 		External:          []string{"node:*", "cloudflare:workers"},
 		Conditions:        []string{"workerd", "worker", "browser"},
 		Sourcemap:         esbuild.SourceMapNone,

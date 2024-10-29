@@ -156,7 +156,7 @@ func (s *Multiplexer) sort() {
 	}
 }
 
-func (s *Multiplexer) selectedProcess() *process {
+func (s *Multiplexer) selectedProcess() *pane {
 	if s.selected >= len(s.processes) {
 		return nil
 	}

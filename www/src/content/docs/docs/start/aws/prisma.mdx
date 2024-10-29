@@ -130,7 +130,7 @@ const cluster = new sst.aws.Cluster("MyCluster", { vpc });
 cluster.addService("MyService", {
   link: [rds],
   environment: { DATABASE_URL },
-  public: {
+  loadBalancer: {
     ports: [{ listen: "80/http" }],
   },
   dev: {

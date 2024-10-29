@@ -569,6 +569,7 @@ export class Bucket extends Component implements Link.Linkable {
    *
    * @param name The name of the component.
    * @param bucketName The name of the existing S3 Bucket.
+   * @param opts? Resource options.
    *
    * @example
    * Imagine you create a bucket in the `dev` stage. And in your personal stage `frank`,
@@ -589,10 +590,14 @@ export class Bucket extends Component implements Link.Linkable {
    * };
    * ```
    */
-  public static get(name: string, bucketName: string) {
+  public static get(
+    name: string,
+    bucketName: string,
+    opts?: ComponentResourceOptions,
+  ) {
     return new Bucket(name, {
       ref: true,
-      bucket: s3.BucketV2.get(`${name}Bucket`, bucketName),
+      bucket: s3.BucketV2.get(`${name}Bucket`, bucketName, undefined, opts),
     } as BucketArgs);
   }
 

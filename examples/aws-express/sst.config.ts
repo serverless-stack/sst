@@ -15,12 +15,12 @@ export default $config({
 
     cluster.addService("MyService", {
       link: [redis],
-      public: {
+      loadBalancer: {
         ports: [{ listen: "80/http" }],
       },
       dev: {
         command: "node --watch index.mjs",
       },
     });
-  }
+  },
 });

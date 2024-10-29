@@ -649,6 +649,7 @@ export class CognitoUserPool extends Component implements Link.Linkable {
    *
    * @param name Name of the client.
    * @param args Configure the client.
+   * @param opts? Resource options.
    *
    * @example
    *
@@ -777,8 +778,17 @@ export class CognitoUserPool extends Component implements Link.Linkable {
    * };
    * ```
    */
-  public static get(name: string, userPoolID: Input<string>) {
-    const userPool = cognito.UserPool.get(`${name}UserPool`, userPoolID);
+  public static get(
+    name: string,
+    userPoolID: Input<string>,
+    opts?: ComponentResourceOptions,
+  ) {
+    const userPool = cognito.UserPool.get(
+      `${name}UserPool`,
+      userPoolID,
+      undefined,
+      opts,
+    );
     return new CognitoUserPool(name, {
       ref: true,
       userPool,

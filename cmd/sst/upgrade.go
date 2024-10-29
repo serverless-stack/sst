@@ -10,6 +10,7 @@ import (
 	"github.com/sst/ion/cmd/sst/cli"
 	"github.com/sst/ion/cmd/sst/mosaic/ui"
 	"github.com/sst/ion/pkg/global"
+	"github.com/sst/ion/pkg/process"
 )
 
 func CmdUpgrade(c *cli.Cli) error {
@@ -33,16 +34,16 @@ func CmdUpgrade(c *cli.Cli) error {
 		if hasAny {
 			var cmd *exec.Cmd
 			if _, err := os.Stat("package-lock.json"); err == nil {
-				cmd = exec.Command("npm", "install")
+				cmd = process.Command("npm", "install")
 			}
 			if _, err := os.Stat("yarn.lock"); err == nil {
-				cmd = exec.Command("yarn", "install")
+				cmd = process.Command("yarn", "install")
 			}
 			if _, err := os.Stat("pnpm-lock.yaml"); err == nil {
-				cmd = exec.Command("pnpm", "install")
+				cmd = process.Command("pnpm", "install")
 			}
 			if _, err := os.Stat("bun.lockb"); err == nil {
-				cmd = exec.Command("bun", "install")
+				cmd = process.Command("bun", "install")
 			}
 			if cmd != nil {
 				fmt.Println()

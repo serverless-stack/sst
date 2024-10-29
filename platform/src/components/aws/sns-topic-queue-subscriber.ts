@@ -6,8 +6,8 @@ import {
 } from "@pulumi/pulumi";
 import { Component, transform } from "../component";
 import { SnsTopicSubscriberArgs } from "./sns-topic";
-import { parseQueueArn } from "./helpers/arn";
-import { iam, sns, sqs } from "@pulumi/aws";
+import { sns, sqs } from "@pulumi/aws";
+import { Queue } from "./queue";
 
 export interface Args extends SnsTopicSubscriberArgs {
   /**
@@ -51,30 +51,7 @@ export class SnsTopicQueueSubscriber extends Component {
     this.subscription = subscription;
 
     function createPolicy() {
-      return new sqs.QueuePolicy(`${name}Policy`, {
-        queueUrl: queueArn.apply((arn) => parseQueueArn(arn).queueUrl),
-        policy: iam.getPolicyDocumentOutput({
-          statements: [
-            {
-              actions: ["sqs:SendMessage"],
-              resources: [queueArn],
-              principals: [
-                {
-                  type: "Service",
-                  identifiers: ["sns.amazonaws.com"],
-                },
-              ],
-              conditions: [
-                {
-                  test: "ArnEquals",
-                  variable: "aws:SourceArn",
-                  values: [topic.arn],
-                },
-              ],
-            },
-          ],
-        }).json,
-      });
+      return Queue.createPolicy(`${name}Policy`, queueArn);
     }
 
     function createSubscription() {

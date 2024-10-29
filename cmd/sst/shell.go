@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/sst/ion/cmd/sst/cli"
 	"github.com/sst/ion/internal/util"
+	"github.com/sst/ion/pkg/process"
 	"github.com/sst/ion/pkg/project/provider"
 )
 
@@ -38,7 +38,7 @@ func CmdShell(c *cli.Cli) error {
 	if len(args) == 0 {
 		args = append(args, "sh")
 	}
-	cmd := exec.Command(
+	cmd := process.Command(
 		args[0],
 		args[1:]...,
 	)

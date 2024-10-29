@@ -8,6 +8,8 @@ import { parseEventBusArn } from "./helpers/arn";
 import { BusLambdaSubscriber } from "./bus-lambda-subscriber";
 import { cloudwatch } from "@pulumi/aws";
 import { permission } from "./permission";
+import { Queue } from "./queue";
+import { BusQueueSubscriber } from "./bus-queue-subscriber";
 
 export interface BusArgs {
   /**
@@ -353,6 +355,112 @@ export class Bus extends Component implements Link.Linkable {
         },
         opts,
       );
+    });
+  }
+
+  /**
+   * Subscribe to this SNS Topic with an SQS Queue.
+   *
+   * @param queueArn The ARN of the queue that'll be notified.
+   * @param args Configure the subscription.
+   *
+   * @example
+   *
+   * For example, let's say you have a queue.
+   *
+   * ```js title="sst.config.ts"
+   * const queue = sst.aws.Queue("MyQueue");
+   * ```
+   *
+   * You can subscribe to this topic with it.
+   *
+   * ```js title="sst.config.ts"
+   * topic.subscribeQueue(queue.arn);
+   * ```
+   *
+   * Add a filter to the subscription.
+   *
+   * ```js title="sst.config.ts"
+   * topic.subscribeQueue(queue.arn, {
+   *   filter: {
+   *     price_usd: [{numeric: [">=", 100]}]
+   *   }
+   * });
+   * ```
+   */
+  public subscribeQueue(
+    name: string,
+    queue: Input<string | Queue>,
+    args: BusSubscriberArgs = {},
+  ) {
+    return Bus._subscribeQueue(
+      this.constructorName,
+      name,
+      this.nodes.bus.arn,
+      this.nodes.bus.name,
+      queue,
+      args,
+    );
+  }
+
+  /**
+   * Subscribe to an existing SNS Topic with a previously created SQS Queue.
+   *
+   * @param topicArn The ARN of the SNS Topic to subscribe to.
+   * @param queueArn The ARN of the queue that'll be notified.
+   * @param args Configure the subscription.
+   *
+   * @example
+   *
+   * For example, let's say you have an existing SNS Topic and SQS Queue with the following ARNs.
+   *
+   * ```js title="sst.config.ts"
+   * const topicArn = "arn:aws:sns:us-east-1:123456789012:MyTopic";
+   * const queueArn = "arn:aws:sqs:us-east-1:123456789012:MyQueue";
+   * ```
+   *
+   * You can subscribe to the topic with the queue.
+   *
+   * ```js title="sst.config.ts"
+   * sst.aws.SnsTopic.subscribeQueue(topicArn, queueArn);
+   * ```
+   *
+   * Add a filter to the subscription.
+   *
+   * ```js title="sst.config.ts"
+   * sst.aws.SnsTopic.subscribeQueue(topicArn, queueArn, {
+   *   filter: {
+   *     price_usd: [{numeric: [">=", 100]}]
+   *   }
+   * });
+   * ```
+   */
+  public static subscribeQueue(
+    name: string,
+    busArn: Input<string>,
+    queue: Input<string | Queue>,
+    args?: BusSubscriberArgs,
+  ) {
+    return output(busArn).apply((busArn) => {
+      const busName = parseEventBusArn(busArn).busName;
+      return this._subscribeQueue(busName, name, busArn, busName, queue, args);
+    });
+  }
+
+  private static _subscribeQueue(
+    name: string,
+    subscriberName: string,
+    busArn: Input<string>,
+    busName: Input<string>,
+    queue: Input<string | Queue>,
+    args: BusSubscriberArgs = {},
+  ) {
+    return output(args).apply((args) => {
+      return new BusQueueSubscriber(`${name}Subscriber${subscriberName}`, {
+        bus: { name: busName, arn: busArn },
+        queue,
+        ...args,
+      });
     });
   }
 

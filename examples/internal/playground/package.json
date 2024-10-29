@@ -10,8 +10,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-eventbridge": "^3.679.0",
     "@aws-sdk/client-sesv2": "^3.515.0",
+    "@aws-sdk/client-sns": "^3.679.0",
     "ioredis": "^5.4.1",
-    "sst": "0.0.0-1729216281"
+    "sst": "latest"
   }
 }

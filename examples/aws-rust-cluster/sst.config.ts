@@ -7,7 +7,7 @@ export default $config({
       removal: input?.stage === "production" ? "retain" : "remove",
       home: "aws",
       providers: {
-        aws: { region: "us-east-1" }
+        aws: { region: "us-east-1" },
       },
     };
   },
@@ -20,17 +20,17 @@ export default $config({
         context: "./",
         dockerfile: "Dockerfile",
       },
-      public: {
+      loadBalancer: {
         domain: "rust.dockerfile.dev.sst.dev",
         ports: [
           { listen: "80/http" },
-          { listen: "443/https", forward: "80/http" }
+          { listen: "443/https", forward: "80/http" },
         ],
       },
     });
 
     return {
-      url: service.url
-    }
-  }
+      url: service.url,
+    };
+  },
 });

@@ -1001,7 +1001,7 @@ In your function you'd access this using.
   });
 
   cluster.addService("MyService", {
-    public: {
+    loadBalancer: {
       domain: "my-app.com",
       ports: [
         { listen: "80/http" }

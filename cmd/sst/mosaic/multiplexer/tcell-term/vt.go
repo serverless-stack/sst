@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"log/slog"
 	"os"
 	"os/exec"
 	"runtime/debug"
@@ -16,6 +15,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-runewidth"
+	"github.com/sst/ion/pkg/process"
 )
 
 type (
@@ -458,13 +458,11 @@ func (vt *VT) scrollDown(n int) {
 }
 
 func (vt *VT) Close() {
+	if vt.cmd != nil && vt.cmd.Process != nil {
+		process.Kill(vt.cmd.Process)
+	}
 	vt.mu.Lock()
 	defer vt.mu.Unlock()
-	if vt.cmd != nil && vt.cmd.Process != nil {
-		slog.Info("killing process", "pid", vt.cmd.Process.Pid)
-		vt.cmd.Process.Signal(syscall.SIGTERM)
-		slog.Info("process killed")
-	}
 	vt.pty.Close()
 }
 

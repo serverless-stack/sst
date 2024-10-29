@@ -15,8 +15,7 @@ dependencies = [
 requires-python = ">=3.11,<3.12"
 
 [tool.uv.sources]
-# TODO: Before merging this PR, replace with SST's own source
-sst = { git = "https://github.com/walln/ion.git", subdirectory = "sdk/python", branch = "walln/python-fixes" }
+sst = { git = "https://github.com/sst/sst.git", subdirectory = "sdk/python", branch = "dev" }
 
 [tool.setuptools]
 py-modules = []

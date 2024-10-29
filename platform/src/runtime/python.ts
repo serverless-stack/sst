@@ -51,8 +51,8 @@ export async function buildPythonContainer(
 		await limiter.acquire(name);
 
 		// Find the closest pyproject.toml
-		const pyProjectFile = await findAbove(parsed.dir, "pyproject.toml");
-		if (!pyProjectFile) {
+		const absolutePyProjectDir = await findAbove(parsed.dir, "pyproject.toml");
+		if (!absolutePyProjectDir) {
 			return {
 				type: "error",
 				errors: [
@@ -61,20 +61,24 @@ export async function buildPythonContainer(
 			};
 		}
 
-		// Copy pyproject.toml to the output directory
-		await fs.copyFile(
-			path.join(pyProjectFile, "pyproject.toml"),
-			path.join(out, path.join(pyProjectFile, "pyproject.toml")),
+		const targetPyProjectDir = path.join(
+			out,
+			path.relative($cli.paths.root, absolutePyProjectDir)
 		);
 
-		// Check for uv.lock and copy it if it exists
-		const uvLockFile = path.join(pyProjectFile, "uv.lock");
+		await fs.copyFile(
+			path.join(absolutePyProjectDir, "pyproject.toml"),
+			path.join(targetPyProjectDir, "pyproject.toml")
+		);
+
+		// If uv.lock exists, copy it to the output directory
+		const uvLockFile = path.join(absolutePyProjectDir, "uv.lock");
 		if (fsSync.existsSync(uvLockFile)) {
-			await fs.copyFile(uvLockFile, path.join(out, uvLockFile));
+			await fs.copyFile(uvLockFile, path.join(targetPyProjectDir, "uv.lock"));
 		}
 
-		// At the level of the pyproject.toml file write a resources.json file
-		const resourcesFile = path.join(out, pyProjectFile, "resources.json");
+		// At the same level as the pyproject.toml create resources.json
+		const resourcesFile = path.join(targetPyProjectDir, "resources.json");
 		await writeResourcesFile(resourcesFile, input.links || []);
 
 		// Copy all Python files to the target directory, preserving structure
@@ -87,7 +91,7 @@ export async function buildPythonContainer(
 		);
 
 		// Check for dockerfile and copy it if it exists
-		const dockerFile = path.join(pyProjectFile, "Dockerfile");
+		const dockerFile = path.join(absolutePyProjectDir, "Dockerfile");
 		if (fsSync.existsSync(dockerFile)) {
 			await fs.copyFile(dockerFile, path.join(out, "Dockerfile"));
 		} else {
@@ -98,7 +102,7 @@ export async function buildPythonContainer(
 					"docker",
 					"python.Dockerfile",
 				),
-				path.join(out, "Dockerfile"),
+				path.join(targetPyProjectDir, "Dockerfile"),
 			);
 		}
 
@@ -160,30 +164,34 @@ export async function buildPython(
 		await limiter.acquire(name);
 
 		// Find the closest pyproject.toml
-		const pyProjectFile = await findAbove(parsed.dir, "pyproject.toml");
-		if (!pyProjectFile) {
+		const absolutePyProjectDir = await findAbove(parsed.dir, "pyproject.toml");
+		if (!absolutePyProjectDir) {
 			return {
 				type: "error",
 				errors: [
-					`Could not find pyproject.toml or requirements.txt for handler "${input.handler}"`,
+					`Could not find pyproject.toml for handler "${input.handler}"`,
 				],
 			};
 		}
 
-		// Copy pyproject.toml to the output directory
+		const targetPyProjectDir = path.join(
+			out,
+			path.relative($cli.paths.root, absolutePyProjectDir)
+		);
+
 		await fs.copyFile(
-			path.join(pyProjectFile, "pyproject.toml"),
-			path.join(out, path.join(pyProjectFile, "pyproject.toml")),
+			path.join(absolutePyProjectDir, "pyproject.toml"),
+			path.join(targetPyProjectDir, "pyproject.toml")
 		);
 
 		// If uv.lock exists, copy it to the output directory
-		const uvLockFile = path.join(pyProjectFile, "uv.lock");
+		const uvLockFile = path.join(absolutePyProjectDir, "uv.lock");
 		if (fsSync.existsSync(uvLockFile)) {
-			await fs.copyFile(uvLockFile, path.join(out, uvLockFile));
+			await fs.copyFile(uvLockFile, path.join(targetPyProjectDir, "uv.lock"));
 		}
 
 		// At the same level as the pyproject.toml create resources.json
-		const resourcesFile = path.join(out, pyProjectFile, "resources.json");
+		const resourcesFile = path.join(targetPyProjectDir, "resources.json");
 		await writeResourcesFile(resourcesFile, input.links || []);
 
 		// Copy all Python files to the target directory, preserving structure
@@ -199,12 +207,11 @@ export async function buildPython(
 		// in the output directory we run uv sync to create a virtual environment
 		// first make the output directory the working directory
 		// also need to use sst uv path because it is not guaranteed to be in the path
-		const installCmd = `cd ${path.join(out, pyProjectFile)} && uv sync`;
+		const installCmd = `cd ${targetPyProjectDir} && uv sync`;
 
 		// Once the packages are synced, we need to convert the virtual environment to site-packages so that lambda can find the packages
 		const sitePackagesCmd = `cp -r ${path.join(
-			out,
-			pyProjectFile,
+			targetPyProjectDir,
 			".venv",
 			"lib",
 			"python3.*",
@@ -214,8 +221,7 @@ export async function buildPython(
 
 		// Now remove the virtual environment because it does not need to be included in the zip
 		const removeVirtualEnvCmd = `rm -rf ${path.join(
-			out,
-			pyProjectFile,
+			targetPyProjectDir,
 			".venv",
 		)}`;
 

@@ -6,8 +6,8 @@ import {
 } from "@pulumi/pulumi";
 import { Component, transform } from "../component";
 import { BucketSubscriberArgs } from "./bucket";
-import { parseQueueArn } from "./helpers/arn";
-import { iam, s3, sqs } from "@pulumi/aws";
+import { s3, sqs } from "@pulumi/aws";
+import { Queue } from "./queue";
 
 export interface Args extends BucketSubscriberArgs {
   /**
@@ -74,30 +74,7 @@ export class BucketQueueSubscriber extends Component {
     this.notification = notification;
 
     function createPolicy() {
-      return new sqs.QueuePolicy(`${name}Policy`, {
-        queueUrl: queueArn.apply((arn) => parseQueueArn(arn).queueUrl),
-        policy: iam.getPolicyDocumentOutput({
-          statements: [
-            {
-              actions: ["sqs:SendMessage"],
-              resources: [queueArn],
-              principals: [
-                {
-                  type: "Service",
-                  identifiers: ["s3.amazonaws.com"],
-                },
-              ],
-              conditions: [
-                {
-                  test: "ArnEquals",
-                  variable: "aws:SourceArn",
-                  values: [bucket.arn],
-                },
-              ],
-            },
-          ],
-        }).json,
-      });
+      return Queue.createPolicy(`${name}Policy`, queueArn);
     }
 
     function createNotification() {

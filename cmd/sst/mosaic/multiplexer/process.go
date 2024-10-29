@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	tcellterm "github.com/sst/ion/cmd/sst/mosaic/multiplexer/tcell-term"
+	"github.com/sst/ion/pkg/process"
 )
 
 type vterm struct {
@@ -12,7 +13,7 @@ type vterm struct {
 	Start  func(cmd *exec.Cmd) error
 }
 
-type process struct {
+type pane struct {
 	icon     string
 	key      string
 	args     []string
@@ -50,8 +51,8 @@ func (s *Multiplexer) AddProcess(key string, args []string, icon string, title s
 	})
 }
 
-func (p *process) start() error {
-	p.cmd = exec.Command(p.args[0], p.args[1:]...)
+func (p *pane) start() error {
+	p.cmd = process.Command(p.args[0], p.args[1:]...)
 	p.cmd.Env = p.env
 	if p.dir != "" {
 		p.cmd.Dir = p.dir
@@ -65,26 +66,26 @@ func (p *process) start() error {
 	return nil
 }
 
-func (p *process) Kill() {
+func (p *pane) Kill() {
 	p.vt.Close()
 }
 
-func (s *process) scrollUp(offset int) {
+func (s *pane) scrollUp(offset int) {
 	s.vt.ScrollUp(offset)
 }
 
-func (s *process) scrollDown(offset int) {
+func (s *pane) scrollDown(offset int) {
 	s.vt.ScrollDown(offset)
 }
 
-func (s *process) scrollReset() {
+func (s *pane) scrollReset() {
 	s.vt.ScrollReset()
 }
 
-func (s *process) isScrolling() bool {
+func (s *pane) isScrolling() bool {
 	return s.vt.IsScrolling()
 }
 
-func (s *process) scrollable() bool {
+func (s *pane) scrollable() bool {
 	return s.vt.Scrollable()
 }

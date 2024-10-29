@@ -2,12 +2,12 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/sst/ion/cmd/sst/cli"
 	"github.com/sst/ion/pkg/global"
+	"github.com/sst/ion/pkg/process"
 )
 
 var CmdCert = &cli.Command{
@@ -31,7 +31,7 @@ var CmdCert = &cli.Command{
 		}
 		env := os.Environ()
 		env = append(env, "CAROOT="+global.CertPath())
-		cmd := exec.Command("mkcert", "-install")
+		cmd := process.Command("mkcert", "-install")
 		cmd.Env = env
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -40,7 +40,7 @@ var CmdCert = &cli.Command{
 		if err != nil {
 			return err
 		}
-		cmd = exec.Command(
+		cmd = process.Command(
 			"mkcert",
 			"-key-file", filepath.Join(global.CertPath(), "key.pem"),
 			"-cert-file", filepath.Join(global.CertPath(), "cert.pem"),

@@ -172,14 +172,9 @@
   },
   "inject": {
     "process": "unenv/runtime/polyfill/process",
-    "Buffer": [
-      "buffer",
-      "Buffer"
-    ]
+    "Buffer": ["buffer", "Buffer"]
   },
-  "polyfill": [
-    "unenv/runtime/polyfill/process"
-  ],
+  "polyfill": ["unenv/runtime/polyfill/process"],
   "external": [
     "node:assert",
     "node:async_hooks",

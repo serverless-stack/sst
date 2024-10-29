@@ -6,11 +6,10 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/evanw/esbuild/pkg/api"
-	"github.com/sst/ion/internal/util"
+	"github.com/sst/ion/pkg/process"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -33,8 +32,7 @@ func plugin(path string) api.Plugin {
 		Name: "nodejs-plugin",
 		Setup: func(build api.PluginBuild) {
 			slog.Info("nodejs plugin", "path", path)
-			cmd := exec.Command("node", ".sst/platform/functions/nodejs-runtime/plugin.mjs", path)
-			util.SetProcessGroupID(cmd)
+			cmd := process.Command("node", ".sst/platform/functions/nodejs-runtime/plugin.mjs", path)
 			var wg errgroup.Group
 			// cmd.Stderr = os.Stderr
 			stdin, err := cmd.StdinPipe()
@@ -223,7 +221,7 @@ func plugin(path string) api.Plugin {
 				stdout.Close()
 				close(requests)
 				close(responses)
-				util.TerminateProcess(cmd.Process.Pid)
+				process.Kill(cmd.Process)
 				wg.Wait()
 			})
 		},

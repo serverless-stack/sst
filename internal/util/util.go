@@ -20,10 +20,15 @@ func RandomString(length int) string {
 type ReadableError struct {
 	message string
 	error   error
+	hinted  bool
 }
 
 func NewReadableError(err error, message string) *ReadableError {
 	return &ReadableError{message: message, error: err}
+}
+
+func NewHintedError(err error, message string) *ReadableError {
+	return &ReadableError{message: message, error: err, hinted: true}
 }
 
 func (e *ReadableError) Error() string {
@@ -32,6 +37,10 @@ func (e *ReadableError) Error() string {
 
 func (e *ReadableError) Unwrap() error {
 	return e.error
+}
+
+func (e *ReadableError) IsHinted() bool {
+	return e.hinted
 }
 
 type CleanupFunc func() error

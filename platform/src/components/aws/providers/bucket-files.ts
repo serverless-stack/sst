@@ -13,6 +13,7 @@ export interface BucketFilesInputs {
   bucketName: Input<string>;
   files: Input<BucketFile[]>;
   purge: Input<boolean>;
+  region: Input<string>;
 }
 
 export class BucketFiles extends dynamic.Resource {

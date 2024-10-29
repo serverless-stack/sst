@@ -368,6 +368,7 @@ export class CognitoIdentityPool extends Component implements Link.Linkable {
    *
    * @param name The name of the component.
    * @param identityPoolID The ID of the existing Identity Pool.
+   * @param opts? Resource options.
    *
    * @example
    * Imagine you create a Identity Pool in the `dev` stage. And in your personal stage `frank`,
@@ -388,24 +389,36 @@ export class CognitoIdentityPool extends Component implements Link.Linkable {
    * };
    * ```
    */
-  public static get(name: string, identityPoolID: Input<string>) {
+  public static get(
+    name: string,
+    identityPoolID: Input<string>,
+    opts?: ComponentResourceOptions,
+  ) {
     const identityPool = cognito.IdentityPool.get(
       `${name}IdentityPool`,
       identityPoolID,
+      undefined,
+      opts,
     );
     const attachment = cognito.IdentityPoolRoleAttachment.get(
       `${name}RoleAttachment`,
       identityPoolID,
+      undefined,
+      opts,
     );
     const authRole = iam.Role.get(
       `${name}AuthRole`,
       attachment.roles.authenticated.apply((arn) => parseRoleArn(arn).roleName),
+      undefined,
+      opts,
     );
     const unauthRole = iam.Role.get(
       `${name}UnauthRole`,
       attachment.roles.unauthenticated.apply(
         (arn) => parseRoleArn(arn).roleName,
       ),
+      undefined,
+      opts,
     );
     return new CognitoIdentityPool(name, {
       ref: true,

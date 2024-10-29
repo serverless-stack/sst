@@ -3,7 +3,6 @@ package telemetry
 import (
 	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/sst/ion/internal/util"
 	"github.com/sst/ion/pkg/flag"
 	"github.com/sst/ion/pkg/global"
+	"github.com/sst/ion/pkg/process"
 )
 
 const (
@@ -63,7 +63,7 @@ var telemetryEnvironment = sync.OnceValue((func() map[string]interface{} {
 	cwd, _ := os.Getwd()
 	fs.FindUp(cwd, ".git")
 
-	cmd := exec.Command("git", "rev-list", "--max-parents=0", "HEAD")
+	cmd := process.Command("git", "rev-list", "--max-parents=0", "HEAD")
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Run()

@@ -37,6 +37,7 @@ export class Auth extends Component implements Link.Linkable {
           AUTH_PRIVATE_KEY: secret(this.key.privateKeyPemPkcs8),
           AUTH_PUBLIC_KEY: secret(this.key.publicKeyPem),
         },
+        _skipHint: true,
       });
     });
   }

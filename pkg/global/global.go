@@ -9,13 +9,13 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/pulumi/pulumi/sdk/v3"
 	"github.com/sst/ion/pkg/flag"
+	"github.com/sst/ion/pkg/process"
 )
 
 var PULUMI_VERSION = "v" + sdk.Version.String()
@@ -50,7 +50,7 @@ func NeedsPulumi() bool {
 	if _, err := os.Stat(path); err != nil {
 		return true
 	}
-	cmd := exec.Command(path, "version")
+	cmd := process.Command(path, "version")
 	output, err := cmd.Output()
 	if err != nil {
 		return true
@@ -163,7 +163,7 @@ func NeedsBun() bool {
 	if _, err := os.Stat(path); err != nil {
 		return true
 	}
-	cmd := exec.Command(path, "--version")
+	cmd := process.Command(path, "--version")
 	output, err := cmd.Output()
 	if err != nil {
 		return true

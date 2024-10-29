@@ -145,13 +145,13 @@ export interface PostgresArgs {
    * ```
    */
   vpc:
-  | Vpc
-  | Input<{
-    /**
-     * A list of subnet IDs in the VPC.
-     */
-    subnets: Input<Input<string>[]>;
-  }>;
+    | Vpc
+    | Input<{
+        /**
+         * A list of subnet IDs in the VPC.
+         */
+        subnets: Input<Input<string>[]>;
+      }>;
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.
@@ -382,13 +382,13 @@ export class Postgres extends Component implements Link.Linkable {
       const password = args.password
         ? output(args.password)
         : new RandomPassword(
-          `${name}Password`,
-          {
-            length: 32,
-            special: false,
-          },
-          { parent },
-        ).result;
+            `${name}Password`,
+            {
+              length: 32,
+              special: false,
+            },
+            { parent },
+          ).result;
 
       const secret = new secretsmanager.Secret(
         `${name}ProxySecret`,
@@ -470,7 +470,7 @@ export class Postgres extends Component implements Link.Linkable {
               },
               { parent },
             ),
-        )
+        ),
       );
     }
 
@@ -625,6 +625,7 @@ export class Postgres extends Component implements Link.Linkable {
    *
    * @param name The name of the component.
    * @param args The arguments to get the Postgres database.
+   * @param opts? Resource options.
    *
    * @example
    * Imagine you create a database in the `dev` stage. And in your personal stage `frank`,
@@ -652,19 +653,31 @@ export class Postgres extends Component implements Link.Linkable {
    * };
    * ```
    */
-  public static get(name: string, args: PostgresGetArgs) {
-    const instance = rds.Instance.get(`${name}Instance`, args.id);
+  public static get(
+    name: string,
+    args: PostgresGetArgs,
+    opts?: ComponentResourceOptions,
+  ) {
+    const instance = rds.Instance.get(
+      `${name}Instance`,
+      args.id,
+      undefined,
+      opts,
+    );
     const proxy = args.proxyId
-      ? rds.Proxy.get(`${name}Proxy`, args.proxyId)
+      ? rds.Proxy.get(`${name}Proxy`, args.proxyId, undefined, opts)
       : undefined;
 
     // get secret
     const secret = instance.tags.apply((tags) =>
       tags?.["sst:lookup:password"]
-        ? secretsmanager.getSecretVersionOutput({
-          secretId: tags["sst:lookup:password"],
-        })
-        : output(undefined)
+        ? secretsmanager.getSecretVersionOutput(
+            {
+              secretId: tags["sst:lookup:password"],
+            },
+            opts,
+          )
+        : output(undefined),
     );
     const password = secret.apply((v) => {
       if (!v) {
