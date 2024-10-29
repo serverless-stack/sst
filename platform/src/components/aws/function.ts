@@ -975,7 +975,7 @@ export interface FunctionArgs {
    * }
    * ```
    */
-  versioning?: Input<true>;
+  versioning?: Input<boolean>;
   /**
    * A list of Lambda layer ARNs to add to the function.
    *

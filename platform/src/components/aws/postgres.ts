@@ -113,7 +113,7 @@ export interface PostgresArgs {
    * }
    * ```
    */
-  proxy?: Input<true>;
+  proxy?: Input<boolean>;
   /**
    * @internal
    */

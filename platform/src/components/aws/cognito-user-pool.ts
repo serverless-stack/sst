@@ -244,7 +244,7 @@ export interface CognitoUserPoolArgs {
    * }
    * ```
    */
-  softwareToken?: Input<true>;
+  softwareToken?: Input<boolean>;
   /**
    * Configure triggers for this User Pool
    * @default No triggers

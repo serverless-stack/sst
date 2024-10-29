@@ -173,7 +173,7 @@ export interface BucketArgs {
    * }
    * ```
    */
-  versioning?: Input<true>;
+  versioning?: Input<boolean>;
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.

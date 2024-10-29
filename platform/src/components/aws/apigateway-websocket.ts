@@ -155,7 +155,7 @@ export interface ApiGatewayWebSocketRouteArgs {
     /**
      * Enable IAM authorization for a given API route. When IAM auth is enabled, clients need to use Signature Version 4 to sign their requests with their AWS credentials.
      */
-    iam?: Input<true>;
+    iam?: Input<boolean>;
   }>;
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
