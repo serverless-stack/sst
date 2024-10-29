@@ -680,19 +680,6 @@ export class Service extends Component implements Link.Linkable {
                       sourceVolume: volume.efs.accessPoint,
                       containerPath: volume.path,
                     })),
-                    healthCheck: args.healthCheck
-                      ? {
-                          command: args.healthCheck.command,
-                          interval: args.healthCheck.interval ?? 30,
-                          timeout: args.healthCheck.timeout ?? 5,
-                          healthyThreshold:
-                            args.healthCheck.healthyThreshold ?? 2,
-                          unhealthyThreshold:
-                            args.healthCheck.unhealthyThreshold ?? 2,
-                          path: args.healthCheck.path ?? "/",
-                          enabled: args.healthCheck.enabled ?? true,
-                        }
-                      : undefined,
                   };
 
                   function createImage() {
