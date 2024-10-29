@@ -43,6 +43,7 @@ import { Vpc } from "./vpc.js";
 import { Vpc as VpcV1 } from "./vpc-v1";
 import { DevCommand } from "../experimental/dev-command.js";
 import { Efs } from "./efs.js";
+import { toSeconds } from "../duration.js";
 
 export interface ServiceArgs extends ClusterServiceArgs {
   /**
@@ -400,7 +401,20 @@ export class Service extends Component implements Link.Linkable {
       // normalize public/private
       const pub = output(args.loadBalancer).apply((lb) => lb?.public ?? true);
 
-      return { ports, domain, pub };
+      // normalize health check
+      const healthCheck = output(args.loadBalancer).apply((lb) => ({
+        path: lb?.healthCheck?.path ?? "/",
+        interval: lb?.healthCheck?.interval
+          ? toSeconds(lb.healthCheck.interval)
+          : 30,
+        timeout: lb?.healthCheck?.timeout
+          ? toSeconds(lb.healthCheck.timeout)
+          : 10,
+        healthyThreshold: lb?.healthCheck?.healthyThreshold ?? 5,
+        unhealthyThreshold: lb?.healthCheck?.unhealthyThreshold ?? 2,
+      }));
+
+      return { ports, domain, pub, healthCheck };
     }
 
     function createLoadBalancer() {
@@ -480,7 +494,7 @@ export class Service extends Component implements Link.Linkable {
                   protocol: forwardProtocol,
                   targetType: "ip",
                   vpcId: vpc.id,
-                  healthCheck: args.healthCheck,
+                  healthCheck: lbArgs.healthCheck,
                 },
                 { parent: self },
               ),

@@ -10,6 +10,7 @@ import { ImageArgs } from "@pulumi/docker-build";
 import { Cluster as ClusterV1 } from "./cluster-v1";
 import { Vpc } from "./vpc";
 import { Efs } from "./efs";
+import { DurationMinutes } from "../duration";
 export type { ClusterArgs as ClusterV1Args } from "./cluster-v1";
 
 export const supportedCpus = {
@@ -599,105 +600,105 @@ export interface ClusterServiceArgs {
     domain?: Input<
       | string
       | {
-        /**
-         * The custom domain you want to use.
-         *
-         * @example
-         * ```js
-         * {
-         *   domain: {
-         *     name: "example.com"
-         *   }
-         * }
-         * ```
-         *
-         * Can also include subdomains based on the current stage.
-         *
-         * ```js
-         * {
-         *   domain: {
-         *     name: `${$app.stage}.example.com`
-         *   }
-         * }
-         * ```
-         */
-        name: Input<string>;
-        /**
-         * The ARN of an ACM (AWS Certificate Manager) certificate that proves ownership of the
-         * domain. By default, a certificate is created and validated automatically.
-         *
-         * :::tip
-         * You need to pass in a `cert` for domains that are not hosted on supported `dns` providers.
-         * :::
-         *
-         * To manually set up a domain on an unsupported provider, you'll need to:
-         *
-         * 1. [Validate that you own the domain](https://docs.aws.amazon.com/acm/latest/userguide/domain-ownership-validation.html) by creating an ACM certificate. You can either validate it by setting a DNS record or by verifying an email sent to the domain owner.
-         * 2. Once validated, set the certificate ARN as the `cert` and set `dns` to `false`.
-         * 3. Add the DNS records in your provider to point to the load balancer endpoint.
-         *
-         * @example
-         * ```js
-         * {
-         *   domain: {
-         *     name: "example.com",
-         *     dns: false,
-         *     cert: "arn:aws:acm:us-east-1:112233445566:certificate/3a958790-8878-4cdc-a396-06d95064cf63"
-         *   }
-         * }
-         * ```
-         */
-        cert?: Input<string>;
-        /**
-         * The DNS provider to use for the domain. Defaults to the AWS.
-         *
-         * Takes an adapter that can create the DNS records on the provider. This can automate
-         * validating the domain and setting up the DNS routing.
-         *
-         * Supports Route 53, Cloudflare, and Vercel adapters. For other providers, you'll need
-         * to set `dns` to `false` and pass in a certificate validating ownership via `cert`.
-         *
-         * @default `sst.aws.dns`
-         *
-         * @example
-         *
-         * Specify the hosted zone ID for the Route 53 domain.
-         *
-         * ```js
-         * {
-         *   domain: {
-         *     name: "example.com",
-         *     dns: sst.aws.dns({
-         *       zone: "Z2FDTNDATAQYW2"
-         *     })
-         *   }
-         * }
-         * ```
-         *
-         * Use a domain hosted on Cloudflare, needs the Cloudflare provider.
-         *
-         * ```js
-         * {
-         *   domain: {
-         *     name: "example.com",
-         *     dns: sst.cloudflare.dns()
-         *   }
-         * }
-         * ```
-         *
-         * Use a domain hosted on Vercel, needs the Vercel provider.
-         *
-         * ```js
-         * {
-         *   domain: {
-         *     name: "example.com",
-         *     dns: sst.vercel.dns()
-         *   }
-         * }
-         * ```
-         */
-        dns?: Input<false | (Dns & {})>;
-      }
+          /**
+           * The custom domain you want to use.
+           *
+           * @example
+           * ```js
+           * {
+           *   domain: {
+           *     name: "example.com"
+           *   }
+           * }
+           * ```
+           *
+           * Can also include subdomains based on the current stage.
+           *
+           * ```js
+           * {
+           *   domain: {
+           *     name: `${$app.stage}.example.com`
+           *   }
+           * }
+           * ```
+           */
+          name: Input<string>;
+          /**
+           * The ARN of an ACM (AWS Certificate Manager) certificate that proves ownership of the
+           * domain. By default, a certificate is created and validated automatically.
+           *
+           * :::tip
+           * You need to pass in a `cert` for domains that are not hosted on supported `dns` providers.
+           * :::
+           *
+           * To manually set up a domain on an unsupported provider, you'll need to:
+           *
+           * 1. [Validate that you own the domain](https://docs.aws.amazon.com/acm/latest/userguide/domain-ownership-validation.html) by creating an ACM certificate. You can either validate it by setting a DNS record or by verifying an email sent to the domain owner.
+           * 2. Once validated, set the certificate ARN as the `cert` and set `dns` to `false`.
+           * 3. Add the DNS records in your provider to point to the load balancer endpoint.
+           *
+           * @example
+           * ```js
+           * {
+           *   domain: {
+           *     name: "example.com",
+           *     dns: false,
+           *     cert: "arn:aws:acm:us-east-1:112233445566:certificate/3a958790-8878-4cdc-a396-06d95064cf63"
+           *   }
+           * }
+           * ```
+           */
+          cert?: Input<string>;
+          /**
+           * The DNS provider to use for the domain. Defaults to the AWS.
+           *
+           * Takes an adapter that can create the DNS records on the provider. This can automate
+           * validating the domain and setting up the DNS routing.
+           *
+           * Supports Route 53, Cloudflare, and Vercel adapters. For other providers, you'll need
+           * to set `dns` to `false` and pass in a certificate validating ownership via `cert`.
+           *
+           * @default `sst.aws.dns`
+           *
+           * @example
+           *
+           * Specify the hosted zone ID for the Route 53 domain.
+           *
+           * ```js
+           * {
+           *   domain: {
+           *     name: "example.com",
+           *     dns: sst.aws.dns({
+           *       zone: "Z2FDTNDATAQYW2"
+           *     })
+           *   }
+           * }
+           * ```
+           *
+           * Use a domain hosted on Cloudflare, needs the Cloudflare provider.
+           *
+           * ```js
+           * {
+           *   domain: {
+           *     name: "example.com",
+           *     dns: sst.cloudflare.dns()
+           *   }
+           * }
+           * ```
+           *
+           * Use a domain hosted on Vercel, needs the Vercel provider.
+           *
+           * ```js
+           * {
+           *   domain: {
+           *     name: "example.com",
+           *     dns: sst.vercel.dns()
+           *   }
+           * }
+           * ```
+           */
+          dns?: Input<false | (Dns & {})>;
+        }
     >;
     /**
      * Configure the mapping for the ports the load balancer listens to and forwards to
@@ -771,6 +772,85 @@ export interface ClusterServiceArgs {
         container?: Input<string>;
       }[]
     >;
+    /**
+     * Configure the health check for the service.
+     *
+     * Health checks are used to ensure that only healthy containers receive traffic.
+     * The load balancer checks each target container at the specified health check path
+     * and only routes traffic to containers that pass these checks.
+     *
+     * @default `{ path: "/", interval: "30 seconds", timeout: "5 seconds", healthyThreshold: 5, unhealthyThreshold: 2 }`
+     */
+    healthCheck?: Input<{
+      /**
+       * The URL path to ping on the service for health checks.
+       * @default `"/"`
+       * @example
+       * ```js
+       * {
+       *   healthCheck: {
+       *     path: "/health"
+       *   }
+       * }
+       * ```
+       */
+      path?: Input<string>;
+      /**
+       * The time period between each health check. Must be between 5 and 300 seconds.
+       * @default `"30 seconds"`
+       * @example
+       * ```js
+       * {
+       *   healthCheck: {
+       *     interval: "10 seconds"
+       *   }
+       * }
+       * ```
+       */
+      interval?: Input<DurationMinutes>;
+      /**
+       * The timeout for each health check. If no response is received within this time,
+       * the health check is considered failed. Must be between 2 and 120 seconds.
+       * @default `"5 seconds"`
+       * @example
+       * ```js
+       * {
+       *   healthCheck: {
+       *     timeout: "10 seconds"
+       *   }
+       * }
+       * ```
+       */
+      timeout?: Input<DurationMinutes>;
+      /**
+       * The number of consecutive successful health checks required to consider the
+       * target healthy. Must be between 2 and 10.
+       * @default `5`
+       * @example
+       * ```js
+       * {
+       *   healthCheck: {
+       *     healthyThreshold: 2
+       *   }
+       * }
+       * ```
+       */
+      healthyThreshold?: Input<number>;
+      /**
+       * The number of consecutive failed health checks required to consider the
+       * target unhealthy. Must be between 2 and 10.
+       * @default `2`
+       * @example
+       * ```js
+       * {
+       *   healthCheck: {
+       *     unhealthyThreshold: 5
+       *   }
+       * }
+       * ```
+       */
+      unhealthyThreshold?: Input<number>;
+    }>;
   }>;
   /**
    * Configure the CloudMap service registry for the service.
@@ -1318,41 +1398,6 @@ export interface ClusterServiceArgs {
       directory?: Input<string>;
     };
   }>[];
-  /**
-   * Configure the health check for the service.
-   */
-  healthCheck?: {
-    /**
-     * Whether the health check is enabled.
-     * @default `true`
-     */
-    enabled?: Input<boolean>;
-    /**
-     * The path to check for HTTP health checks.
-     * @default `"/"`
-     */
-    path?: Input<string>;
-    /**
-     * The interval (in seconds) between health checks.
-     * @default `30`
-     */
-    interval?: Input<number>;
-    /**
-     * The timeout (in seconds) for each health check.
-     * @default `5`
-     */
-    timeout?: Input<number>;
-    /**
-     * The number of consecutive successful health checks required to consider the container healthy.
-     * @default `2`
-     */
-    healthyThreshold?: Input<number>;
-    /**
-     * The number of consecutive failed health checks required to consider the container unhealthy.
-     * @default `2`
-     */
-    unhealthyThreshold?: Input<number>;
-  };
   /**
    * Assigns the given IAM role name to the containers running in the service. This allows you to pass in a previously created role.
    *
