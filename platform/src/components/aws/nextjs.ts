@@ -482,6 +482,9 @@ export interface NextjsArgs extends SsrSiteArgs {
 export class Nextjs extends Component implements Link.Linkable {
   private cdn?: Output<Cdn>;
   private assets?: Bucket;
+  private revalidationQueue?: Output<Queue>;
+  private revalidationTable?: Output<dynamodb.Table>;
+  private revalidationFunction?: Output<Function>;
   private server?: Output<Function>;
   private devUrl?: Output<string>;
 
@@ -542,8 +545,8 @@ export class Nextjs extends Component implements Link.Linkable {
       pagesManifest,
       prerenderManifest,
     } = loadBuildOutput();
-    const revalidationQueue = createRevalidationQueue();
-    const revalidationTable = createRevalidationTable();
+    const { revalidationQueue, revalidationFunction } = createRevalidationQueue();
+    const { revalidationTable } = createRevalidationTable();
     createRevalidationTableSeeder();
     const plan = buildPlan();
     removeSourcemaps();
@@ -562,6 +565,9 @@ export class Nextjs extends Component implements Link.Linkable {
 
     this.assets = bucket;
     this.cdn = distribution;
+    this.revalidationQueue = revalidationQueue;
+    this.revalidationTable = revalidationTable;
+    this.revalidationFunction = revalidationFunction;
     this.server = serverFunction;
     this.registerOutputs({
       _hint: all([this.cdn.domainUrl, this.cdn.url]).apply(
@@ -954,19 +960,19 @@ export class Nextjs extends Component implements Link.Linkable {
             openNextOutput.additionalProps?.revalidationFunction;
           if (!revalidationFunction) return;
 
-          const queue = new Queue(
+          const revalidationQueue = new Queue(
             `${name}RevalidationEvents`,
             {
               fifo: true,
               transform: {
-                queue: (args) => {
+                revalidationQueue: (args) => {
                   args.receiveWaitTimeSeconds = 20;
                 },
               },
             },
             { parent },
           );
-          queue.subscribe(
+          revalidationQueue.subscribe(
             {
               description: `${name} ISR revalidator`,
               handler: revalidationFunction.handler,
@@ -982,7 +988,7 @@ export class Nextjs extends Component implements Link.Linkable {
                     "sqs:GetQueueUrl",
                     "sqs:ReceiveMessage",
                   ],
-                  resources: [queue.arn],
+                  resources: [revalidationQueue.arn],
                 },
               ],
               dev: false,
@@ -997,7 +1003,7 @@ export class Nextjs extends Component implements Link.Linkable {
             },
             { parent },
           );
-          return queue;
+          return { revalidationQueue, revalidationFunction };
         },
       );
     }
@@ -1006,7 +1012,7 @@ export class Nextjs extends Component implements Link.Linkable {
       return openNextOutput.apply((openNextOutput) => {
         if (openNextOutput.additionalProps?.disableTagCache) return;
 
-        return new dynamodb.Table(
+        const revalidationTable =  new dynamodb.Table(
           `${name}RevalidationTable`,
           {
             attributes: [
@@ -1031,6 +1037,7 @@ export class Nextjs extends Component implements Link.Linkable {
           },
           { parent },
         );
+        return { revalidationTable };
       });
     }
 
@@ -1395,6 +1402,18 @@ if(event.request.headers["cloudfront-viewer-longitude"]) {
        * The Amazon CloudFront CDN that serves the app.
        */
       cdn: this.cdn,
+      /**
+       * The Amazon SQS queue that triggers the ISR revalidator.
+       */
+      revalidationQueue: this.revalidationQueue,
+      /**
+       * The Amazon DynamoDB table that stores the ISR revalidation data.
+       */
+      revalidationTable: this.revalidationTable,
+      /**
+       * The Lambda function that triggers the ISR revalidator.
+       */
+      revalidationFunction: this.revalidationFunction,
     };
   }
 
