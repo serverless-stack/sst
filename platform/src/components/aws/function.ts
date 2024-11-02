@@ -361,6 +361,19 @@ export interface FunctionArgs {
    */
   memory?: Input<Size>;
   /**
+   * The amount of disk space allocated for the function. Takes values between 512 MB
+   * and 10240 MB in 1 MB increments. This sets the ephemeral storage of the lambda function (/tmp).
+   *
+   * @default `"512 MB"`
+   * @example
+   * ```js
+   * {
+   *   diskSize: "10240 MB"
+   * }
+   * ```
+   */
+  diskSize?: Input<Size>;
+  /**
    * Key-value pairs of values that are set as [Lambda environment variables](https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html).
    * The keys need to:
    * - Start with a letter
@@ -1245,6 +1258,7 @@ export class Function extends Component implements Link.Linkable {
     const runtime = normalizeRuntime();
     const timeout = normalizeTimeout();
     const memory = normalizeMemory();
+    const diskSize = normalizeDiskSize();
     const architecture = output(args.architecture).apply((v) => v ?? "x86_64");
     const environment = normalizeEnvironment();
     const streaming = normalizeStreaming();
@@ -1354,6 +1368,10 @@ export class Function extends Component implements Link.Linkable {
 
     function normalizeMemory() {
       return output(args.memory).apply((memory) => memory ?? "1024 MB");
+    }
+
+    function normalizeDiskSize() {
+      return output(args.diskSize).apply((diskSize) => diskSize ?? "512 MB");
     }
 
     function normalizeEnvironment() {
@@ -1965,6 +1983,9 @@ export class Function extends Component implements Link.Linkable {
               role: args.role ?? role!.arn,
               timeout: timeout.apply((timeout) => toSeconds(timeout)),
               memorySize: memory.apply((memory) => toMBs(memory)),
+              ephemeralStorage: {
+                size: diskSize.apply((diskSize) => toMBs(diskSize)),
+              },
               environment: {
                 variables: environment,
               },
