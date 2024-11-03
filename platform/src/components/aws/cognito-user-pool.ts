@@ -235,7 +235,7 @@ export interface CognitoUserPoolArgs {
   /**
    * Enable software token MFA for the User Pool.
    *
-   * @default Software token MFA is disabled.
+   * @default `false`
    * @example
    *
    * ```ts
@@ -543,9 +543,11 @@ export class CognitoUserPool extends Component implements Link.Linkable {
             ),
             smsAuthenticationMessage: args.smsAuthenticationMessage,
             smsConfiguration: args.sms,
-            softwareTokenMfaConfiguration: args.softwareToken && {
-              enabled: true,
-            },
+            softwareTokenMfaConfiguration: output(args.softwareToken).apply(
+              (v) => ({
+                enabled: v ?? false,
+              }),
+            ),
             lambdaConfig:
               triggers &&
               triggers.apply((triggers) => {

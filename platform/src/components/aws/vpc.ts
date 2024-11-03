@@ -118,7 +118,7 @@ export interface VpcArgs {
    *
    * You can learn more about [`sst tunnel`](/docs/reference/cli#tunnel).
    *
-   * @default Bastion is not created
+   * @default `false`
    * @example
    * ```ts
    * {
@@ -428,32 +428,38 @@ export class Vpc extends Component implements Link.Linkable {
     }
 
     function createKeyPair() {
-      if (!args?.bastion) return {};
+      const ret = output(args?.bastion).apply((bastion) => {
+        if (!bastion) return {};
 
-      const tlsPrivateKey = new PrivateKey(
-        `${name}TlsPrivateKey`,
-        {
-          algorithm: "RSA",
-          rsaBits: 4096,
-        },
-        { parent },
-      );
+        const tlsPrivateKey = new PrivateKey(
+          `${name}TlsPrivateKey`,
+          {
+            algorithm: "RSA",
+            rsaBits: 4096,
+          },
+          { parent },
+        );
 
-      new ssm.Parameter(`${name}PrivateKey`, {
-        name: interpolate`/sst/vpc/${vpc.id}/private-key`,
-        type: ssm.ParameterType.SecureString,
-        value: tlsPrivateKey.privateKeyOpenssh,
+        new ssm.Parameter(`${name}PrivateKey`, {
+          name: interpolate`/sst/vpc/${vpc.id}/private-key`,
+          type: ssm.ParameterType.SecureString,
+          value: tlsPrivateKey.privateKeyOpenssh,
+        });
+
+        const keyPair = new ec2.KeyPair(
+          `${name}KeyPair`,
+          {
+            publicKey: tlsPrivateKey.publicKeyOpenssh,
+          },
+          { parent },
+        );
+
+        return { keyPair, privateKeyValue: tlsPrivateKey.privateKeyOpenssh };
       });
-
-      const keyPair = new ec2.KeyPair(
-        `${name}KeyPair`,
-        {
-          publicKey: tlsPrivateKey.publicKeyOpenssh,
-        },
-        { parent },
-      );
-
-      return { keyPair, privateKeyValue: tlsPrivateKey.privateKeyOpenssh };
+      return {
+        keyPair: output(ret.keyPair),
+        privateKeyValue: output(ret.privateKeyValue),
+      };
     }
 
     function createInternetGateway() {
@@ -612,26 +618,27 @@ export class Vpc extends Component implements Link.Linkable {
           { parent },
         );
 
-        return all([zones, publicSubnets]).apply(([zones, publicSubnets]) =>
-          zones.map((_, i) => {
-            return new ec2.Instance(
-              `${name}NatInstance${i + 1}`,
-              {
-                instanceType: nat.ec2.instance,
-                ami: ami.id,
-                subnetId: publicSubnets[i].id,
-                vpcSecurityGroupIds: [sg.id],
-                iamInstanceProfile: instanceProfile.name,
-                sourceDestCheck: false,
-                keyName: keyPair?.keyName,
-                tags: {
-                  Name: `${name} NAT Instance`,
-                  "sst:lookup-type": "nat",
+        return all([zones, publicSubnets, keyPair]).apply(
+          ([zones, publicSubnets, keyPair]) =>
+            zones.map((_, i) => {
+              return new ec2.Instance(
+                `${name}NatInstance${i + 1}`,
+                {
+                  instanceType: nat.ec2.instance,
+                  ami: ami.id,
+                  subnetId: publicSubnets[i].id,
+                  vpcSecurityGroupIds: [sg.id],
+                  iamInstanceProfile: instanceProfile.name,
+                  sourceDestCheck: false,
+                  keyName: keyPair?.keyName,
+                  tags: {
+                    Name: `${name} NAT Instance`,
+                    "sst:lookup-type": "nat",
+                  },
                 },
-              },
-              { parent },
-            );
-          }),
+                { parent },
+              );
+            }),
         );
       });
     }
@@ -757,99 +764,101 @@ export class Vpc extends Component implements Link.Linkable {
     }
 
     function createBastion() {
-      if (!args?.bastion) return undefined;
+      return all([args?.bastion, natInstances, keyPair]).apply(
+        ([bastion, natInstances, keyPair]) => {
+          if (!bastion) return undefined;
 
-      return natInstances.apply((natInstances) => {
-        if (natInstances.length) return natInstances[0];
+          if (natInstances.length) return natInstances[0];
 
-        const sg = new ec2.SecurityGroup(
-          `${name}BastionSecurityGroup`,
-          {
-            vpcId: vpc.id,
-            ingress: [
-              {
-                protocol: "tcp",
-                fromPort: 22,
-                toPort: 22,
-                cidrBlocks: ["0.0.0.0/0"],
-              },
-            ],
-            egress: [
-              {
-                protocol: "-1",
-                fromPort: 0,
-                toPort: 0,
-                cidrBlocks: ["0.0.0.0/0"],
-              },
-            ],
-          },
-          { parent },
-        );
-
-        const role = new iam.Role(
-          `${name}BastionRole`,
-          {
-            assumeRolePolicy: iam.getPolicyDocumentOutput({
-              statements: [
+          const sg = new ec2.SecurityGroup(
+            `${name}BastionSecurityGroup`,
+            {
+              vpcId: vpc.id,
+              ingress: [
                 {
-                  actions: ["sts:AssumeRole"],
-                  principals: [
-                    {
-                      type: "Service",
-                      identifiers: ["ec2.amazonaws.com"],
-                    },
-                  ],
+                  protocol: "tcp",
+                  fromPort: 22,
+                  toPort: 22,
+                  cidrBlocks: ["0.0.0.0/0"],
                 },
               ],
-            }).json,
-            managedPolicyArns: [
-              "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
-            ],
-          },
-          { parent },
-        );
-        const instanceProfile = new iam.InstanceProfile(
-          `${name}BastionProfile`,
-          { role: role.name },
-          { parent },
-        );
-        const ami = ec2.getAmiOutput(
-          {
-            owners: ["amazon"],
-            filters: [
-              {
-                name: "name",
-                // The AMI has the SSM agent pre-installed
-                values: ["al2023-ami-2023.5.*"],
-              },
-              {
-                name: "architecture",
-                values: ["arm64"],
-              },
-            ],
-            mostRecent: true,
-          },
-          { parent },
-        );
-        return new ec2.Instance(
-          ...transform(
-            args?.transform?.bastionInstance,
-            `${name}BastionInstance`,
-            {
-              instanceType: "t4g.nano",
-              ami: ami.id,
-              subnetId: publicSubnets.apply((v) => v[0].id),
-              vpcSecurityGroupIds: [sg.id],
-              iamInstanceProfile: instanceProfile.name,
-              keyName: keyPair?.keyName,
-              tags: {
-                "sst:lookup-type": "bastion",
-              },
+              egress: [
+                {
+                  protocol: "-1",
+                  fromPort: 0,
+                  toPort: 0,
+                  cidrBlocks: ["0.0.0.0/0"],
+                },
+              ],
             },
             { parent },
-          ),
-        );
-      });
+          );
+
+          const role = new iam.Role(
+            `${name}BastionRole`,
+            {
+              assumeRolePolicy: iam.getPolicyDocumentOutput({
+                statements: [
+                  {
+                    actions: ["sts:AssumeRole"],
+                    principals: [
+                      {
+                        type: "Service",
+                        identifiers: ["ec2.amazonaws.com"],
+                      },
+                    ],
+                  },
+                ],
+              }).json,
+              managedPolicyArns: [
+                "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+              ],
+            },
+            { parent },
+          );
+          const instanceProfile = new iam.InstanceProfile(
+            `${name}BastionProfile`,
+            { role: role.name },
+            { parent },
+          );
+          const ami = ec2.getAmiOutput(
+            {
+              owners: ["amazon"],
+              filters: [
+                {
+                  name: "name",
+                  // The AMI has the SSM agent pre-installed
+                  values: ["al2023-ami-2023.5.*"],
+                },
+                {
+                  name: "architecture",
+                  values: ["arm64"],
+                },
+              ],
+              mostRecent: true,
+            },
+            { parent },
+          );
+          return new ec2.Instance(
+            ...transform(
+              args?.transform?.bastionInstance,
+              `${name}BastionInstance`,
+              {
+                instanceType: "t4g.nano",
+                ami: ami.id,
+                subnetId: publicSubnets.apply((v) => v[0].id),
+                vpcSecurityGroupIds: [sg.id],
+                iamInstanceProfile: instanceProfile.name,
+                keyName: keyPair?.keyName,
+                tags: {
+                  "sst:lookup-type": "bastion",
+                },
+              },
+              { parent },
+            ),
+          );
+        },
+      );
     }
 
     function createCloudmapNamespace() {
