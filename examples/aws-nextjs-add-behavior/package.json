@@ -12,7 +12,7 @@
     "next": "15.0.1",
     "react": "19.0.0-rc-69d4b800-20241021",
     "react-dom": "19.0.0-rc-69d4b800-20241021",
-    "sst": "3.2.65"
+    "sst": "latest"
   },
   "devDependencies": {
     "@types/node": "^20",

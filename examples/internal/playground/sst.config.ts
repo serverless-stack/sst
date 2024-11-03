@@ -29,7 +29,8 @@ export default $config({
     return ret;
 
     function addVpc() {
-      return new sst.aws.Vpc("MyVpc");
+      const vpc = new sst.aws.Vpc("MyVpc");
+      return vpc;
     }
 
     function addBucket() {
@@ -56,7 +57,10 @@ export default $config({
 
     function addEmail() {
       const topic = new sst.aws.SnsTopic("MyTopic");
-      topic.subscribe("functions/email/index.notification");
+      topic.subscribe(
+        "MyTopicSubscriber",
+        "functions/email/index.notification"
+      );
 
       const email = new sst.aws.Email("MyEmail", {
         sender: "wangfanjie@gmail.com",
@@ -168,11 +172,7 @@ export default $config({
 
     function addTopic() {
       const topic = new sst.aws.SnsTopic("MyTopic");
-      topic.subscribe("functions/topic/index.subscriber", {
-        filter: {
-          color: ["red"],
-        },
-      });
+      topic.subscribe("MyTopicSubscriber", "functions/topic/index.subscriber");
 
       new sst.aws.Function("MyTopicPublisher", {
         handler: "functions/topic/index.publisher",

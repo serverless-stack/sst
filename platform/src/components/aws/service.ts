@@ -398,23 +398,47 @@ export class Service extends Component implements Link.Linkable {
         };
       });
 
+      // normalize type
+      const type = output(ports).apply((ports) =>
+        ports[0].listenProtocol.startsWith("http") ? "application" : "network",
+      );
+
       // normalize public/private
       const pub = output(args.loadBalancer).apply((lb) => lb?.public ?? true);
 
       // normalize health check
-      const healthCheck = output(args.loadBalancer).apply((lb) => ({
-        path: lb?.healthCheck?.path ?? "/",
-        interval: lb?.healthCheck?.interval
-          ? toSeconds(lb.healthCheck.interval)
-          : 30,
-        timeout: lb?.healthCheck?.timeout
-          ? toSeconds(lb.healthCheck.timeout)
-          : 10,
-        healthyThreshold: lb?.healthCheck?.healthyThreshold ?? 5,
-        unhealthyThreshold: lb?.healthCheck?.unhealthyThreshold ?? 2,
-      }));
+      const health = all([type, ports, args.loadBalancer]).apply(
+        ([type, ports, lb]) =>
+          Object.fromEntries(
+            Object.entries(lb?.health ?? {}).map(([k, v]) => {
+              if (
+                !ports.find(
+                  (p) => `${p.forwardPort}/${p.forwardProtocol}` === k,
+                )
+              )
+                throw new VisibleError(
+                  `Cannot configure health check for "${k}". Make sure it is defined in "loadBalancer.ports".`,
+                );
+              return [
+                k,
+                {
+                  path: v.path ?? "/",
+                  interval: v.interval ? toSeconds(v.interval) : 30,
+                  timeout: v.timeout
+                    ? toSeconds(v.timeout)
+                    : type === "application"
+                      ? 5
+                      : 6,
+                  healthyThreshold: v.healthyThreshold ?? 5,
+                  unhealthyThreshold: v.unhealthyThreshold ?? 2,
+                  matcher: v.successCodes ?? "200",
+                },
+              ];
+            }),
+          ),
+      );
 
-      return { ports, domain, pub, healthCheck };
+      return { type, ports, domain, pub, health };
     }
 
     function createLoadBalancer() {
@@ -453,11 +477,7 @@ export class Service extends Component implements Link.Linkable {
           `${name}LoadBalancer`,
           {
             internal: lbArgs.pub.apply((v) => !v),
-            loadBalancerType: lbArgs.ports.apply((ports) =>
-              ports[0].listenProtocol.startsWith("http")
-                ? "application"
-                : "network",
-            ),
+            loadBalancerType: lbArgs.type,
             subnets: vpc.loadBalancerSubnets,
             securityGroups: [securityGroup.id],
             enableCrossZoneLoadBalancing: true,
@@ -466,72 +486,75 @@ export class Service extends Component implements Link.Linkable {
         ),
       );
 
-      const ret = all([lbArgs.ports, certificateArn]).apply(([ports, cert]) => {
-        const listeners: Record<string, lb.Listener> = {};
-        const targets: Record<string, lb.TargetGroup> = {};
+      const ret = all([lbArgs.ports, lbArgs.health, certificateArn]).apply(
+        ([ports, health, cert]) => {
+          const listeners: Record<string, lb.Listener> = {};
+          const targets: Record<string, lb.TargetGroup> = {};
 
-        ports.forEach((port) => {
-          const container = port.container;
-          const forwardProtocol = port.forwardProtocol.toUpperCase();
-          const forwardPort = port.forwardPort;
-          const targetId = `${container}${forwardProtocol}${forwardPort}`;
-          const target =
-            targets[targetId] ??
-            new lb.TargetGroup(
-              ...transform(
-                args.transform?.target,
-                `${name}Target${targetId}`,
-                {
-                  // TargetGroup names allow for 32 chars, but an 8 letter suffix
-                  // ie. "-1234567" is automatically added.
-                  // - If we don't specify "name" or "namePrefix", we need to ensure
-                  //   the component name is less than 24 chars. Hard to guarantee.
-                  // - If we specify "name", we need to ensure the $app-$stage-$name
-                  //   if less than 32 chars. Hard to guarantee.
-                  // - Hence we will use "namePrefix".
-                  namePrefix: forwardProtocol,
-                  port: forwardPort,
-                  protocol: forwardProtocol,
-                  targetType: "ip",
-                  vpcId: vpc.id,
-                  healthCheck: lbArgs.healthCheck,
-                },
-                { parent: self },
-              ),
-            );
-          targets[targetId] = target;
+          ports.forEach((p) => {
+            const container = p.container;
+            const forwardProtocol = p.forwardProtocol.toUpperCase();
+            const forwardPort = p.forwardPort;
+            const targetId = `${container}${forwardProtocol}${forwardPort}`;
+            const target =
+              targets[targetId] ??
+              new lb.TargetGroup(
+                ...transform(
+                  args.transform?.target,
+                  `${name}Target${targetId}`,
+                  {
+                    // TargetGroup names allow for 32 chars, but an 8 letter suffix
+                    // ie. "-1234567" is automatically added.
+                    // - If we don't specify "name" or "namePrefix", we need to ensure
+                    //   the component name is less than 24 chars. Hard to guarantee.
+                    // - If we specify "name", we need to ensure the $app-$stage-$name
+                    //   if less than 32 chars. Hard to guarantee.
+                    // - Hence we will use "namePrefix".
+                    namePrefix: forwardProtocol,
+                    port: forwardPort,
+                    protocol: forwardProtocol,
+                    targetType: "ip",
+                    vpcId: vpc.id,
+                    healthCheck:
+                      health[`${p.forwardPort}/${p.forwardProtocol}`],
+                  },
+                  { parent: self },
+                ),
+              );
+            targets[targetId] = target;
 
-          const listenProtocol = port.listenProtocol.toUpperCase();
-          const listenPort = port.listenPort;
-          const listenerId = `${listenProtocol}${listenPort}`;
-          const listener =
-            listeners[listenerId] ??
-            new lb.Listener(
-              ...transform(
-                args.transform?.listener,
-                `${name}Listener${listenerId}`,
-                {
-                  loadBalancerArn: loadBalancer.arn,
-                  port: listenPort,
-                  protocol: listenProtocol,
-                  certificateArn: ["HTTPS", "TLS"].includes(listenProtocol)
-                    ? cert
-                    : undefined,
-                  defaultActions: [
-                    {
-                      type: "forward",
-                      targetGroupArn: target.arn,
-                    },
-                  ],
-                },
-                { parent: self },
-              ),
-            );
-          listeners[listenerId] = listener;
-        });
+            const listenProtocol = p.listenProtocol.toUpperCase();
+            const listenPort = p.listenPort;
+            const listenerId = `${listenProtocol}${listenPort}`;
+            const listener =
+              listeners[listenerId] ??
+              new lb.Listener(
+                ...transform(
+                  args.transform?.listener,
+                  `${name}Listener${listenerId}`,
+                  {
+                    loadBalancerArn: loadBalancer.arn,
+                    port: listenPort,
+                    protocol: listenProtocol,
+                    certificateArn: ["HTTPS", "TLS"].includes(listenProtocol)
+                      ? cert
+                      : undefined,
+                    defaultActions: [
+                      {
+                        type: "forward",
+                        targetGroupArn: target.arn,
+                      },
+                    ],
+                  },
+                  { parent: self },
+                ),
+              );
+            listeners[listenerId] = listener;
+          });
 
-        return { listeners, targets };
-      });
+          return { listeners, targets };
+        },
+      );
 
       return { loadBalancer, targets: ret.targets };
     }

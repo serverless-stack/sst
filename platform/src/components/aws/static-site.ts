@@ -671,6 +671,7 @@ export class StaticSite extends Component implements Link.Linkable {
       const dev = args.dev === false ? {} : args.dev ?? {};
       return {
         ...dev,
+        environment,
         url: output(dev.url).apply((v) => v ?? URL_UNAVAILABLE),
         command: output(dev.command).apply((v) => v ?? "npm run dev"),
         autostart: output(dev.autostart).apply((v) => v ?? true),

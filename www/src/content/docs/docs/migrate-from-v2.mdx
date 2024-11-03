@@ -817,7 +817,7 @@ For migrations, we recommend using [Drizzle Kit](https://orm.drizzle.team/kit-do
     primaryIndex: { hashKey: "id" }
   });
 
-  table.subscribe("src/subscriber.handler");
+  table.subscribe("MySubscriber", "src/subscriber.handler");
   ```
   </TabItem>
   <TabItem label="v2">
@@ -845,7 +845,7 @@ For migrations, we recommend using [Drizzle Kit](https://orm.drizzle.team/kit-do
   ```ts title="sst.config.ts"
   const topic = new sst.aws.SnsTopic("MyTopic");
 
-  topic.subscribe("src/subscriber.handler");
+  topic.subscribe("MySubscriber", "src/subscriber.handler");
   ```
   </TabItem>
   <TabItem label="v2">
@@ -1274,7 +1274,7 @@ In your function you'd access this using.
   ```ts title="sst.config.ts"
   const stream = new sst.aws.KinesisStream("MyStream");
 
-  stream.subscribe("src/subscriber.handler");
+  stream.subscribe("MySubscriber", "src/subscriber.handler");
   ```
   </TabItem>
   <TabItem label="v2">

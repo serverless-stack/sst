@@ -709,7 +709,7 @@ export interface ClusterServiceArgs {
      * 2. Network Layer Protocols: `tcp`, `udp`, `tcp_udp`, and `tls`. This'll create a [Network Load Balancer](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/introduction.html).
      *
      * :::note
-     * If you want to listen  on `https` or `tls`, you need to specify a custom
+     * If you want to listen on `https` or `tls`, you need to specify a custom
      * `loadBalancer.domain`.
      * :::
      *
@@ -779,78 +779,77 @@ export interface ClusterServiceArgs {
      * The load balancer checks each target container at the specified health check path
      * and only routes traffic to containers that pass these checks.
      *
-     * @default `{ path: "/", interval: "30 seconds", timeout: "5 seconds", healthyThreshold: 5, unhealthyThreshold: 2 }`
+     * The health check cannot be disabled.
+     * - The default for "http" protocols is `{ path: "/", interval: "30 seconds", timeout: "5 seconds", healthyThreshold: 5, unhealthyThreshold: 2, successCodes: "200" }`.
+     * - The default for "tcp" and "udp" protocols is `{ interval: "30 seconds", timeout: "6 seconds", healthyThreshold: 5, unhealthyThreshold: 2 }`
+     *
+     * @example
+     * Here we are configuring a health check that pings the `/health` path on port `8080`
+     * every 10 seconds.
+     * ```js
+     * {
+     *   ports: [
+     *     { listen: "80/http", forward: "8080/http" }
+     *   ]
+     *   healthCheck: {
+     *     "8080/http": {
+     *       path: "/health",
+     *       interval: "10 seconds",
+     *     }
+     *   }
+     * }
+     * ```
+     *
      */
-    healthCheck?: Input<{
-      /**
-       * The URL path to ping on the service for health checks.
-       * @default `"/"`
-       * @example
-       * ```js
-       * {
-       *   healthCheck: {
-       *     path: "/health"
-       *   }
-       * }
-       * ```
-       */
-      path?: Input<string>;
-      /**
-       * The time period between each health check. Must be between 5 and 300 seconds.
-       * @default `"30 seconds"`
-       * @example
-       * ```js
-       * {
-       *   healthCheck: {
-       *     interval: "10 seconds"
-       *   }
-       * }
-       * ```
-       */
-      interval?: Input<DurationMinutes>;
-      /**
-       * The timeout for each health check. If no response is received within this time,
-       * the health check is considered failed. Must be between 2 and 120 seconds.
-       * @default `"5 seconds"`
-       * @example
-       * ```js
-       * {
-       *   healthCheck: {
-       *     timeout: "10 seconds"
-       *   }
-       * }
-       * ```
-       */
-      timeout?: Input<DurationMinutes>;
-      /**
-       * The number of consecutive successful health checks required to consider the
-       * target healthy. Must be between 2 and 10.
-       * @default `5`
-       * @example
-       * ```js
-       * {
-       *   healthCheck: {
-       *     healthyThreshold: 2
-       *   }
-       * }
-       * ```
-       */
-      healthyThreshold?: Input<number>;
-      /**
-       * The number of consecutive failed health checks required to consider the
-       * target unhealthy. Must be between 2 and 10.
-       * @default `2`
-       * @example
-       * ```js
-       * {
-       *   healthCheck: {
-       *     unhealthyThreshold: 5
-       *   }
-       * }
-       * ```
-       */
-      unhealthyThreshold?: Input<number>;
-    }>;
+    health?: Input<
+      Record<
+        Port,
+        Input<{
+          /**
+           * The URL path to ping on the service for health checks. Only applicable to
+           * "http" protocols.
+           * @default `"/"`
+           */
+          path?: Input<string>;
+          /**
+           * The time period between each health check. Must be between 5 and 300 seconds.
+           * @default `"30 seconds"`
+           */
+          interval?: Input<DurationMinutes>;
+          /**
+           * The timeout for each health check. If no response is received within this time,
+           * the health check is considered failed. Must be between 2 and 120 seconds.
+           * @default `"5 seconds"`
+           */
+          timeout?: Input<DurationMinutes>;
+          /**
+           * The number of consecutive successful health checks required to consider the
+           * target healthy. Must be between 2 and 10.
+           * @default `5`
+           */
+          healthyThreshold?: Input<number>;
+          /**
+           * The number of consecutive failed health checks required to consider the
+           * target unhealthy. Must be between 2 and 10.
+           * @default `2`
+           */
+          unhealthyThreshold?: Input<number>;
+          /**
+           * One or more HTTP response codes the health check treats as successful. Only
+           * applicable to "http" protocols.
+           *
+           * @default `"200"`
+           * @example
+           * ```js
+           * {
+           *   successCodes: "200-299"
+           * }
+           * ```
+           */
+          successCodes?: Input<string>;
+        }>
+      >
+    >;
   }>;
   /**
    * Configure the CloudMap service registry for the service.

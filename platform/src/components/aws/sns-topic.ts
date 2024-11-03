@@ -9,6 +9,8 @@ import { SnsTopicLambdaSubscriber } from "./sns-topic-lambda-subscriber";
 import { SnsTopicQueueSubscriber } from "./sns-topic-queue-subscriber";
 import { sns } from "@pulumi/aws";
 import { permission } from "./permission";
+import { isFunctionSubscriber, isQueueSubscriber } from "./helpers/subscriber";
+import { Queue } from "./queue";
 
 export interface SnsTopicArgs {
   /**
@@ -123,7 +125,7 @@ export interface SnsTopicSubscriberArgs {
  * #### Add a subscriber
  *
  * ```ts title="sst.config.ts"
- * topic.subscribe("src/subscriber.handler");
+ * topic.subscribe("MySubscriber", "src/subscriber.handler");
  * ```
  *
  * #### Link the topic to a resource
@@ -218,19 +220,20 @@ export class SnsTopic extends Component implements Link.Linkable {
   /**
    * Subscribe to this SNS Topic.
    *
+   * @param name The name of the subscriber.
    * @param subscriber The function that'll be notified.
    * @param args Configure the subscription.
    *
    * @example
    *
    * ```js title="sst.config.ts"
-   * topic.subscribe("src/subscriber.handler");
+   * topic.subscribe("MySubscriber", "src/subscriber.handler");
    * ```
    *
    * Add a filter to the subscription.
    *
    * ```js title="sst.config.ts"
-   * topic.subscribe("src/subscriber.handler", {
+   * topic.subscribe("MySubscriber", "src/subscriber.handler", {
    *   filter: {
    *     price_usd: [{numeric: [">=", 100]}]
    *   }
@@ -240,7 +243,7 @@ export class SnsTopic extends Component implements Link.Linkable {
    * Customize the subscriber function.
    *
    * ```js title="sst.config.ts"
-   * topic.subscribe({
+   * topic.subscribe("MySubscriber", {
    *   handler: "src/subscriber.handler",
    *   timeout: "60 seconds"
    * });
@@ -249,25 +252,49 @@ export class SnsTopic extends Component implements Link.Linkable {
    * Or pass in the ARN of an existing Lambda function.
    *
    * ```js title="sst.config.ts"
-   * topic.subscribe("arn:aws:lambda:us-east-1:123456789012:function:my-function");
+   * topic.subscribe("MySubscriber", "arn:aws:lambda:us-east-1:123456789012:function:my-function");
    * ```
    */
   public subscribe(
+    name: string,
     subscriber: Input<string | FunctionArgs | FunctionArn>,
-    args: SnsTopicSubscriberArgs = {},
-  ) {
-    return SnsTopic._subscribeFunction(
-      this.constructorName,
-      this.arn,
-      subscriber,
-      args,
-      { provider: this.constructorOpts.provider },
+    args?: SnsTopicSubscriberArgs,
+  ): Output<SnsTopicLambdaSubscriber>;
+  /**
+   * @deprecated The subscribe function now requires a `name` parameter as the first argument.
+   * To migrate, remove the current subscriber, deploy the changes, and then add the subscriber
+   * back with the new `name` argument.
+   */
+  public subscribe(
+    subscriber: Input<string | FunctionArgs | FunctionArn>,
+    args?: SnsTopicSubscriberArgs,
+  ): Output<SnsTopicLambdaSubscriber>;
+
+  public subscribe(nameOrSubscriber: any, subscriberOrArgs?: any, args?: any) {
+    return isFunctionSubscriber(subscriberOrArgs).apply((v) =>
+      v
+        ? SnsTopic._subscribeFunction(
+            nameOrSubscriber, // name
+            this.constructorName,
+            this.arn,
+            subscriberOrArgs, // subscriber
+            args,
+            { provider: this.constructorOpts.provider },
+          )
+        : SnsTopic._subscribeFunctionV1(
+            this.constructorName,
+            this.arn,
+            nameOrSubscriber, // subscriber
+            subscriberOrArgs, // args
+            { provider: this.constructorOpts.provider },
+          ),
     );
   }
 
   /**
    * Subscribe to an SNS Topic that was not created in your app.
    *
+   * @param name The name of the subscriber.
    * @param topicArn The ARN of the SNS Topic to subscribe to.
    * @param subscriber The function that'll be notified.
    * @param args Configure the subscription.
@@ -283,13 +310,13 @@ export class SnsTopic extends Component implements Link.Linkable {
    * You can subscribe to it by passing in the ARN.
    *
    * ```js title="sst.config.ts"
-   * sst.aws.SnsTopic.subscribe(topicArn, "src/subscriber.handler");
+   * sst.aws.SnsTopic.subscribe("MySubscriber", topicArn, "src/subscriber.handler");
    * ```
    *
    * Add a filter to the subscription.
    *
    * ```js title="sst.config.ts"
-   * sst.aws.SnsTopic.subscribe(topicArn, "src/subscriber.handler", {
+   * sst.aws.SnsTopic.subscribe("MySubscriber", topicArn, "src/subscriber.handler", {
    *   filter: {
    *     price_usd: [{numeric: [">=", 100]}]
    *   }
@@ -299,28 +326,80 @@ export class SnsTopic extends Component implements Link.Linkable {
    * Customize the subscriber function.
    *
    * ```js title="sst.config.ts"
-   * sst.aws.SnsTopic.subscribe(topicArn, {
+   * sst.aws.SnsTopic.subscribe("MySubscriber", topicArn, {
    *   handler: "src/subscriber.handler",
    *   timeout: "60 seconds"
    * });
    * ```
    */
   public static subscribe(
+    name: string,
     topicArn: Input<string>,
     subscriber: Input<string | FunctionArgs | FunctionArn>,
     args?: SnsTopicSubscriberArgs,
+  ): Output<SnsTopicLambdaSubscriber>;
+  /**
+   * @deprecated The subscribe function now requires a `name` parameter as the first argument.
+   * To migrate, remove the current subscriber, deploy the changes, and then add the subscriber
+   * back with the new `name` argument.
+   */
+  public static subscribe(
+    topicArn: Input<string>,
+    subscriber: Input<string | FunctionArgs | FunctionArn>,
+    args?: SnsTopicSubscriberArgs,
+  ): Output<SnsTopicLambdaSubscriber>;
+
+  public static subscribe(
+    nameOrTopicArn: any,
+    topicArnOrSubscriber: any,
+    subscriberOrArgs?: any,
+    args?: any,
   ) {
-    return output(topicArn).apply((topicArn) =>
-      this._subscribeFunction(
-        logicalName(parseTopicArn(topicArn).topicName),
-        topicArn,
-        subscriber,
-        args,
-      ),
+    return isFunctionSubscriber(subscriberOrArgs).apply((v) =>
+      v
+        ? output(topicArnOrSubscriber).apply((topicArn) =>
+            this._subscribeFunction(
+              nameOrTopicArn, // name
+              logicalName(parseTopicArn(topicArn).topicName),
+              topicArn,
+              subscriberOrArgs, // subscriber
+              args,
+            ),
+          )
+        : output(nameOrTopicArn).apply((topicArn) =>
+            this._subscribeFunctionV1(
+              logicalName(parseTopicArn(topicArn).topicName),
+              topicArn,
+              topicArnOrSubscriber, // subscriber
+              subscriberOrArgs, // args
+            ),
+          ),
     );
   }
 
   private static _subscribeFunction(
+    subscriberName: string,
+    name: string,
+    topicArn: string | Output<string>,
+    subscriber: Input<string | FunctionArgs | FunctionArn>,
+    args: SnsTopicSubscriberArgs = {},
+    opts: $util.ComponentResourceOptions = {},
+  ) {
+    return output(args).apply(
+      (args) =>
+        new SnsTopicLambdaSubscriber(
+          `${name}Subscriber${subscriberName}`,
+          {
+            topic: { arn: topicArn },
+            subscriber,
+            ...args,
+          },
+          opts,
+        ),
+    );
+  }
+
+  private static _subscribeFunctionV1(
     name: string,
     topicArn: string | Output<string>,
     subscriber: Input<string | FunctionArgs | FunctionArn>,
@@ -354,7 +433,8 @@ export class SnsTopic extends Component implements Link.Linkable {
   /**
    * Subscribe to this SNS Topic with an SQS Queue.
    *
-   * @param queueArn The ARN of the queue that'll be notified.
+   * @param name The name of the subscriber.
+   * @param queue The ARN of the queue or `Queue` component that'll be notified.
    * @param args Configure the subscription.
    *
    * @example
@@ -368,13 +448,13 @@ export class SnsTopic extends Component implements Link.Linkable {
    * You can subscribe to this topic with it.
    *
    * ```js title="sst.config.ts"
-   * topic.subscribeQueue(queue.arn);
+   * topic.subscribeQueue("MySubscriber", queue.arn);
    * ```
    *
    * Add a filter to the subscription.
    *
    * ```js title="sst.config.ts"
-   * topic.subscribeQueue(queue.arn, {
+   * topic.subscribeQueue("MySubscriber", queue.arn, {
    *   filter: {
    *     price_usd: [{numeric: [">=", 100]}]
    *   }
@@ -382,22 +462,45 @@ export class SnsTopic extends Component implements Link.Linkable {
    * ```
    */
   public subscribeQueue(
-    queueArn: Input<string>,
-    args: SnsTopicSubscriberArgs = {},
-  ) {
-    return SnsTopic._subscribeQueue(
-      this.constructorName,
-      this.arn,
-      queueArn,
-      args,
+    name: string,
+    queue: Input<string | Queue>,
+    args?: SnsTopicSubscriberArgs,
+  ): Output<SnsTopicQueueSubscriber>;
+  /**
+   * @deprecated The subscribe function now requires a `name` parameter as the first argument.
+   * To migrate, remove the current subscriber, deploy the changes, and then add the subscriber
+   * back with the new `name` argument.
+   */
+  public subscribeQueue(
+    queue: Input<string>,
+    args?: SnsTopicSubscriberArgs,
+  ): Output<SnsTopicQueueSubscriber>;
+
+  public subscribeQueue(nameOrQueue: any, queueOrArgs?: any, args?: any) {
+    return isQueueSubscriber(queueOrArgs).apply((v) =>
+      v
+        ? SnsTopic._subscribeQueue(
+            nameOrQueue, // name
+            this.constructorName,
+            this.arn,
+            queueOrArgs, // queue
+            args,
+          )
+        : SnsTopic._subscribeQueueV1(
+            this.constructorName,
+            this.arn,
+            nameOrQueue, // queue
+            queueOrArgs, // args
+          ),
     );
   }
 
   /**
    * Subscribe to an existing SNS Topic with a previously created SQS Queue.
    *
+   * @param name The name of the subscriber.
    * @param topicArn The ARN of the SNS Topic to subscribe to.
-   * @param queueArn The ARN of the queue that'll be notified.
+   * @param queue The ARN of the queue or `Queue` component that'll be notified.
    * @param args Configure the subscription.
    *
    * @example
@@ -412,13 +515,13 @@ export class SnsTopic extends Component implements Link.Linkable {
    * You can subscribe to the topic with the queue.
    *
    * ```js title="sst.config.ts"
-   * sst.aws.SnsTopic.subscribeQueue(topicArn, queueArn);
+   * sst.aws.SnsTopic.subscribeQueue("MySubscriber", topicArn, queueArn);
    * ```
    *
    * Add a filter to the subscription.
    *
    * ```js title="sst.config.ts"
-   * sst.aws.SnsTopic.subscribeQueue(topicArn, queueArn, {
+   * sst.aws.SnsTopic.subscribeQueue("MySubscriber", topicArn, queueArn, {
    *   filter: {
    *     price_usd: [{numeric: [">=", 100]}]
    *   }
@@ -426,21 +529,67 @@ export class SnsTopic extends Component implements Link.Linkable {
    * ```
    */
   public static subscribeQueue(
+    name: string,
     topicArn: Input<string>,
-    queueArn: Input<string>,
+    queue: Input<string | Queue>,
     args?: SnsTopicSubscriberArgs,
+  ): Output<SnsTopicQueueSubscriber>;
+  /**
+   * @deprecated The subscribe function now requires a `name` parameter as the first argument.
+   * To migrate, remove the current subscriber, deploy the changes, and then add the subscriber
+   * back with the new `name` argument.
+   */
+  public static subscribeQueue(
+    topicArn: Input<string>,
+    queue: Input<string>,
+    args?: SnsTopicSubscriberArgs,
+  ): Output<SnsTopicQueueSubscriber>;
+  public static subscribeQueue(
+    nameOrTopicArn: any,
+    topicArnOrQueue: any,
+    queueOrArgs?: any,
+    args?: any,
   ) {
-    return output(topicArn).apply((topicArn) =>
-      this._subscribeQueue(
-        logicalName(parseTopicArn(topicArn).topicName),
-        topicArn,
-        queueArn,
-        args,
-      ),
+    return isQueueSubscriber(queueOrArgs).apply((v) =>
+      v
+        ? output(topicArnOrQueue).apply((topicArn) =>
+            this._subscribeQueue(
+              nameOrTopicArn, // name
+              logicalName(parseTopicArn(topicArn).topicName),
+              topicArn,
+              queueOrArgs, // queue
+              args,
+            ),
+          )
+        : output(nameOrTopicArn).apply((topicArn) =>
+            this._subscribeQueueV1(
+              logicalName(parseTopicArn(topicArn).topicName),
+              topicArn,
+              topicArnOrQueue, // queue
+              queueOrArgs, // args
+            ),
+          ),
     );
   }
 
   private static _subscribeQueue(
+    subscriberName: string,
+    name: string,
+    topicArn: string | Output<string>,
+    queue: Input<string | Queue>,
+    args: SnsTopicSubscriberArgs = {},
+  ) {
+    return output(args).apply(
+      (args) =>
+        new SnsTopicQueueSubscriber(`${name}Subscriber${subscriberName}`, {
+          topic: { arn: topicArn },
+          queue,
+          ...args,
+        }),
+    );
+  }
+
+  private static _subscribeQueueV1(
     name: string,
     topicArn: string | Output<string>,
     queueArn: Input<string>,
@@ -461,6 +610,7 @@ export class SnsTopic extends Component implements Link.Linkable {
       return new SnsTopicQueueSubscriber(`${name}Subscriber${suffix}`, {
         topic: { arn: topicArn },
         queue: queueArn,
+        disableParent: true,
         ...args,
       });
     });

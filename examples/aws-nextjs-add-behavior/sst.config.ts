@@ -61,15 +61,11 @@ export default $config({
     new sst.aws.Nextjs("MyWeb", {
       transform: {
         cdn: (options: sst.aws.CdnArgs) => {
-          options.origins = $resolve([options.origins]).apply(
-            ([val]) => [...val, blogOrigin],
-          );
+          options.origins = $resolve(options.origins).apply(val => [...val, blogOrigin]);
 
-          options.orderedCacheBehaviors = $resolve([
-            options.orderedCacheBehaviors || [],
-          ]).apply(
-            ([val]) => [...val, cacheBehavior],
-          );
+          options.orderedCacheBehaviors = $resolve(
+            options.orderedCacheBehaviors || []
+          ).apply(val => [...val, cacheBehavior]);
         },
       },
     });

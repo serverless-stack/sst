@@ -15,7 +15,7 @@ export default $config({
   },
   async run() {
     const topic = new sst.aws.SnsTopic("MyTopic");
-    topic.subscribe("subscriber.handler");
+    topic.subscribe("MySubscriber", "subscriber.handler");
 
     const bucket = new sst.aws.Bucket("MyBucket");
     bucket.subscribeTopic(topic.arn, {

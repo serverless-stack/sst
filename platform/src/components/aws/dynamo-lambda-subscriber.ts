@@ -1,11 +1,6 @@
-import {
-  ComponentResourceOptions,
-  Input,
-  Output,
-  output,
-} from "@pulumi/pulumi";
+import { ComponentResourceOptions, Input, output } from "@pulumi/pulumi";
 import { Component, transform } from "../component";
-import { Function, FunctionArgs } from "./function";
+import { FunctionArgs } from "./function";
 import { DynamoSubscriberArgs } from "./dynamo";
 import { lambda } from "@pulumi/aws";
 import { FunctionBuilder, functionBuilder } from "./helpers/function-builder";
@@ -25,6 +20,13 @@ export interface Args extends DynamoSubscriberArgs {
    * The subscriber function.
    */
   subscriber: Input<string | FunctionArgs>;
+  /**
+   * In early versions of SST, parent were forgotten to be set for resources in components.
+   * This flag is used to disable the automatic setting of the parent to prevent breaking
+   * changes.
+   * @internal
+   */
+  disableParent?: boolean;
 }
 
 /**
@@ -94,7 +96,7 @@ export class DynamoLambdaSubscriber extends Component {
               : undefined,
             startingPosition: "LATEST",
           },
-          {},
+          { parent: args.disableParent ? undefined : self },
         ),
       );
     }

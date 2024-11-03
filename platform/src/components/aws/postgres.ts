@@ -435,6 +435,7 @@ export class Postgres extends Component implements Link.Linkable {
             backupRetentionPeriod: 7,
             performanceInsightsEnabled: true,
             tags: {
+              "sst:component-version": _version.toString(),
               "sst:lookup:password": secret.id,
             },
           },
@@ -686,12 +687,22 @@ export class Postgres extends Component implements Link.Linkable {
       return JSON.parse(v.secretString).password as string;
     });
 
-    return new Postgres(name, {
-      ref: true,
-      instance,
-      password,
-      proxy,
-    } as unknown as PostgresArgs);
+    // override version
+    return instance.tags
+      .apply((tags) => {
+        $cli.state.version[name] = tags?.["sst:component-version"]
+          ? parseInt(tags["sst:component-version"])
+          : $cli.state.version[name];
+      })
+      .apply(
+        () =>
+          new Postgres(name, {
+            ref: true,
+            instance,
+            password,
+            proxy,
+          } as unknown as PostgresArgs),
+      );
   }
 }
 
