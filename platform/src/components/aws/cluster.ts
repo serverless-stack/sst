@@ -1000,8 +1000,9 @@ export interface ClusterServiceArgs {
   permissions?: FunctionArgs["permissions"];
   /**
    * Configure the service to automatically scale up or down based on the CPU or memory
-   * utilization of a container. By default, scaling is disabled and the service will run
+   * utilization of a container. By default, autoscaling is disabled and the service will run
    * in a single container.
+   * A scaling target is always created for the service, alongside CPU and memory scaling policies.
    *
    * @default `{ min: 1, max: 1 }`
    *

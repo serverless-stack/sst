@@ -83,6 +83,7 @@ export class Service extends Component implements Link.Linkable {
   private readonly taskRole: iam.Role;
   private readonly taskDefinition?: Output<ecs.TaskDefinition>;
   private readonly loadBalancer?: lb.LoadBalancer;
+  private readonly scalingTarget?: appautoscaling.Target;
   private readonly domain?: Output<string | undefined>;
   private readonly _url?: Output<string>;
   private readonly devUrl?: Output<string>;
@@ -128,7 +129,7 @@ export class Service extends Component implements Link.Linkable {
     const { loadBalancer, targets } = createLoadBalancer();
     const cloudmapService = createCloudmapService();
     const service = createService();
-    createAutoScaling();
+    const scalingTarget = createAutoScaling();
     createDnsRecords();
 
     this._service = service;
@@ -136,6 +137,7 @@ export class Service extends Component implements Link.Linkable {
     this.executionRole = executionRole;
     this.taskDefinition = taskDefinition;
     this.loadBalancer = loadBalancer;
+    this.scalingTarget = scalingTarget;
     this.domain = lbArgs?.domain
       ? lbArgs.domain.apply((domain) => domain?.name)
       : output(undefined);
@@ -939,6 +941,8 @@ export class Service extends Component implements Link.Linkable {
         },
         { parent: self },
       );
+
+      return target;
     }
 
     function createDnsRecords() {
@@ -1072,6 +1076,16 @@ export class Service extends Component implements Link.Linkable {
           );
         return self.cloudmapService!;
       },
+      /**
+       * The Amazon Application Auto Scaling target.
+       */
+      get scalingTarget() {
+        if (self.dev)
+          throw new VisibleError(
+            "Cannot access `nodes.scalingTarget` in dev mode.",
+          );
+        return self.scalingTarget!;
+      }
     };
   }
 
