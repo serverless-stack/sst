@@ -543,11 +543,9 @@ export class CognitoUserPool extends Component implements Link.Linkable {
             ),
             smsAuthenticationMessage: args.smsAuthenticationMessage,
             smsConfiguration: args.sms,
-            softwareTokenMfaConfiguration: output(args.softwareToken).apply(
-              (v) => ({
-                enabled: v ?? false,
-              }),
-            ),
+            softwareTokenMfaConfiguration: args.softwareToken
+              ? output(args.softwareToken).apply(() => ({ enabled: true }))
+              : undefined,
             lambdaConfig:
               triggers &&
               triggers.apply((triggers) => {
