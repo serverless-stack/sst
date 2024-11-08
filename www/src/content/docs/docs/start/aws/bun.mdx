@@ -72,13 +72,13 @@ bunx sst init
 bun install
 ```
 
-This'll create a `sst.config.ts` file in your project root and install SST.
+This'll create aa `sst.config.ts` file in your project root and install SST.
 
 ---
 
 ## 2. Add a Cluster
 
-To deploy our Bun app, let's add a [AWS Fargate](https://aws.amazon.com/fargate/) container with [Amazon ECS](https://aws.amazon.com/ecs/). Update your `sst.config.ts`.
+To deploy our Bun app, let's add an [AWS Fargate](https://aws.amazon.com/fargate/) container with [Amazon ECS](https://aws.amazon.com/ecs/). Update your `sst.config.ts`.
 
 ```js title="sst.config.ts" {9-11}
 async run() {
@@ -96,7 +96,7 @@ async run() {
 }
 ```
 
-This creates a VPC with a bastion host, a ECS Cluster, and adds a Fargate service to it.
+This creates a VPC with a bastion host, an ECS Cluster, and adds a Fargate service to it.
 
 :::note
 By default, your service in not deployed when running in _dev_.
