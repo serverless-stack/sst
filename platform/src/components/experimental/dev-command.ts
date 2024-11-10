@@ -75,7 +75,7 @@ export interface DevCommandArgs {
  * The `sst dev` CLI starts a multiplexer with panes for separate processes. This component allows you to add a process to it.
  *
  * :::tip
- * This component does do anything on deploy.
+ * This component does not do anything on deploy.
  * :::
  *
  * This component only works in `sst dev`. It does not do anything in `sst deploy`.
