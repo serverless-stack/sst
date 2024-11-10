@@ -1188,31 +1188,19 @@ export interface ClusterServiceArgs {
    */
   environment?: FunctionArgs["environment"];
   /**
-   * Configure secrets to expose to your container.
+   * Key-value pairs of AWS Systems Manager Parameter Store parameter ARNs or AWS Secrets
+   * Manager secret ARNs. The values will be loaded into the container as environment
+   * variables.
    * @example
    * ```js
    * {
-   *   secrets: [
-   *     {
-   *       name: "DATABASE_PASSWORD",
-   *       valueFrom: "arn:aws:secretsmanager:us-east-1:123456789012:secret:my-secret-123abc"
-   *     }
-   *   ]
+   *   ssm: {
+   *     DATABASE_PASSWORD: "arn:aws:secretsmanager:us-east-1:123456789012:secret:my-secret-123abc"
+   *   }
    * }
    * ```
    */
-  secrets?: Input<
-    {
-      /**
-       * The name of the environment variable to set in the container.
-       */
-      name: string;
-      /**
-       * The secret to expose to the container. The supported values are either the full Amazon Resource Name (ARN) of the AWS Secrets Manager secret or the full ARN of the parameter in the AWS Systems Manager Parameter Store.
-       */
-      valueFrom: string;
-    }[]
-  >;
+  ssm?: Input<Record<string, Input<string>>>;
   /**
    * Configure the service's logs in CloudWatch.
    * @default `{ retention: "1 month" }`
@@ -1398,18 +1386,11 @@ export interface ClusterServiceArgs {
       retention?: Input<keyof typeof RETENTION>;
     }>;
     /**
-     * An object that represents the secret to expose to your container (from AWS Secrets Manager or from AWS Systems Manager Parameter Store).
-     * @example
-     * ```js
-     * [
-     *   {
-     *     "name": "environment_variable_name",
-     *     "valueFrom": "arn:aws:ssm:region:aws_account_id:parameter/parameter_name"
-     *   }
-     * ]
-     * ```
+     * Key-value pairs of AWS Systems Manager Parameter Store parameter ARNs or AWS Secrets
+     * Manager secret ARNs. The values will be loaded into the container as environment
+     * variables. Same as the top-level [`ssm`](#ssm).
      */
-    secrets?: ClusterServiceArgs["secrets"];
+    ssm?: ClusterServiceArgs["ssm"];
     /**
      * Mount Amazon EFS file systems into the container. Same as the top-level
      * [`efs`](#efs).

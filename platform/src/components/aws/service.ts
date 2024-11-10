@@ -250,10 +250,10 @@ export class Service extends Component implements Link.Linkable {
           args.logging ||
           args.environment ||
           args.volumes ||
-          args.secrets)
+          args.ssm)
       ) {
         throw new VisibleError(
-          `You cannot provide both "containers" and "image", "logging", "environment", "volumes" or "secrets".`,
+          `You cannot provide both "containers" and "image", "logging", "environment", "volumes" or "ssm".`,
         );
       }
 
@@ -264,7 +264,7 @@ export class Service extends Component implements Link.Linkable {
           image: args.image,
           logging: args.logging,
           environment: args.environment,
-          secrets: args.secrets,
+          ssm: args.ssm,
           volumes: args.volumes,
           command: args.command,
           entrypoint: args.entrypoint,
@@ -659,6 +659,25 @@ export class Service extends Component implements Link.Linkable {
             managedPolicyArns: [
               "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
             ],
+            inlinePolicies: [
+              {
+                name: "inline",
+                policy: iam.getPolicyDocumentOutput({
+                  statements: [
+                    {
+                      sid: "ReadSsmAndSecrets",
+                      actions: [
+                        "ssm:GetParameters",
+                        "ssm:GetParameter",
+                        "ssm:GetParameterHistory",
+                        "secretsmanager:GetSecretValue",
+                      ],
+                      resources: ["*"],
+                    },
+                  ],
+                }).json,
+              },
+            ],
           },
           { parent: self },
         ),
@@ -778,10 +797,9 @@ export class Service extends Component implements Link.Linkable {
             sourceVolume: volume.efs.accessPoint,
             containerPath: volume.path,
           })),
-          secrets: container.secrets?.map((secret) => ({
-            name: secret.name,
-            valueFrom: secret.valueFrom,
-          })),
+          secrets: Object.entries(container.ssm ?? {}).map(
+            ([name, valueFrom]) => ({ name, valueFrom }),
+          ),
         })),
       );
 
