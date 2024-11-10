@@ -132,6 +132,20 @@ export interface SsrSiteArgs extends BaseSsrSiteArgs {
      */
     memory?: FunctionArgs["memory"];
     /**
+     * The runtime environment for the server function.
+     *
+     * @default `"nodejs20.x"`
+     * @example
+     * ```js
+     * {
+     *   server: {
+     *     runtime: "nodejs18.x"
+     *   }
+     * }
+     * ```
+     */
+    runtime?: Input<"nodejs18.x" | "nodejs20.x">;
+    /**
      * The [architecture](https://docs.aws.amazon.com/lambda/latest/dg/foundation-arch.html)
      * of the server function.
      *
@@ -671,15 +685,19 @@ export function createServersAndDistribution(
           args.transform?.server,
           `${name}${logicalName(fnName)}`,
           {
-            description: `${name} server`,
-            runtime: "nodejs20.x",
-            timeout: "20 seconds",
-            memory: output(args.server?.memory).apply((v) => v ?? "1024 MB"),
+            ...props.function,
+            description: props.function.description ?? `${name} server`,
+            runtime: output(args.server?.runtime).apply(
+              (v) => v ?? props.function.runtime ?? "nodejs20.x",
+            ),
+            timeout: props.function.timeout ?? "20 seconds",
+            memory: output(args.server?.memory).apply(
+              (v) => v ?? props.function.memory ?? "1024 MB",
+            ),
             architecture: output(args.server?.architecture).apply(
-              (v) => v ?? "x86_64",
+              (v) => v ?? props.function.architecture ?? "x86_64",
             ),
             vpc: args.vpc,
-            ...props.function,
             nodejs: {
               format: "esm" as const,
               install: args.server?.install,

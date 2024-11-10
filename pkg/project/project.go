@@ -274,7 +274,7 @@ func (proj *Project) LoadHome() error {
 		case "cloudflare":
 			match = &provider.CloudflareProvider{}
 		case "aws":
-			match = &provider.AwsProvider{}
+			match = provider.NewAwsProvider()
 		}
 		if match == nil {
 			continue

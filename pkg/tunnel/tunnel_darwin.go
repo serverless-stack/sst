@@ -6,6 +6,7 @@ import (
 )
 
 func Start(routes ...string) error {
+	destroy()
 	name := "utun69"
 	slog.Info("creating interface", "name", name, "os", runtime.GOOS)
 	tun2socks(name)
@@ -25,5 +26,7 @@ func Start(routes ...string) error {
 }
 
 func destroy() error {
-	return nil
+	return runCommands([][]string{
+		{"ifconfig", "utun69", "destroy"},
+	})
 }

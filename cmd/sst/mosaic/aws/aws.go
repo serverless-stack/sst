@@ -106,7 +106,10 @@ func Start(
 	workerResponseChan := make(chan workerResponse, 1000)
 	workerShutdownChan := make(chan *WorkerInfo, 1000)
 	evts := bus.Subscribe(&watcher.FileChangedEvent{}, &project.CompleteEvent{}, &runtime.BuildInput{})
-	bootstrap := prov.Bootstrap()
+	bootstrap, err := prov.Bootstrap(prov.Config().Region)
+	if err != nil {
+		return err
+	}
 	conn, err := appsync.Dial(ctx, config, bootstrap.AppsyncHttp, bootstrap.AppsyncRealtime)
 	if err != nil {
 		return err

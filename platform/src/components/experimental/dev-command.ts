@@ -111,7 +111,7 @@ export class DevCommand extends Component {
           .apply((links) => links.map((link) => link.name)),
         environment: args.environment,
         directory: args.dev?.directory,
-        autostart: args.dev?.autostart || true,
+        autostart: args.dev?.autostart !== false,
         command: args.dev?.command,
         aws: {
           role: args.aws?.role,

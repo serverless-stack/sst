@@ -288,7 +288,11 @@ export class Vpc extends Component implements Link.Linkable {
   private privateKeyValue: Output<string | undefined>;
   public static v1 = VpcV1;
 
-  constructor(name: string, args?: VpcArgs, opts?: ComponentResourceOptions) {
+  constructor(
+    name: string,
+    args: VpcArgs = {},
+    opts?: ComponentResourceOptions,
+  ) {
     const _version = 2;
     super(__pulumiType, name, args, opts, {
       _version,
@@ -432,7 +436,7 @@ export class Vpc extends Component implements Link.Linkable {
         .getInstancesOutput(
           {
             filters: [
-              { name: "tag:sst:lookup-type", values: ["nat"] },
+              { name: "tag:sst:is-nat", values: ["true"] },
               { name: "vpc-id", values: [vpcId] },
             ],
           },
@@ -445,26 +449,23 @@ export class Vpc extends Component implements Link.Linkable {
             }),
           ),
         );
-      const bastionInstance = natInstances.apply((instances) => {
-        if (instances.length) return output(instances[0]);
-        return ec2
-          .getInstancesOutput(
-            {
-              filters: [
-                { name: "tag:sst:lookup-type", values: ["bastion"] },
-                { name: "vpc-id", values: [vpcId] },
-              ],
-            },
-            { parent },
-          )
-          .ids.apply((ids) =>
-            ids.length
-              ? ec2.Instance.get(`${name}BastionInstance`, ids[0], undefined, {
-                  parent,
-                })
-              : undefined,
-          );
-      });
+      const bastionInstance = ec2
+        .getInstancesOutput(
+          {
+            filters: [
+              { name: "tag:sst:is-bastion", values: ["true"] },
+              { name: "vpc-id", values: [vpcId] },
+            ],
+          },
+          { parent },
+        )
+        .ids.apply((ids) =>
+          ids.length
+            ? ec2.Instance.get(`${name}BastionInstance`, ids[0], undefined, {
+                parent,
+              })
+            : undefined,
+        );
 
       // Note: can also use servicediscovery.getDnsNamespaceOutput() here, ie.
       // ```ts
@@ -505,8 +506,8 @@ export class Vpc extends Component implements Link.Linkable {
       const privateKeyValue = bastionInstance.apply((v) => {
         if (!v) return;
         const param = ssm.Parameter.get(
-          `${name}PrivateKey`,
-          interpolate`/sst/vpc/${vpcId}/private-key`,
+          `${name}PrivateKeyValue`,
+          interpolate`/sst/vpc/${vpcId}/private-key-value`,
           undefined,
           { parent },
         );
@@ -590,7 +591,7 @@ export class Vpc extends Component implements Link.Linkable {
         },
         { parent },
       );
-      return all([zones, args?.az ?? 2]).apply(([zones, az]) =>
+      return all([zones, args.az ?? 2]).apply(([zones, az]) =>
         Array(az)
           .fill(0)
           .map((_, i) => zones.names[i]),
@@ -598,11 +599,10 @@ export class Vpc extends Component implements Link.Linkable {
     }
 
     function normalizeNat() {
-      return output(args?.nat).apply((nat) => {
+      return all([args.nat, args.bastion]).apply(([nat, bastion]) => {
         if (nat === "managed") return { type: "managed" as const };
-        if (nat === "ec2") {
+        if (nat === "ec2")
           return { type: "ec2" as const, ec2: { instance: "t4g.nano" } };
-        }
         if (nat) return { type: "ec2" as const, ec2: nat.ec2 };
         return undefined;
       });
@@ -611,14 +611,16 @@ export class Vpc extends Component implements Link.Linkable {
     function createVpc() {
       return new ec2.Vpc(
         ...transform(
-          args?.transform?.vpc,
+          args.transform?.vpc,
           `${name}Vpc`,
           {
             cidrBlock: "10.0.0.0/16",
             enableDnsSupport: true,
             enableDnsHostnames: true,
             tags: {
+              Name: `${$app.name}-${$app.stage}-${name} VPC`,
               "sst:component-version": _version.toString(),
+              "sst:ref-version": "2",
             },
           },
           { parent },
@@ -627,7 +629,7 @@ export class Vpc extends Component implements Link.Linkable {
     }
 
     function createKeyPair() {
-      const ret = output(args?.bastion).apply((bastion) => {
+      const ret = output(args.bastion).apply((bastion) => {
         if (!bastion) return {};
 
         const tlsPrivateKey = new PrivateKey(
@@ -638,16 +640,6 @@ export class Vpc extends Component implements Link.Linkable {
           },
           { parent },
         );
-
-        // TODO: remove this after most people have deployed the referenced VPC
-        //       remove by 2025-01-01
-        new ssm.Parameter(`${name}PrivateKey`, {
-          name: interpolate`/sst/vpc/${vpc.id}/private-key`,
-          description:
-            "Bastion host private key (deprecated) - will be removed in future releases",
-          type: ssm.ParameterType.SecureString,
-          value: tlsPrivateKey.privateKeyOpenssh,
-        });
 
         new ssm.Parameter(
           `${name}PrivateKeyValue`,
@@ -679,7 +671,7 @@ export class Vpc extends Component implements Link.Linkable {
     function createInternetGateway() {
       return new ec2.InternetGateway(
         ...transform(
-          args?.transform?.internetGateway,
+          args.transform?.internetGateway,
           `${name}InternetGateway`,
           {
             vpcId: vpc.id,
@@ -692,7 +684,7 @@ export class Vpc extends Component implements Link.Linkable {
     function createSecurityGroup() {
       return new ec2.DefaultSecurityGroup(
         ...transform(
-          args?.transform?.securityGroup,
+          args.transform?.securityGroup,
           `${name}SecurityGroup`,
           {
             vpcId: vpc.id,
@@ -726,7 +718,7 @@ export class Vpc extends Component implements Link.Linkable {
         return subnets.map((subnet, i) => {
           const elasticIp = new ec2.Eip(
             ...transform(
-              args?.transform?.elasticIp,
+              args.transform?.elasticIp,
               `${name}ElasticIp${i + 1}`,
               {
                 vpc: true,
@@ -737,7 +729,7 @@ export class Vpc extends Component implements Link.Linkable {
 
           const natGateway = new ec2.NatGateway(
             ...transform(
-              args?.transform?.natGateway,
+              args.transform?.natGateway,
               `${name}NatGateway${i + 1}`,
               {
                 subnetId: subnet.id,
@@ -832,8 +824,8 @@ export class Vpc extends Component implements Link.Linkable {
           { parent },
         );
 
-        return all([zones, publicSubnets, keyPair]).apply(
-          ([zones, publicSubnets, keyPair]) =>
+        return all([zones, publicSubnets, keyPair, args.bastion]).apply(
+          ([zones, publicSubnets, keyPair, bastion]) =>
             zones.map((_, i) => {
               return new ec2.Instance(
                 `${name}NatInstance${i + 1}`,
@@ -847,7 +839,8 @@ export class Vpc extends Component implements Link.Linkable {
                   keyName: keyPair?.keyName,
                   tags: {
                     Name: `${name} NAT Instance`,
-                    "sst:lookup-type": "nat",
+                    "sst:is-nat": "true",
+                    ...(bastion && i === 0 ? { "sst:is-bastion": "true" } : {}),
                   },
                 },
                 { parent },
@@ -862,7 +855,7 @@ export class Vpc extends Component implements Link.Linkable {
         zones.map((zone, i) => {
           const subnet = new ec2.Subnet(
             ...transform(
-              args?.transform?.publicSubnet,
+              args.transform?.publicSubnet,
               `${name}PublicSubnet${i + 1}`,
               {
                 vpcId: vpc.id,
@@ -876,7 +869,7 @@ export class Vpc extends Component implements Link.Linkable {
 
           const routeTable = new ec2.RouteTable(
             ...transform(
-              args?.transform?.publicRouteTable,
+              args.transform?.publicRouteTable,
               `${name}PublicRouteTable${i + 1}`,
               {
                 vpcId: vpc.id,
@@ -915,7 +908,7 @@ export class Vpc extends Component implements Link.Linkable {
         zones.map((zone, i) => {
           const subnet = new ec2.Subnet(
             ...transform(
-              args?.transform?.privateSubnet,
+              args.transform?.privateSubnet,
               `${name}PrivateSubnet${i + 1}`,
               {
                 vpcId: vpc.id,
@@ -928,7 +921,7 @@ export class Vpc extends Component implements Link.Linkable {
 
           const routeTable = new ec2.RouteTable(
             ...transform(
-              args?.transform?.privateRouteTable,
+              args.transform?.privateRouteTable,
               `${name}PrivateRouteTable${i + 1}`,
               {
                 vpcId: vpc.id,
@@ -978,7 +971,7 @@ export class Vpc extends Component implements Link.Linkable {
     }
 
     function createBastion() {
-      return all([args?.bastion, natInstances, keyPair]).apply(
+      return all([args.bastion, natInstances, keyPair]).apply(
         ([bastion, natInstances, keyPair]) => {
           if (!bastion) return undefined;
 
@@ -1055,7 +1048,7 @@ export class Vpc extends Component implements Link.Linkable {
           );
           return new ec2.Instance(
             ...transform(
-              args?.transform?.bastionInstance,
+              args.transform?.bastionInstance,
               `${name}BastionInstance`,
               {
                 instanceType: "t4g.nano",
@@ -1065,7 +1058,7 @@ export class Vpc extends Component implements Link.Linkable {
                 iamInstanceProfile: instanceProfile.name,
                 keyName: keyPair?.keyName,
                 tags: {
-                  "sst:lookup-type": "bastion",
+                  "sst:is-bastion": "true",
                 },
               },
               { parent },
@@ -1228,6 +1221,13 @@ export class Vpc extends Component implements Link.Linkable {
   ) {
     const vpc = ec2.Vpc.get(`${name}Vpc`, vpcId, undefined, opts);
     return vpc.tags.apply((tags) => {
+      // check ref version
+      if (tags?.["sst:ref-version"] !== "2") {
+        throw new VisibleError(
+          `There have been some minor changes to the "${name}" Vpc component that's being referenced.\n\nTo update, you'll need to redeploy the stage where the VPC was created. And then redeploy this stage.`,
+        );
+      }
+
       // override version
       $cli.state.version[name] = tags?.["sst:component-version"]
         ? parseInt(tags["sst:component-version"])

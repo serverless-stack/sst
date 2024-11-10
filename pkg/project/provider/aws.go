@@ -30,26 +30,34 @@ import (
 )
 
 type AwsProvider struct {
-	config      aws.Config
-	profile     string
-	credentials sync.Once
-	bootstrap   *AwsBootstrapData
+	config         aws.Config
+	profile        string
+	credentials    sync.Once
+	lock           sync.Mutex
+	bootstrapCache map[string]*AwsBootstrapData
 }
 
 var ErrBucketMissing = errors.New("sst state bucket missing")
+
+func NewAwsProvider() *AwsProvider {
+	return &AwsProvider{
+		bootstrapCache: map[string]*AwsBootstrapData{},
+	}
+}
 
 func (a *AwsProvider) Env() (map[string]string, error) {
 	creds, err := a.config.Credentials.Retrieve(context.Background())
 	if err != nil {
 		return nil, err
 	}
+	bootstrap, err := a.Bootstrap(a.config.Region)
 	env := map[string]string{}
 	env["SST_AWS_ACCESS_KEY_ID"] = creds.AccessKeyID
 	env["SST_AWS_SECRET_ACCESS_KEY"] = creds.SecretAccessKey
 	env["SST_AWS_SESSION_TOKEN"] = creds.SessionToken
 	env["SST_AWS_REGION"] = a.config.Region
-	env["SST_APPSYNC_HTTP"] = a.bootstrap.AppsyncHttp
-	env["SST_APPSYNC_REALTIME"] = a.bootstrap.AppsyncRealtime
+	env["SST_APPSYNC_HTTP"] = bootstrap.AppsyncHttp
+	env["SST_APPSYNC_REALTIME"] = bootstrap.AppsyncRealtime
 	if a.profile != "" {
 		env["AWS_PROFILE"] = a.profile
 	}
@@ -120,7 +128,7 @@ func (a *AwsProvider) Init(app string, stage string, args map[string]interface{}
 	if args["region"] == nil {
 		args["region"] = cfg.Region
 	}
-	a.bootstrap, err = AwsBootstrap(a.config)
+	_, err = a.Bootstrap(cfg.Region)
 	if err != nil {
 		return err
 	}
@@ -131,124 +139,16 @@ func (a *AwsProvider) Config() aws.Config {
 	return a.config
 }
 
-func (a *AwsProvider) Bootstrap() *AwsBootstrapData {
-	return a.bootstrap
-}
-
-type AwsHome struct {
-	provider  *AwsProvider
-	bootstrap *AwsBootstrapData
-}
-
-func NewAwsHome(provider *AwsProvider) *AwsHome {
-	return &AwsHome{
-		provider: provider,
-	}
-}
-
-func (a *AwsHome) pathForData(key, app, stage string) string {
-	return path.Join(key, app, fmt.Sprintf("%v.json", stage))
-}
-
-func (a *AwsHome) pathForPassphrase(app string, stage string) string {
-	return "/" + strings.Join([]string{"sst", "passphrase", app, stage}, "/")
-}
-
-func (a *AwsHome) getData(key, app, stage string) (io.Reader, error) {
-	s3Client := s3.NewFromConfig(a.provider.config)
-
-	result, err := s3Client.GetObject(context.TODO(), &s3.GetObjectInput{
-		Bucket: aws.String(a.bootstrap.State),
-		Key:    aws.String(a.pathForData(key, app, stage)),
-	})
-	if err != nil {
-		var apiErr smithy.APIError
-		if errors.As(err, &apiErr) {
-			if apiErr.ErrorCode() == "NoSuchBucket" {
-				return nil, ErrBucketMissing
-			}
-		}
-		var nsk *s3types.NoSuchKey
-		if errors.As(err, &nsk) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return result.Body, nil
-}
-
-func (a *AwsHome) putData(key, app, stage string, data io.Reader) error {
-	s3Client := s3.NewFromConfig(a.provider.config)
-
-	_, err := s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
-		Bucket:      aws.String(a.bootstrap.State),
-		Key:         aws.String(a.pathForData(key, app, stage)),
-		Body:        data,
-		ContentType: aws.String("application/json"),
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (a *AwsHome) removeData(key, app, stage string) error {
-	s3Client := s3.NewFromConfig(a.provider.config)
-
-	_, err := s3Client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
-		Bucket: aws.String(a.bootstrap.State),
-		Key:    aws.String(a.pathForData(key, app, stage)),
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (a *AwsHome) getPassphrase(app string, stage string) (string, error) {
-	ssmClient := ssm.NewFromConfig(a.provider.config)
-
-	result, err := ssmClient.GetParameter(context.TODO(), &ssm.GetParameterInput{
-		Name:           aws.String(a.pathForPassphrase(app, stage)),
-		WithDecryption: aws.Bool(true),
-	})
-	if err != nil {
-		pnf := &ssmTypes.ParameterNotFound{}
-		if errors.As(err, &pnf) {
-			return "", nil
-		}
-
-		return "", err
-	}
-	return *result.Parameter.Value, nil
-}
-
-func (a *AwsHome) setPassphrase(app, stage, passphrase string) error {
-	ssmClient := ssm.NewFromConfig(a.provider.config)
-
-	_, err := ssmClient.PutParameter(context.TODO(), &ssm.PutParameterInput{
-		Name:        aws.String(a.pathForPassphrase(app, stage)),
-		Type:        ssmTypes.ParameterTypeSecureString,
-		Value:       aws.String(passphrase),
-		Description: aws.String("DO NOT DELETE STATE WILL BECOME UNRECOVERABLE"),
-		Overwrite:   aws.Bool(false),
-	})
-	return err
-}
-
-func (a *AwsHome) Bootstrap() error {
-	data, err := AwsBootstrap(a.provider.config)
-	if err != nil {
-		return err
-	}
-	a.bootstrap = data
-	return err
-}
-
-func AwsBootstrap(cfg aws.Config) (*AwsBootstrapData, error) {
+func (p *AwsProvider) Bootstrap(region string) (*AwsBootstrapData, error) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
 	ctx := context.TODO()
+	match, ok := p.bootstrapCache[region]
+	if ok {
+		return match, nil
+	}
+	cfg := p.config.Copy()
+	cfg.Region = region
 	ssmClient := ssm.NewFromConfig(cfg)
 	bootstrapData := &AwsBootstrapData{}
 	slog.Info("fetching bootstrap")
@@ -272,7 +172,7 @@ func AwsBootstrap(cfg aws.Config) (*AwsBootstrapData, error) {
 
 	if len(steps) > bootstrapData.Version {
 		for index, step := range steps {
-			if bootstrapData != nil && bootstrapData.Version > index {
+			if bootstrapData.Version > index {
 				continue
 			}
 			slog.Info("running bootstrap step", "step", index)
@@ -296,6 +196,7 @@ func AwsBootstrap(cfg aws.Config) (*AwsBootstrapData, error) {
 			return nil, err
 		}
 	}
+	p.bootstrapCache[region] = bootstrapData
 	return bootstrapData, nil
 }
 
@@ -594,4 +495,126 @@ var steps = []bootstrapStep{
 		data.AppsyncRealtime = api.Api.Dns["REALTIME"]
 		return nil
 	},
+}
+
+type AwsHome struct {
+	provider *AwsProvider
+}
+
+func NewAwsHome(provider *AwsProvider) *AwsHome {
+	return &AwsHome{
+		provider: provider,
+	}
+}
+
+func (a *AwsHome) pathForData(key, app, stage string) string {
+	return path.Join(key, app, fmt.Sprintf("%v.json", stage))
+}
+
+func (a *AwsHome) pathForPassphrase(app string, stage string) string {
+	return "/" + strings.Join([]string{"sst", "passphrase", app, stage}, "/")
+}
+
+func (a *AwsHome) getData(key, app, stage string) (io.Reader, error) {
+	bootstrap, err := a.provider.Bootstrap(a.provider.config.Region)
+	if err != nil {
+		return nil, err
+	}
+	s3Client := s3.NewFromConfig(a.provider.config)
+
+	result, err := s3Client.GetObject(context.TODO(), &s3.GetObjectInput{
+		Bucket: aws.String(bootstrap.State),
+		Key:    aws.String(a.pathForData(key, app, stage)),
+	})
+	if err != nil {
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			if apiErr.ErrorCode() == "NoSuchBucket" {
+				return nil, ErrBucketMissing
+			}
+		}
+		var nsk *s3types.NoSuchKey
+		if errors.As(err, &nsk) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return result.Body, nil
+}
+
+func (a *AwsHome) putData(key, app, stage string, data io.Reader) error {
+	bootstrap, err := a.provider.Bootstrap(a.provider.config.Region)
+	if err != nil {
+		return err
+	}
+	s3Client := s3.NewFromConfig(a.provider.config)
+
+	_, err = s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
+		Bucket:      aws.String(bootstrap.State),
+		Key:         aws.String(a.pathForData(key, app, stage)),
+		Body:        data,
+		ContentType: aws.String("application/json"),
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (a *AwsHome) removeData(key, app, stage string) error {
+	bootstrap, err := a.provider.Bootstrap(a.provider.config.Region)
+	if err != nil {
+		return err
+	}
+	s3Client := s3.NewFromConfig(a.provider.config)
+
+	_, err = s3Client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
+		Bucket: aws.String(bootstrap.State),
+		Key:    aws.String(a.pathForData(key, app, stage)),
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (a *AwsHome) getPassphrase(app string, stage string) (string, error) {
+	ssmClient := ssm.NewFromConfig(a.provider.config)
+
+	result, err := ssmClient.GetParameter(context.TODO(), &ssm.GetParameterInput{
+		Name:           aws.String(a.pathForPassphrase(app, stage)),
+		WithDecryption: aws.Bool(true),
+	})
+	if err != nil {
+		pnf := &ssmTypes.ParameterNotFound{}
+		if errors.As(err, &pnf) {
+			return "", nil
+		}
+
+		return "", err
+	}
+	return *result.Parameter.Value, nil
+}
+
+func (a *AwsHome) setPassphrase(app, stage, passphrase string) error {
+	ssmClient := ssm.NewFromConfig(a.provider.config)
+
+	_, err := ssmClient.PutParameter(context.TODO(), &ssm.PutParameterInput{
+		Name:        aws.String(a.pathForPassphrase(app, stage)),
+		Type:        ssmTypes.ParameterTypeSecureString,
+		Value:       aws.String(passphrase),
+		Description: aws.String("DO NOT DELETE STATE WILL BECOME UNRECOVERABLE"),
+		Overwrite:   aws.Bool(false),
+	})
+	return err
+}
+
+func (a *AwsHome) Bootstrap() error {
+	_, err := a.provider.Bootstrap(a.provider.config.Region)
+	if err != nil {
+		return err
+	}
+	return err
 }

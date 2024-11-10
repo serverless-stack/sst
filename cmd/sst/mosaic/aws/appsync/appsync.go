@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -78,6 +79,13 @@ func Dial(
 			if msg["type"] == "ka" {
 			}
 
+			if msg["type"] == "subscribe_success" {
+				id := msg["id"].(string)
+				if out, ok := result.subscriptions[id]; ok {
+					out <- "ok"
+				}
+			}
+
 			if t := msg["type"]; t == "data" {
 				id := msg["id"].(string)
 				if out, ok := result.subscriptions[id]; ok {
@@ -97,6 +105,8 @@ func Dial(
 	return result, nil
 }
 
+var ErrSubscriptionFailed = fmt.Errorf("subscription failed")
+
 func (c *Connection) Subscribe(ctx context.Context, channel string) (SubscriptionChannel, error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -115,7 +125,12 @@ func (c *Connection) Subscribe(ctx context.Context, channel string) (Subscriptio
 	})
 	out := make(SubscriptionChannel, 1000)
 	c.subscriptions[subscriptionID] = out
-	return out, nil
+	select {
+	case <-out:
+		return out, nil
+	case <-time.After(time.Second * 3):
+		return nil, ErrSubscriptionFailed
+	}
 }
 
 func (c *Connection) getAuth(ctx context.Context, body interface{}) (interface{}, error) {
@@ -123,6 +138,7 @@ func (c *Connection) getAuth(ctx context.Context, body interface{}) (interface{}
 	if err != nil {
 		return nil, err
 	}
+	slog.Info("got auth", "body", credentials)
 	bodyJson, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -153,13 +169,15 @@ func (c *Connection) getAuth(ctx context.Context, body interface{}) (interface{}
 		time.Now(),
 	)
 	auth := map[string]string{
-		"accept":               req.Header.Get("accept"),
-		"content-encoding":     req.Header.Get("content-encoding"),
-		"content-type":         req.Header.Get("content-type"),
-		"host":                 req.Host,
-		"x-amz-date":           req.Header.Get("x-amz-date"),
-		"X-Amz-Security-Token": req.Header.Get("X-Amz-Security-Token"),
-		"Authorization":        req.Header.Get("Authorization"),
+		"accept":           req.Header.Get("accept"),
+		"content-encoding": req.Header.Get("content-encoding"),
+		"content-type":     req.Header.Get("content-type"),
+		"host":             req.Host,
+		"x-amz-date":       req.Header.Get("x-amz-date"),
+		"Authorization":    req.Header.Get("Authorization"),
+	}
+	if req.Header.Get("X-Amz-Security-Token") != "" {
+		auth["X-Amz-Security-Token"] = req.Header.Get("X-Amz-Security-Token")
 	}
 	return auth, nil
 }

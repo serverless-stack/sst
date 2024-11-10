@@ -14,6 +14,6 @@
     "@aws-sdk/s3-request-presigner": "^3.552.0",
     "esbuild-plugin-tsc": "^0.4.0",
     "hono": "^4.1.3",
-    "sst": "latest"
+    "sst": "3.3.x"
   }
 }

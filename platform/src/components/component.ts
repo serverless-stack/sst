@@ -141,8 +141,6 @@ export class Component extends ComponentResource {
               "aws:iam/userPolicy:UserPolicy",
               "aws:cloudfront/cachePolicy:CachePolicy",
               "aws:cloudfront/distribution:Distribution",
-              "aws:cloudwatch/eventRule:EventRule",
-              "aws:cloudwatch/eventTarget:EventTarget",
               "aws:cloudwatch/logGroup:LogGroup",
               "aws:cognito/identityPoolRoleAttachment:IdentityPoolRoleAttachment",
               "aws:cognito/identityProvider:IdentityProvider",
@@ -206,6 +204,11 @@ export class Component extends ComponentResource {
               ],
               field: "identifier",
               cb: () => physicalName(63, args.name).toLowerCase(),
+            },
+            {
+              types: ["aws:cloudwatch/eventTarget:EventTarget"],
+              field: "targetId",
+              cb: () => physicalName(64, args.name),
             },
             {
               types: [

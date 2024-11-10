@@ -178,7 +178,9 @@ func (r *Runtime) Build(ctx context.Context, input *runtime.BuildInput) (*runtim
 	var result esbuild.BuildResult
 
 	if !input.Dev {
-		result = esbuild.Build(options)
+		context, _ := esbuild.Context(options)
+		result = context.Rebuild()
+		context.Dispose()
 	}
 
 	if input.Dev {
