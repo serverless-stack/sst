@@ -4,6 +4,9 @@ description: Build full-stack apps on your own infrastructure.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import VideoAside from "../../../components/VideoAside.astro";
+import { LinkCard } from '@astrojs/starlight/components';
+import { Icon } from '@astrojs/starlight/components';
 import config from '../../../../config.ts';
 
 export const github  = config.github;
@@ -15,6 +18,8 @@ SST supports over 150 providers. Check out the [full list](/docs/providers#direc
 :::
 
 What makes SST different is that your _entire_ app is **defined in code** — in a single `sst.config.ts` file. This includes databases, buckets, queues, Stripe webhooks, or any one of **150+ providers**.
+
+<VideoAside title="Watch a video about SST" href="https://www.youtube.com/watch?v=aPmyoZe3xDE" />
 
 With SST, **everything is automated**.
 
@@ -64,7 +69,9 @@ For example, you can add your frontend and set the domain you want to use.
   </TabItem>
 </Tabs>
 
-Just like the frontend, you can configure backend features _in code_. Like Postgres, Redis, S3 Buckets, cron jobs, or your API deployed in container.
+Just like the frontend, you can configure backend features _in code_.
+
+Like your API deployed in a container. Or any Lambda functions, Postgres databases, S3 Buckets, or cron jobs.
 
 <Tabs>
   <TabItem label="Containers">
@@ -78,14 +85,16 @@ Just like the frontend, you can configure backend features _in code_. Like Postg
   });
   ```
   </TabItem>
+  <TabItem label="Functions">
+  ```ts title="sst.config.ts"
+  new sst.aws.Function("MyFunction", {
+    handler: "src/lambda.handler"
+  });
+  ```
+  </TabItem>
   <TabItem label="Postgres">
   ```ts title="sst.config.ts"
   new sst.aws.Postgres("MyDatabase", { vpc });
-  ```
-  </TabItem>
-  <TabItem label="Redis">
-  ```ts title="sst.config.ts"
-  new sst.aws.Redis("MyRedis", { vpc });
   ```
   </TabItem>
   <TabItem label="Bucket">
@@ -182,19 +191,24 @@ Learn more about [Providers](/docs/providers) and check out the full list in the
 
 Once you've added a couple of features, SST can help you link them together. This is great because you **won't need to hardcode** anything in your app.
 
-Let's say your app has a Next.js frontend and an S3 bucket for file uploads. You can `link` the bucket to your Next.js app.
+Let's say you are deploying an Express app in a container and you want to upload files to an S3 bucket. You can `link` the bucket to your container.
 
-```ts title="sst.config.ts" {4}
+```ts title="sst.config.ts" {6}
 const bucket = new sst.aws.Bucket("MyBucket");
 
-new sst.aws.Nextjs("MyWeb", {
-  link: [bucket]
+const cluster = new sst.aws.Cluster("MyCluster", { vpc });
+
+cluster.addService("MyService", {
+  link: [bucket],
+  loadBalancer: {
+    ports: [{ listen: "80/http" }]
+  }
 });
 ```
 
-You can then use SST's [SDK](/docs/reference/sdk/) to access the S3 bucket in your Next.js app.
+You can then use SST's [SDK](/docs/reference/sdk/) to access the S3 bucket in your Express app.
 
-```ts title="app/page.tsx" "Resource.MyBucket.name"
+```ts title="index.mjs" "Resource.MyBucket.name"
 import { Resource } from "sst";
 
 console.log(Resource.MyBucket.name);
@@ -212,7 +226,7 @@ We've looked at a couple of different types of files. Let's take a step back and
 
 ### Drop-in mode
 
-The simplest way to run SST is to use it as a part of your frontend. This is called _drop-in mode_. For example, if you are using Next.js, you can add a `sst.config.ts` file to the root.
+The simplest way to run SST is to use it as a part of your app. This is called _drop-in mode_. For example, if you are building a Next.js app, you can add a `sst.config.ts` file to the root.
 
 ```txt {3}
 my-nextjs-app
@@ -230,9 +244,11 @@ View an <a href={`${github}/tree/dev/examples/aws-nextjs`}>example Next.js</a> a
 
 ### Monorepo
 
-Alternatively, you can use SST in a monorepo. This is useful if you have a backend and a frontend or you are working on a large project. In this case the `sst.config.ts` is in the root of your monorepo.
+Alternatively, you might use SST in a monorepo. This is useful because most projects have a frontend, a backend, and some functions.
 
-```txt {2}
+In this case, the `sst.config.ts` is still in the root but you can split it up into parts in the `infra/` directory.
+
+```txt {2,9}
 my-sst-app
 ├─ sst.config.ts
 ├─ package.json

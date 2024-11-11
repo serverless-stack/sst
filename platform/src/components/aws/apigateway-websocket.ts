@@ -153,9 +153,11 @@ export interface ApiGatewayWebSocketRouteArgs {
    */
   auth?: Input<{
     /**
-     * Enable IAM authorization for a given API route. When IAM auth is enabled, clients need to use Signature Version 4 to sign their requests with their AWS credentials.
+     * Enable IAM authorization for a given API route. When IAM auth is enabled, clients need
+     * to use Signature Version 4 to sign their requests with their AWS credentials.
+     * @default `false`
      */
-    iam?: Input<true>;
+    iam?: Input<boolean>;
   }>;
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
@@ -174,7 +176,8 @@ export interface ApiGatewayWebSocketRouteArgs {
 }
 
 /**
- * The `ApiGatewayWebSocket` component lets you add an [Amazon API Gateway WebSocket API](https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-websocket-api.html) to your app.
+ * The `ApiGatewayWebSocket` component lets you add an [Amazon API Gateway WebSocket API](https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-websocket-api.html)
+ * to your app.
  *
  * @example
  *

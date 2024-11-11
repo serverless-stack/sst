@@ -22,7 +22,14 @@ export interface Args extends SnsTopicSubscriberArgs {
   /**
    * The ARN of the SQS Queue.
    */
-  queue: Input<string>;
+  queue: Input<string | Queue>;
+  /**
+   * In early versions of SST, parent were forgotten to be set for resources in components.
+   * This flag is used to disable the automatic setting of the parent to prevent breaking
+   * changes.
+   * @internal
+   */
+  disableParent?: boolean;
 }
 
 /**
@@ -42,8 +49,11 @@ export class SnsTopicQueueSubscriber extends Component {
   constructor(name: string, args: Args, opts?: ComponentResourceOptions) {
     super(__pulumiType, name, args, opts);
 
-    const queueArn = output(args.queue);
+    const self = this;
     const topic = output(args.topic);
+    const queueArn = output(args.queue).apply((queue) =>
+      queue instanceof Queue ? queue.arn : output(queue),
+    );
     const policy = createPolicy();
     const subscription = createSubscription();
 
@@ -51,7 +61,9 @@ export class SnsTopicQueueSubscriber extends Component {
     this.subscription = subscription;
 
     function createPolicy() {
-      return Queue.createPolicy(`${name}Policy`, queueArn);
+      return Queue.createPolicy(`${name}Policy`, queueArn, {
+        parent: args.disableParent ? undefined : self,
+      });
     }
 
     function createSubscription() {
@@ -65,7 +77,7 @@ export class SnsTopicQueueSubscriber extends Component {
             endpoint: queueArn,
             filterPolicy: args.filter && jsonStringify(args.filter),
           },
-          {},
+          { parent: args.disableParent ? undefined : self },
         ),
       );
     }

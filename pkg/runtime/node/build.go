@@ -112,9 +112,6 @@ func (r *Runtime) Build(ctx context.Context, input *runtime.BuildInput) (*runtim
 	}
 	external := append(forceExternal, properties.Install...)
 	external = append(external, properties.ESBuild.External...)
-	if err != nil {
-		return nil, err
-	}
 	options := esbuild.BuildOptions{
 		EntryPoints: []string{file},
 		Platform:    esbuild.PlatformNode,
@@ -178,14 +175,24 @@ func (r *Runtime) Build(ctx context.Context, input *runtime.BuildInput) (*runtim
 		options.Target = properties.ESBuild.Target
 	}
 
-	buildContext, ok := r.contexts.Load(input.FunctionID)
-	if !ok {
-		buildContext, _ = esbuild.Context(options)
-		r.contexts.Store(input.FunctionID, buildContext)
+	var result esbuild.BuildResult
+
+	if !input.Dev {
+		context, _ := esbuild.Context(options)
+		result = context.Rebuild()
+		context.Dispose()
 	}
 
-	result := buildContext.(esbuild.BuildContext).Rebuild()
-	r.results.Store(input.FunctionID, result)
+	if input.Dev {
+		match, ok := r.contexts.Load(input.FunctionID)
+		if !ok {
+			match, _ = esbuild.Context(options)
+			r.contexts.Store(input.FunctionID, match)
+		}
+		result = match.(esbuild.BuildContext).Rebuild()
+		r.results.Store(input.FunctionID, result)
+	}
+
 	errors := []string{}
 	for _, error := range result.Errors {
 		text := error.Text

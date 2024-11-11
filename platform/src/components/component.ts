@@ -141,8 +141,6 @@ export class Component extends ComponentResource {
               "aws:iam/userPolicy:UserPolicy",
               "aws:cloudfront/cachePolicy:CachePolicy",
               "aws:cloudfront/distribution:Distribution",
-              "aws:cloudwatch/eventRule:EventRule",
-              "aws:cloudwatch/eventTarget:EventTarget",
               "aws:cloudwatch/logGroup:LogGroup",
               "aws:cognito/identityPoolRoleAttachment:IdentityPoolRoleAttachment",
               "aws:cognito/identityProvider:IdentityProvider",
@@ -171,6 +169,7 @@ export class Component extends ComponentResource {
               "aws:sesv2/emailIdentity:EmailIdentity",
               "aws:sns/topicSubscription:TopicSubscription",
               "aws:sqs/queuePolicy:QueuePolicy",
+              "aws:ssm/parameter:Parameter",
               "cloudflare:index/record:Record",
               "cloudflare:index/workerDomain:WorkerDomain",
               "docker-build:index:Image",
@@ -205,6 +204,11 @@ export class Component extends ComponentResource {
               ],
               field: "identifier",
               cb: () => physicalName(63, args.name).toLowerCase(),
+            },
+            {
+              types: ["aws:cloudwatch/eventTarget:EventTarget"],
+              field: "targetId",
+              cb: () => physicalName(64, args.name),
             },
             {
               types: [

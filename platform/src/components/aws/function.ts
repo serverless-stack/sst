@@ -361,6 +361,20 @@ export interface FunctionArgs {
    */
   memory?: Input<Size>;
   /**
+   * The amount of ephemeral storage allocated for the function. This sets the ephemeral
+   * storage of the lambda function (/tmp). Must be between "512 MB" and "10240 MB" ("10 GB")
+   * in 1 MB increments.
+   *
+   * @default `"512 MB"`
+   * @example
+   * ```js
+   * {
+   *   storage: "5 GB"
+   * }
+   * ```
+   */
+  storage?: Input<Size>;
+  /**
    * Key-value pairs of values that are set as [Lambda environment variables](https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html).
    * The keys need to:
    * - Start with a letter
@@ -967,7 +981,7 @@ export interface FunctionArgs {
   /**
    * Enable versioning for the function.
    *
-   * @default Versioning disabled
+   * @default `false`
    * @example
    * ```js
    * {
@@ -975,7 +989,7 @@ export interface FunctionArgs {
    * }
    * ```
    */
-  versioning?: Input<true>;
+  versioning?: Input<boolean>;
   /**
    * A list of Lambda layer ARNs to add to the function.
    *
@@ -1075,21 +1089,24 @@ export interface FunctionArgs {
    * }
    * ```
    */
-  vpc?: Input<{
-    /**
-     * A list of VPC security group IDs.
-     */
-    securityGroups: Input<Input<string>[]>;
-    /**
-     * A list of VPC subnet IDs.
-     */
-    privateSubnets: Input<Input<string>[]>;
-    /**
-     * A list of VPC subnet IDs.
-     * @deprecated Use `privateSubnets` instead.
-     */
-    subnets?: Input<Input<string>[]>;
-  }>;
+  vpc?: Input<
+    | Vpc
+    | {
+        /**
+         * A list of VPC security group IDs.
+         */
+        securityGroups: Input<Input<string>[]>;
+        /**
+         * A list of VPC subnet IDs.
+         */
+        privateSubnets: Input<Input<string>[]>;
+        /**
+         * A list of VPC subnet IDs.
+         * @deprecated Use `privateSubnets` instead.
+         */
+        subnets?: Input<Input<string>[]>;
+      }
+  >;
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.
@@ -1245,6 +1262,7 @@ export class Function extends Component implements Link.Linkable {
     const runtime = normalizeRuntime();
     const timeout = normalizeTimeout();
     const memory = normalizeMemory();
+    const storage = output(args.storage).apply((v) => v ?? "512 MB");
     const architecture = output(args.architecture).apply((v) => v ?? "x86_64");
     const environment = normalizeEnvironment();
     const streaming = normalizeStreaming();
@@ -1324,6 +1342,7 @@ export class Function extends Component implements Link.Linkable {
       _metadata: {
         handler: args.handler,
         internal: args._skipMetadata,
+        dev: dev,
       },
       _hint: args._skipHint
         ? undefined
@@ -1373,6 +1392,8 @@ export class Function extends Component implements Link.Linkable {
         result.SST_KEY_FILE = "resource.enc";
         if (dev) {
           result.SST_REGION = process.env.SST_AWS_REGION!;
+          result.SST_APPSYNC_HTTP = process.env.SST_APPSYNC_HTTP!;
+          result.SST_APPSYNC_REALTIME = process.env.SST_APPSYNC_REALTIME!;
           result.SST_FUNCTION_ID = name;
           result.SST_APP = $app.name;
           result.SST_STAGE = $app.stage;
@@ -1476,27 +1497,26 @@ export class Function extends Component implements Link.Linkable {
       // "vpc" is undefined
       if (!args.vpc) return;
 
-      // "vpc" is a Vpc component
-      if (args.vpc instanceof Vpc) {
-        const result = {
-          privateSubnets: args.vpc.privateSubnets,
-          securityGroups: args.vpc.securityGroups,
-        };
-        return all([
-          args.vpc.nodes.natGateways,
-          args.vpc.nodes.natInstances,
-        ]).apply(([natGateways, natInstances]) => {
-          if (natGateways.length === 0 && natInstances.length === 0) {
-            throw new VisibleError(
-              `Functions that are running in a VPC need a NAT gateway. Enable it by setting "nat" on the "sst.aws.Vpc" component.`,
-            );
-          }
-          return result;
-        });
-      }
-
-      // "vpc" is object
       return output(args.vpc).apply((vpc) => {
+        // "vpc" is a Vpc component
+        if (vpc instanceof Vpc) {
+          const result = {
+            privateSubnets: vpc.privateSubnets,
+            securityGroups: vpc.securityGroups,
+          };
+          return all([vpc.nodes.natGateways, vpc.nodes.natInstances]).apply(
+            ([natGateways, natInstances]) => {
+              if (natGateways.length === 0 && natInstances.length === 0) {
+                throw new VisibleError(
+                  `Functions that are running in a VPC need a NAT gateway. Enable it by setting "nat" on the "sst.aws.Vpc" component.`,
+                );
+              }
+              return result;
+            },
+          );
+        }
+
+        // "vpc" is object
         if (vpc.subnets) {
           throw new VisibleError(
             `The "vpc.subnets" property has been renamed to "vpc.privateSubnets". Update your code to use "vpc.privateSubnets" instead.`,
@@ -1692,6 +1712,10 @@ export class Function extends Component implements Link.Linkable {
               })),
               ...(dev
                 ? [
+                    {
+                      actions: ["appsync:*"],
+                      resources: ["*"],
+                    },
                     {
                       actions: ["iot:*"],
                       resources: ["*"],
@@ -1965,6 +1989,7 @@ export class Function extends Component implements Link.Linkable {
               role: args.role ?? role!.arn,
               timeout: timeout.apply((timeout) => toSeconds(timeout)),
               memorySize: memory.apply((memory) => toMBs(memory)),
+              ephemeralStorage: { size: storage.apply((v) => toMBs(v)) },
               environment: {
                 variables: environment,
               },

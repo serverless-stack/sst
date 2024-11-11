@@ -222,6 +222,23 @@ All you need is a single configuration file for the AWS CLI, SST, or any random 
 
    This'll open your browser and prompt you to allow access. The sessions will last 12 hours, as we had configured previously.
 
+   If you're using Windows with WSL, you can add a script to open the login browser of the host machine.
+   
+   <details>
+   <summary>View script</summary>
+
+   ```sh title="login.sh"
+   #!/bin/bash
+
+   if grep -q WSL /proc/version; then
+      export BROWSER=wslview
+   fi
+
+   aws sso login --sso-session=acme
+   ```
+
+   </details>
+
 4. Optionally, for Node.js projects, it can be helpful to add this to a `package.json` script so your team can just run `npm run sso` to login.
 
    ```json title="package.json"

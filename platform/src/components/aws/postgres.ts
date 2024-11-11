@@ -113,7 +113,7 @@ export interface PostgresArgs {
    * }
    * ```
    */
-  proxy?: Input<true>;
+  proxy?: Input<boolean>;
   /**
    * @internal
    */
@@ -144,14 +144,15 @@ export interface PostgresArgs {
    * }
    * ```
    */
-  vpc:
+  vpc: Input<
     | Vpc
-    | Input<{
+    | {
         /**
          * A list of subnet IDs in the VPC.
          */
         subnets: Input<Input<string>[]>;
-      }>;
+      }
+  >;
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.
@@ -186,8 +187,7 @@ export interface PostgresGetArgs {
 interface PostgresRef {
   ref: boolean;
   instance: rds.Instance;
-  password: Output<string>;
-  proxy: Output<rds.Proxy | undefined>;
+  proxyId?: Input<string>;
 }
 
 /**
@@ -276,15 +276,38 @@ export class Postgres extends Component implements Link.Linkable {
       ].join("\n"),
     });
 
+    const parent = this;
+
     if (args && "ref" in args) {
       const ref = args as unknown as PostgresRef;
+
+      const proxy = ref.proxyId
+        ? rds.Proxy.get(`${name}Proxy`, ref.proxyId, undefined, { parent })
+        : undefined;
+
+      const secret = ref.instance.tags.apply((tags) =>
+        tags?.["sst:lookup:password"]
+          ? secretsmanager.getSecretVersionOutput(
+              {
+                secretId: tags["sst:lookup:password"],
+              },
+              { parent },
+            )
+          : output(undefined),
+      );
+      const password = secret.apply((v) => {
+        if (!v) {
+          throw new VisibleError(
+            `Failed to get password for Postgres ${name}.`,
+          );
+        }
+        return JSON.parse(v.secretString).password as string;
+      });
       this.instance = ref.instance;
-      this._password = ref.password;
-      this.proxy = output(ref.proxy);
+      this._password = password;
+      this.proxy = output(proxy);
       return;
     }
-
-    const parent = this;
 
     const engineVersion = output(args.version).apply((v) => v ?? "16.4");
     const instanceType = output(args.instance).apply((v) => v ?? "t4g.micro");
@@ -323,22 +346,24 @@ export class Postgres extends Component implements Link.Linkable {
     }
 
     function normalizeVpc() {
-      // "vpc" is a Vpc.v1 component
-      if (args.vpc instanceof VpcV1) {
-        throw new VisibleError(
-          `You are using the "Vpc.v1" component. Please migrate to the latest "Vpc" component.`,
-        );
-      }
+      return output(args.vpc).apply((vpc) => {
+        // "vpc" is a Vpc.v1 component
+        if (vpc instanceof VpcV1) {
+          throw new VisibleError(
+            `You are using the "Vpc.v1" component. Please migrate to the latest "Vpc" component.`,
+          );
+        }
 
-      // "vpc" is a Vpc component
-      if (args.vpc instanceof Vpc) {
-        return {
-          subnets: args.vpc.privateSubnets,
-        };
-      }
+        // "vpc" is a Vpc component
+        if (vpc instanceof Vpc) {
+          return {
+            subnets: vpc.privateSubnets,
+          };
+        }
 
-      // "vpc" is object
-      return output(args.vpc);
+        // "vpc" is object
+        return vpc;
+      });
     }
 
     function createSubnetGroup() {
@@ -435,6 +460,7 @@ export class Postgres extends Component implements Link.Linkable {
             backupRetentionPeriod: 7,
             performanceInsightsEnabled: true,
             tags: {
+              "sst:component-version": _version.toString(),
               "sst:lookup:password": secret.id,
             },
           },
@@ -664,34 +690,17 @@ export class Postgres extends Component implements Link.Linkable {
       undefined,
       opts,
     );
-    const proxy = args.proxyId
-      ? rds.Proxy.get(`${name}Proxy`, args.proxyId, undefined, opts)
-      : undefined;
-
-    // get secret
-    const secret = instance.tags.apply((tags) =>
-      tags?.["sst:lookup:password"]
-        ? secretsmanager.getSecretVersionOutput(
-            {
-              secretId: tags["sst:lookup:password"],
-            },
-            opts,
-          )
-        : output(undefined),
-    );
-    const password = secret.apply((v) => {
-      if (!v) {
-        throw new VisibleError(`Failed to get password for Postgres ${name}.`);
-      }
-      return JSON.parse(v.secretString).password as string;
+    return instance.tags.apply((tags) => {
+      // override version
+      $cli.state.version[name] = tags?.["sst:component-version"]
+        ? parseInt(tags["sst:component-version"])
+        : $cli.state.version[name];
+      return new Postgres(name, {
+        ref: true,
+        instance,
+        proxyId: args.proxyId,
+      } as unknown as PostgresArgs);
     });
-
-    return new Postgres(name, {
-      ref: true,
-      instance,
-      password,
-      proxy,
-    } as unknown as PostgresArgs);
   }
 }
 

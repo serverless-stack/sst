@@ -13,6 +13,7 @@ export default $config({
 
     const vpc = addVpc();
     const bucket = addBucket();
+    //const queue = addQueue();
     //const efs = addEfs();
     //const email = addEmail();
     //const apiv1 = addApiV1();
@@ -22,20 +23,33 @@ export default $config({
     //const postgres = addPostgres();
     //const redis = addRedis();
     //const cron = addCron();
-    //const queue = addQueue();
     //const topic = addTopic();
     //const bus = addBus();
 
     return ret;
 
     function addVpc() {
-      return new sst.aws.Vpc("MyVpc");
+      const vpc = new sst.aws.Vpc("MyVpc");
+      return vpc;
     }
 
     function addBucket() {
       const bucket = new sst.aws.Bucket("MyBucket");
       ret.bucket = bucket.name;
       return bucket;
+    }
+
+    function addQueue() {
+      const queue = new sst.aws.Queue("MyQueue");
+      queue.subscribe("functions/queue/index.subscriber");
+
+      new sst.aws.Function("MyQueuePublisher", {
+        handler: "functions/queue/index.publisher",
+        link: [queue],
+        url: true,
+      });
+
+      return queue;
     }
 
     function addEfs() {
@@ -56,7 +70,10 @@ export default $config({
 
     function addEmail() {
       const topic = new sst.aws.SnsTopic("MyTopic");
-      topic.subscribe("functions/email/index.notification");
+      topic.subscribe(
+        "MyTopicSubscriber",
+        "functions/email/index.notification"
+      );
 
       const email = new sst.aws.Email("MyEmail", {
         sender: "wangfanjie@gmail.com",
@@ -122,7 +139,6 @@ export default $config({
         },
         link: [bucket],
       });
-      ret.service = service.url;
       return service;
     }
 
@@ -131,7 +147,7 @@ export default $config({
         vpc,
       });
       ret.pgHost = postgres.host;
-      ret.pgPort = $interpolate`postgres.port`;
+      ret.pgPort = $interpolate`${postgres.port}`;
       ret.pgUsername = postgres.username;
       ret.pgPassword = postgres.password;
       return postgres;
@@ -160,19 +176,9 @@ export default $config({
       return cron;
     }
 
-    function addQueue() {
-      const queue = new sst.aws.Queue("MyQueue");
-      queue.subscribe("functions/queue/index.subscriber");
-      return queue;
-    }
-
     function addTopic() {
       const topic = new sst.aws.SnsTopic("MyTopic");
-      topic.subscribe("functions/topic/index.subscriber", {
-        filter: {
-          color: ["red"],
-        },
-      });
+      topic.subscribe("MyTopicSubscriber", "functions/topic/index.subscriber");
 
       new sst.aws.Function("MyTopicPublisher", {
         handler: "functions/topic/index.publisher",

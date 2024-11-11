@@ -5,11 +5,12 @@ import { Dns } from "../dns";
 import { FunctionArgs } from "./function";
 import { Service } from "./service";
 import { RETENTION } from "./logging.js";
-import { cloudwatch, ec2, ecs, iam, lb } from "@pulumi/aws";
+import { appautoscaling, cloudwatch, ec2, ecs, iam, lb } from "@pulumi/aws";
 import { ImageArgs } from "@pulumi/docker-build";
 import { Cluster as ClusterV1 } from "./cluster-v1";
 import { Vpc } from "./vpc";
 import { Efs } from "./efs";
+import { DurationMinutes } from "../duration";
 export type { ClusterArgs as ClusterV1Args } from "./cluster-v1";
 
 export const supportedCpus = {
@@ -150,34 +151,35 @@ export interface ClusterArgs {
    * }
    * ```
    */
-  vpc:
-  | Vpc
-  | Input<{
-    /**
-     * The ID of the VPC.
-     */
-    id: Input<string>;
-    /**
-     * A list of subnet IDs in the VPC to place the load balancer in.
-     */
-    loadBalancerSubnets: Input<Input<string>[]>;
-    /**
-     * A list of private subnet IDs in the VPC to place the services in.
-     */
-    serviceSubnets: Input<Input<string>[]>;
-    /**
-     * A list of VPC security group IDs for the service.
-     */
-    securityGroups: Input<Input<string>[]>;
-    /**
-     * The ID of the Cloud Map namespace to use for the service.
-     */
-    cloudmapNamespaceId: Input<string>;
-    /**
-     * The name of the Cloud Map namespace to use for the service.
-     */
-    cloudmapNamespaceName: Input<string>;
-  }>;
+  vpc: Input<
+    | Vpc
+    | {
+        /**
+         * The ID of the VPC.
+         */
+        id: Input<string>;
+        /**
+         * A list of subnet IDs in the VPC to place the load balancer in.
+         */
+        loadBalancerSubnets: Input<Input<string>[]>;
+        /**
+         * A list of private subnet IDs in the VPC to place the services in.
+         */
+        serviceSubnets: Input<Input<string>[]>;
+        /**
+         * A list of VPC security group IDs for the service.
+         */
+        securityGroups: Input<Input<string>[]>;
+        /**
+         * The ID of the Cloud Map namespace to use for the service.
+         */
+        cloudmapNamespaceId: Input<string>;
+        /**
+         * The name of the Cloud Map namespace to use for the service.
+         */
+        cloudmapNamespaceName: Input<string>;
+      }
+  >;
   /**
    * Force upgrade from `Cluster.v1` to the latest `Cluster` version. The only valid value
    * is `v2`, which is the version of the new `Cluster`.
@@ -259,34 +261,34 @@ export interface ClusterServiceArgs {
    * To disable dev mode and deploy your service, pass in `false`.
    */
   dev?:
-  | false
-  | {
-    /**
-     * The `url` when this is running in dev mode.
-     *
-     * Since this component is not deployed in `sst dev`, there is no real URL. But if you are
-     * using this component's `url` or linking to this component's `url`, it can be useful to
-     * have a placeholder URL. It avoids having to handle it being `undefined`.
-     * @default `"http://url-unavailable-in-dev.mode"`
-     */
-    url?: Input<string>;
-    /**
-     * The command that `sst dev` runs to start this in dev mode. This is the command you run
-     * when you want to run your service locally.
-     */
-    command?: Input<string>;
-    /**
-     * Configure if you want to automatically start this when `sst dev` starts. You can still
-     * start it manually later.
-     * @default `true`
-     */
-    autostart?: Input<boolean>;
-    /**
-     * Change the directory from where the `command` is run.
-     * @default Uses the `image.dockerfile` path
-     */
-    directory?: Input<string>;
-  };
+    | false
+    | {
+        /**
+         * The `url` when this is running in dev mode.
+         *
+         * Since this component is not deployed in `sst dev`, there is no real URL. But if you are
+         * using this component's `url` or linking to this component's `url`, it can be useful to
+         * have a placeholder URL. It avoids having to handle it being `undefined`.
+         * @default `"http://url-unavailable-in-dev.mode"`
+         */
+        url?: Input<string>;
+        /**
+         * The command that `sst dev` runs to start this in dev mode. This is the command you run
+         * when you want to run your service locally.
+         */
+        command?: Input<string>;
+        /**
+         * Configure if you want to automatically start this when `sst dev` starts. You can still
+         * start it manually later.
+         * @default `true`
+         */
+        autostart?: Input<boolean>;
+        /**
+         * Change the directory from where the `command` is run.
+         * @default Uses the `image.dockerfile` path
+         */
+        directory?: Input<string>;
+      };
   /**
    * Configure a public endpoint for the service. When configured, a load balancer
    * will be created to route traffic to the containers. By default, the endpoint is an
@@ -345,105 +347,105 @@ export interface ClusterServiceArgs {
     domain?: Input<
       | string
       | {
-        /**
-         * The custom domain you want to use.
-         *
-         * @example
-         * ```js
-         * {
-         *   domain: {
-         *     name: "example.com"
-         *   }
-         * }
-         * ```
-         *
-         * Can also include subdomains based on the current stage.
-         *
-         * ```js
-         * {
-         *   domain: {
-         *     name: `${$app.stage}.example.com`
-         *   }
-         * }
-         * ```
-         */
-        name: Input<string>;
-        /**
-         * The ARN of an ACM (AWS Certificate Manager) certificate that proves ownership of the
-         * domain. By default, a certificate is created and validated automatically.
-         *
-         * :::tip
-         * You need to pass in a `cert` for domains that are not hosted on supported `dns` providers.
-         * :::
-         *
-         * To manually set up a domain on an unsupported provider, you'll need to:
-         *
-         * 1. [Validate that you own the domain](https://docs.aws.amazon.com/acm/latest/userguide/domain-ownership-validation.html) by creating an ACM certificate. You can either validate it by setting a DNS record or by verifying an email sent to the domain owner.
-         * 2. Once validated, set the certificate ARN as the `cert` and set `dns` to `false`.
-         * 3. Add the DNS records in your provider to point to the load balancer endpoint.
-         *
-         * @example
-         * ```js
-         * {
-         *   domain: {
-         *     name: "example.com",
-         *     dns: false,
-         *     cert: "arn:aws:acm:us-east-1:112233445566:certificate/3a958790-8878-4cdc-a396-06d95064cf63"
-         *   }
-         * }
-         * ```
-         */
-        cert?: Input<string>;
-        /**
-         * The DNS provider to use for the domain. Defaults to the AWS.
-         *
-         * Takes an adapter that can create the DNS records on the provider. This can automate
-         * validating the domain and setting up the DNS routing.
-         *
-         * Supports Route 53, Cloudflare, and Vercel adapters. For other providers, you'll need
-         * to set `dns` to `false` and pass in a certificate validating ownership via `cert`.
-         *
-         * @default `sst.aws.dns`
-         *
-         * @example
-         *
-         * Specify the hosted zone ID for the Route 53 domain.
-         *
-         * ```js
-         * {
-         *   domain: {
-         *     name: "example.com",
-         *     dns: sst.aws.dns({
-         *       zone: "Z2FDTNDATAQYW2"
-         *     })
-         *   }
-         * }
-         * ```
-         *
-         * Use a domain hosted on Cloudflare, needs the Cloudflare provider.
-         *
-         * ```js
-         * {
-         *   domain: {
-         *     name: "example.com",
-         *     dns: sst.cloudflare.dns()
-         *   }
-         * }
-         * ```
-         *
-         * Use a domain hosted on Vercel, needs the Vercel provider.
-         *
-         * ```js
-         * {
-         *   domain: {
-         *     name: "example.com",
-         *     dns: sst.vercel.dns()
-         *   }
-         * }
-         * ```
-         */
-        dns?: Input<false | (Dns & {})>;
-      }
+          /**
+           * The custom domain you want to use.
+           *
+           * @example
+           * ```js
+           * {
+           *   domain: {
+           *     name: "example.com"
+           *   }
+           * }
+           * ```
+           *
+           * Can also include subdomains based on the current stage.
+           *
+           * ```js
+           * {
+           *   domain: {
+           *     name: `${$app.stage}.example.com`
+           *   }
+           * }
+           * ```
+           */
+          name: Input<string>;
+          /**
+           * The ARN of an ACM (AWS Certificate Manager) certificate that proves ownership of the
+           * domain. By default, a certificate is created and validated automatically.
+           *
+           * :::tip
+           * You need to pass in a `cert` for domains that are not hosted on supported `dns` providers.
+           * :::
+           *
+           * To manually set up a domain on an unsupported provider, you'll need to:
+           *
+           * 1. [Validate that you own the domain](https://docs.aws.amazon.com/acm/latest/userguide/domain-ownership-validation.html) by creating an ACM certificate. You can either validate it by setting a DNS record or by verifying an email sent to the domain owner.
+           * 2. Once validated, set the certificate ARN as the `cert` and set `dns` to `false`.
+           * 3. Add the DNS records in your provider to point to the load balancer endpoint.
+           *
+           * @example
+           * ```js
+           * {
+           *   domain: {
+           *     name: "example.com",
+           *     dns: false,
+           *     cert: "arn:aws:acm:us-east-1:112233445566:certificate/3a958790-8878-4cdc-a396-06d95064cf63"
+           *   }
+           * }
+           * ```
+           */
+          cert?: Input<string>;
+          /**
+           * The DNS provider to use for the domain. Defaults to the AWS.
+           *
+           * Takes an adapter that can create the DNS records on the provider. This can automate
+           * validating the domain and setting up the DNS routing.
+           *
+           * Supports Route 53, Cloudflare, and Vercel adapters. For other providers, you'll need
+           * to set `dns` to `false` and pass in a certificate validating ownership via `cert`.
+           *
+           * @default `sst.aws.dns`
+           *
+           * @example
+           *
+           * Specify the hosted zone ID for the Route 53 domain.
+           *
+           * ```js
+           * {
+           *   domain: {
+           *     name: "example.com",
+           *     dns: sst.aws.dns({
+           *       zone: "Z2FDTNDATAQYW2"
+           *     })
+           *   }
+           * }
+           * ```
+           *
+           * Use a domain hosted on Cloudflare, needs the Cloudflare provider.
+           *
+           * ```js
+           * {
+           *   domain: {
+           *     name: "example.com",
+           *     dns: sst.cloudflare.dns()
+           *   }
+           * }
+           * ```
+           *
+           * Use a domain hosted on Vercel, needs the Vercel provider.
+           *
+           * ```js
+           * {
+           *   domain: {
+           *     name: "example.com",
+           *     dns: sst.vercel.dns()
+           *   }
+           * }
+           * ```
+           */
+          dns?: Input<false | (Dns & {})>;
+        }
     >;
     /**
      * Configure the mapping for the ports the public endpoint listens to and forwards to
@@ -599,105 +601,105 @@ export interface ClusterServiceArgs {
     domain?: Input<
       | string
       | {
-        /**
-         * The custom domain you want to use.
-         *
-         * @example
-         * ```js
-         * {
-         *   domain: {
-         *     name: "example.com"
-         *   }
-         * }
-         * ```
-         *
-         * Can also include subdomains based on the current stage.
-         *
-         * ```js
-         * {
-         *   domain: {
-         *     name: `${$app.stage}.example.com`
-         *   }
-         * }
-         * ```
-         */
-        name: Input<string>;
-        /**
-         * The ARN of an ACM (AWS Certificate Manager) certificate that proves ownership of the
-         * domain. By default, a certificate is created and validated automatically.
-         *
-         * :::tip
-         * You need to pass in a `cert` for domains that are not hosted on supported `dns` providers.
-         * :::
-         *
-         * To manually set up a domain on an unsupported provider, you'll need to:
-         *
-         * 1. [Validate that you own the domain](https://docs.aws.amazon.com/acm/latest/userguide/domain-ownership-validation.html) by creating an ACM certificate. You can either validate it by setting a DNS record or by verifying an email sent to the domain owner.
-         * 2. Once validated, set the certificate ARN as the `cert` and set `dns` to `false`.
-         * 3. Add the DNS records in your provider to point to the load balancer endpoint.
-         *
-         * @example
-         * ```js
-         * {
-         *   domain: {
-         *     name: "example.com",
-         *     dns: false,
-         *     cert: "arn:aws:acm:us-east-1:112233445566:certificate/3a958790-8878-4cdc-a396-06d95064cf63"
-         *   }
-         * }
-         * ```
-         */
-        cert?: Input<string>;
-        /**
-         * The DNS provider to use for the domain. Defaults to the AWS.
-         *
-         * Takes an adapter that can create the DNS records on the provider. This can automate
-         * validating the domain and setting up the DNS routing.
-         *
-         * Supports Route 53, Cloudflare, and Vercel adapters. For other providers, you'll need
-         * to set `dns` to `false` and pass in a certificate validating ownership via `cert`.
-         *
-         * @default `sst.aws.dns`
-         *
-         * @example
-         *
-         * Specify the hosted zone ID for the Route 53 domain.
-         *
-         * ```js
-         * {
-         *   domain: {
-         *     name: "example.com",
-         *     dns: sst.aws.dns({
-         *       zone: "Z2FDTNDATAQYW2"
-         *     })
-         *   }
-         * }
-         * ```
-         *
-         * Use a domain hosted on Cloudflare, needs the Cloudflare provider.
-         *
-         * ```js
-         * {
-         *   domain: {
-         *     name: "example.com",
-         *     dns: sst.cloudflare.dns()
-         *   }
-         * }
-         * ```
-         *
-         * Use a domain hosted on Vercel, needs the Vercel provider.
-         *
-         * ```js
-         * {
-         *   domain: {
-         *     name: "example.com",
-         *     dns: sst.vercel.dns()
-         *   }
-         * }
-         * ```
-         */
-        dns?: Input<false | (Dns & {})>;
-      }
+          /**
+           * The custom domain you want to use.
+           *
+           * @example
+           * ```js
+           * {
+           *   domain: {
+           *     name: "example.com"
+           *   }
+           * }
+           * ```
+           *
+           * Can also include subdomains based on the current stage.
+           *
+           * ```js
+           * {
+           *   domain: {
+           *     name: `${$app.stage}.example.com`
+           *   }
+           * }
+           * ```
+           */
+          name: Input<string>;
+          /**
+           * The ARN of an ACM (AWS Certificate Manager) certificate that proves ownership of the
+           * domain. By default, a certificate is created and validated automatically.
+           *
+           * :::tip
+           * You need to pass in a `cert` for domains that are not hosted on supported `dns` providers.
+           * :::
+           *
+           * To manually set up a domain on an unsupported provider, you'll need to:
+           *
+           * 1. [Validate that you own the domain](https://docs.aws.amazon.com/acm/latest/userguide/domain-ownership-validation.html) by creating an ACM certificate. You can either validate it by setting a DNS record or by verifying an email sent to the domain owner.
+           * 2. Once validated, set the certificate ARN as the `cert` and set `dns` to `false`.
+           * 3. Add the DNS records in your provider to point to the load balancer endpoint.
+           *
+           * @example
+           * ```js
+           * {
+           *   domain: {
+           *     name: "example.com",
+           *     dns: false,
+           *     cert: "arn:aws:acm:us-east-1:112233445566:certificate/3a958790-8878-4cdc-a396-06d95064cf63"
+           *   }
+           * }
+           * ```
+           */
+          cert?: Input<string>;
+          /**
+           * The DNS provider to use for the domain. Defaults to the AWS.
+           *
+           * Takes an adapter that can create the DNS records on the provider. This can automate
+           * validating the domain and setting up the DNS routing.
+           *
+           * Supports Route 53, Cloudflare, and Vercel adapters. For other providers, you'll need
+           * to set `dns` to `false` and pass in a certificate validating ownership via `cert`.
+           *
+           * @default `sst.aws.dns`
+           *
+           * @example
+           *
+           * Specify the hosted zone ID for the Route 53 domain.
+           *
+           * ```js
+           * {
+           *   domain: {
+           *     name: "example.com",
+           *     dns: sst.aws.dns({
+           *       zone: "Z2FDTNDATAQYW2"
+           *     })
+           *   }
+           * }
+           * ```
+           *
+           * Use a domain hosted on Cloudflare, needs the Cloudflare provider.
+           *
+           * ```js
+           * {
+           *   domain: {
+           *     name: "example.com",
+           *     dns: sst.cloudflare.dns()
+           *   }
+           * }
+           * ```
+           *
+           * Use a domain hosted on Vercel, needs the Vercel provider.
+           *
+           * ```js
+           * {
+           *   domain: {
+           *     name: "example.com",
+           *     dns: sst.vercel.dns()
+           *   }
+           * }
+           * ```
+           */
+          dns?: Input<false | (Dns & {})>;
+        }
     >;
     /**
      * Configure the mapping for the ports the load balancer listens to and forwards to
@@ -708,7 +710,7 @@ export interface ClusterServiceArgs {
      * 2. Network Layer Protocols: `tcp`, `udp`, `tcp_udp`, and `tls`. This'll create a [Network Load Balancer](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/introduction.html).
      *
      * :::note
-     * If you want to listen  on `https` or `tls`, you need to specify a custom
+     * If you want to listen on `https` or `tls`, you need to specify a custom
      * `loadBalancer.domain`.
      * :::
      *
@@ -770,6 +772,84 @@ export interface ClusterServiceArgs {
          */
         container?: Input<string>;
       }[]
+    >;
+    /**
+     * Configure the health check for the service.
+     *
+     * Health checks are used to ensure that only healthy containers receive traffic.
+     * The load balancer checks each target container at the specified health check path
+     * and only routes traffic to containers that pass these checks.
+     *
+     * The health check cannot be disabled.
+     * - The default for "http" protocols is `{ path: "/", interval: "30 seconds", timeout: "5 seconds", healthyThreshold: 5, unhealthyThreshold: 2, successCodes: "200" }`.
+     * - The default for "tcp" and "udp" protocols is `{ interval: "30 seconds", timeout: "6 seconds", healthyThreshold: 5, unhealthyThreshold: 2 }`
+     *
+     * @example
+     * Here we are configuring a health check that pings the `/health` path on port `8080`
+     * every 10 seconds.
+     * ```js
+     * {
+     *   ports: [
+     *     { listen: "80/http", forward: "8080/http" }
+     *   ]
+     *   healthCheck: {
+     *     "8080/http": {
+     *       path: "/health",
+     *       interval: "10 seconds",
+     *     }
+     *   }
+     * }
+     * ```
+     *
+     */
+    health?: Input<
+      Record<
+        Port,
+        Input<{
+          /**
+           * The URL path to ping on the service for health checks. Only applicable to
+           * "http" protocols.
+           * @default `"/"`
+           */
+          path?: Input<string>;
+          /**
+           * The time period between each health check. Must be between 5 and 300 seconds.
+           * @default `"30 seconds"`
+           */
+          interval?: Input<DurationMinutes>;
+          /**
+           * The timeout for each health check. If no response is received within this time,
+           * the health check is considered failed. Must be between 2 and 120 seconds.
+           * @default `"5 seconds"`
+           */
+          timeout?: Input<DurationMinutes>;
+          /**
+           * The number of consecutive successful health checks required to consider the
+           * target healthy. Must be between 2 and 10.
+           * @default `5`
+           */
+          healthyThreshold?: Input<number>;
+          /**
+           * The number of consecutive failed health checks required to consider the
+           * target unhealthy. Must be between 2 and 10.
+           * @default `2`
+           */
+          unhealthyThreshold?: Input<number>;
+          /**
+           * One or more HTTP response codes the health check treats as successful. Only
+           * applicable to "http" protocols.
+           *
+           * @default `"200"`
+           * @example
+           * ```js
+           * {
+           *   successCodes: "200-299"
+           * }
+           * ```
+           */
+          successCodes?: Input<string>;
+        }>
+      >
     >;
   }>;
   /**
@@ -978,7 +1058,7 @@ export interface ClusterServiceArgs {
      * }
      * ```
      */
-    cpuUtilization?: Input<number>;
+    cpuUtilization?: Input<false | number>;
     /**
      * The target memory utilization percentage to scale up or down. It'll scale up
      * when the memory utilization is above the target and scale down when it's below the target.
@@ -992,7 +1072,7 @@ export interface ClusterServiceArgs {
      * }
      * ```
      */
-    memoryUtilization?: Input<number>;
+    memoryUtilization?: Input<false | number>;
   }>;
   /**
    * Configure the Docker build command for building the image or specify a pre-built image.
@@ -1028,46 +1108,46 @@ export interface ClusterServiceArgs {
   image?: Input<
     | string
     | {
-      /**
-       * The path to the [Docker build context](https://docs.docker.com/build/building/context/#local-context). The path is relative to your project's `sst.config.ts`.
-       * @default `"."`
-       * @example
-       *
-       * To change where the Docker build context is located.
-       *
-       * ```js
-       * {
-       *   context: "./app"
-       * }
-       * ```
-       */
-      context?: Input<string>;
-      /**
-       * The path to the [Dockerfile](https://docs.docker.com/reference/cli/docker/image/build/#file).
-       * The path is relative to the build `context`.
-       * @default `"Dockerfile"`
-       * @example
-       * To use a different Dockerfile.
-       * ```js
-       * {
-       *   dockerfile: "Dockerfile.prod"
-       * }
-       * ```
-       */
-      dockerfile?: Input<string>;
-      /**
-       * Key-value pairs of [build args](https://docs.docker.com/build/guide/build-args/) to pass to the Docker build command.
-       * @example
-       * ```js
-       * {
-       *   args: {
-       *     MY_VAR: "value"
-       *   }
-       * }
-       * ```
-       */
-      args?: Input<Record<string, Input<string>>>;
-    }
+        /**
+         * The path to the [Docker build context](https://docs.docker.com/build/building/context/#local-context). The path is relative to your project's `sst.config.ts`.
+         * @default `"."`
+         * @example
+         *
+         * To change where the Docker build context is located.
+         *
+         * ```js
+         * {
+         *   context: "./app"
+         * }
+         * ```
+         */
+        context?: Input<string>;
+        /**
+         * The path to the [Dockerfile](https://docs.docker.com/reference/cli/docker/image/build/#file).
+         * The path is relative to the build `context`.
+         * @default `"Dockerfile"`
+         * @example
+         * To use a different Dockerfile.
+         * ```js
+         * {
+         *   dockerfile: "Dockerfile.prod"
+         * }
+         * ```
+         */
+        dockerfile?: Input<string>;
+        /**
+         * Key-value pairs of [build args](https://docs.docker.com/build/guide/build-args/) to pass to the Docker build command.
+         * @example
+         * ```js
+         * {
+         *   args: {
+         *     MY_VAR: "value"
+         *   }
+         * }
+         * ```
+         */
+        args?: Input<Record<string, Input<string>>>;
+      }
   >;
   /**
    * The command to override the default command in the container.
@@ -1126,6 +1206,20 @@ export interface ClusterServiceArgs {
    * ```
    */
   environment?: FunctionArgs["environment"];
+  /**
+   * Key-value pairs of AWS Systems Manager Parameter Store parameter ARNs or AWS Secrets
+   * Manager secret ARNs. The values will be loaded into the container as environment
+   * variables.
+   * @example
+   * ```js
+   * {
+   *   ssm: {
+   *     DATABASE_PASSWORD: "arn:aws:secretsmanager:us-east-1:123456789012:secret:my-secret-123abc"
+   *   }
+   * }
+   * ```
+   */
+  ssm?: Input<Record<string, Input<string>>>;
   /**
    * Configure the service's logs in CloudWatch.
    * @default `{ retention: "1 month" }`
@@ -1192,15 +1286,15 @@ export interface ClusterServiceArgs {
     efs: Input<
       | Efs
       | {
-        /**
-         * The ID of the EFS file system.
-         */
-        fileSystem: Input<string>;
-        /**
-         * The ID of the EFS access point.
-         */
-        accessPoint: Input<string>;
-      }
+          /**
+           * The ID of the EFS file system.
+           */
+          fileSystem: Input<string>;
+          /**
+           * The ID of the EFS access point.
+           */
+          accessPoint: Input<string>;
+        }
     >;
     /**
      * The path to mount the volume.
@@ -1269,21 +1363,21 @@ export interface ClusterServiceArgs {
     image?: Input<
       | string
       | {
-        /**
-         * The path to the Docker build context. Same as the top-level
-         * [`image.context`](#image-context).
-         */
-        context?: Input<string>;
-        /**
-         * The path to the Dockerfile. Same as the top-level
-         * [`image.dockerfile`](#image-dockerfile).
-         */
-        dockerfile?: Input<string>;
-        /**
-         * Key-value pairs of build args. Same as the top-level [`image.args`](#image-args).
-         */
-        args?: Input<Record<string, Input<string>>>;
-      }
+          /**
+           * The path to the Docker build context. Same as the top-level
+           * [`image.context`](#image-context).
+           */
+          context?: Input<string>;
+          /**
+           * The path to the Dockerfile. Same as the top-level
+           * [`image.dockerfile`](#image-dockerfile).
+           */
+          dockerfile?: Input<string>;
+          /**
+           * Key-value pairs of build args. Same as the top-level [`image.args`](#image-args).
+           */
+          args?: Input<Record<string, Input<string>>>;
+        }
     >;
     /**
      * The command to override the default command in the container. Same as the top-level
@@ -1315,6 +1409,12 @@ export interface ClusterServiceArgs {
        */
       retention?: Input<keyof typeof RETENTION>;
     }>;
+    /**
+     * Key-value pairs of AWS Systems Manager Parameter Store parameter ARNs or AWS Secrets
+     * Manager secret ARNs. The values will be loaded into the container as environment
+     * variables. Same as the top-level [`ssm`](#ssm).
+     */
+    ssm?: ClusterServiceArgs["ssm"];
     /**
      * Mount Amazon EFS file systems into the container. Same as the top-level
      * [`efs`](#efs).
@@ -1417,6 +1517,10 @@ export interface ClusterServiceArgs {
      * Transform the AWS Load Balancer target group resource.
      */
     target?: Transform<lb.TargetGroupArgs>;
+    /**
+     * Transform the AWS Application Auto Scaling target resource.
+     */
+    autoScalingTarget?: Transform<appautoscaling.TargetArgs>;
     /**
      * Transform the CloudWatch log group resource.
      */
@@ -1596,8 +1700,7 @@ export class Cluster extends Component {
         `  - Set \`forceUpgrade: "v${_version}"\` on the "Cluster" component. Learn more https://sst.dev/docs/component/aws/cluster#forceupgrade`,
         ``,
         `To continue using v${$cli.state.version[name]}:`,
-        `  - Rename "Cluster" to "Cluster.v${$cli.state.version[name]
-        }". Learn more about versioning - https://sst.dev/docs/components/#versioning`,
+        `  - Rename "Cluster" to "Cluster.v${$cli.state.version[name]}". Learn more about versioning - https://sst.dev/docs/components/#versioning`,
       ].join("\n"),
       _forceUpgrade: args.forceUpgrade,
     });

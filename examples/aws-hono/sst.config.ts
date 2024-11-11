@@ -6,11 +6,6 @@ export default $config({
       name: "aws-hono",
       home: "aws",
       removal: input?.stage === "production" ? "retain" : "remove",
-      providers: {
-        aws: {
-          profile: "sst-dev",
-        },
-      },
     };
   },
   async run() {
@@ -20,8 +15,5 @@ export default $config({
       link: [bucket],
       handler: "index.handler",
     });
-    return {
-      api: hono.url,
-    };
   },
 });

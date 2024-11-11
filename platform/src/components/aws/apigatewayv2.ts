@@ -251,9 +251,9 @@ export interface ApiGatewayV2Args {
    * }
    * ```
    */
-  vpc?:
+  vpc?: Input<
     | Vpc
-    | Input<{
+    | {
         /**
          * A list of VPC security group IDs.
          */
@@ -262,7 +262,8 @@ export interface ApiGatewayV2Args {
          * A list of VPC subnet IDs.
          */
         subnets: Input<Input<string>[]>;
-      }>;
+      }
+  >;
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.
@@ -524,7 +525,7 @@ export interface ApiGatewayV2RouteArgs {
         /**
          * Enable IAM authorization for a given API route. When IAM auth is enabled, clients need to use Signature Version 4 to sign their requests with their AWS credentials.
          */
-        iam?: Input<true>;
+        iam?: Input<boolean>;
         /**
          * Enable JWT or JSON Web Token authorization for a given API route. When JWT auth is enabled, clients need to include a valid JWT in their requests.
          *
@@ -773,16 +774,18 @@ export class ApiGatewayV2 extends Component implements Link.Linkable {
       // "vpc" is undefined
       if (!args.vpc) return;
 
-      // "vpc" is a Vpc component
-      if (args.vpc instanceof Vpc) {
-        return {
-          subnets: args.vpc.publicSubnets,
-          securityGroups: args.vpc.securityGroups,
-        };
-      }
+      return output(args.vpc).apply((vpc) => {
+        // "vpc" is a Vpc component
+        if (vpc instanceof Vpc) {
+          return {
+            subnets: vpc.publicSubnets,
+            securityGroups: vpc.securityGroups,
+          };
+        }
 
-      // "vpc" is object
-      return output(args.vpc);
+        // "vpc" is object
+        return vpc;
+      });
     }
 
     function createVpcLink() {

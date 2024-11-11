@@ -5,6 +5,8 @@ interface BootstrapData {
   assetEcrRegistryId: string;
   assetEcrUrl: string;
   state: string;
+  appsyncHttp: string;
+  appsyncRealtime: string;
 }
 
 export const bootstrap = {

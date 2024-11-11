@@ -13,6 +13,7 @@
     "@aws-sdk/client-eventbridge": "^3.679.0",
     "@aws-sdk/client-sesv2": "^3.515.0",
     "@aws-sdk/client-sns": "^3.679.0",
+    "@aws-sdk/client-sqs": "^3.682.0",
     "ioredis": "^5.4.1",
     "sst": "latest"
   }

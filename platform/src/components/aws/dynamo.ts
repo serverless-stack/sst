@@ -14,6 +14,7 @@ import { parseDynamoStreamArn } from "./helpers/arn";
 import { DynamoLambdaSubscriber } from "./dynamo-lambda-subscriber";
 import { dynamodb, lambda } from "@pulumi/aws";
 import { permission } from "./permission";
+import { isFunctionSubscriber } from "./helpers/subscriber";
 
 export interface DynamoArgs {
   /**
@@ -212,7 +213,7 @@ export interface DynamoArgs {
    * }
    * ```
    */
-  deletionProtection?: Input<true>;
+  deletionProtection?: Input<boolean>;
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.
@@ -377,7 +378,7 @@ interface DynamoRef {
  * Then, subscribing to it.
  *
  * ```ts title="sst.config.ts"
- * table.subscribe("src/subscriber.handler");
+ * table.subscribe("MySubscriber", "src/subscriber.handler");
  * ```
  *
  * #### Link the table to a resource
@@ -394,10 +395,9 @@ interface DynamoRef {
  *
  * ```ts title="app/page.tsx" {1,8}
  * import { Resource } from "sst";
- * import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
- * import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
+ * import { DynamoDBClient, QueryCommand, ScanCommand } from "@aws-sdk/client-dynamodb";
  *
- * const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+ * const client = new DynamoDBClient();
  *
  * await client.send(new QueryCommand({
  *   TableName: Resource.MyTable.name,
@@ -550,19 +550,20 @@ export class Dynamo extends Component implements Link.Linkable {
    * You'll first need to enable the `stream` before subscribing to it.
    * :::
    *
+   * @param name The name of the subscriber.
    * @param subscriber The function that'll be notified.
    * @param args Configure the subscription.
    *
    * @example
    *
    * ```js title="sst.config.ts"
-   * table.subscribe("src/subscriber.handler");
+   * table.subscribe("MySubscriber", "src/subscriber.handler");
    * ```
    *
    * Add a filter to the subscription.
    *
    * ```js title="sst.config.ts"
-   * table.subscribe("src/subscriber.handler", {
+   * table.subscribe("MySubscriber", "src/subscriber.handler", {
    *   filters: [
    *     {
    *       dynamodb: {
@@ -580,7 +581,7 @@ export class Dynamo extends Component implements Link.Linkable {
    * Customize the subscriber function.
    *
    * ```js title="sst.config.ts"
-   * table.subscribe({
+   * table.subscribe("MySubscriber", {
    *   handler: "src/subscriber.handler",
    *   timeout: "60 seconds"
    * });
@@ -589,13 +590,25 @@ export class Dynamo extends Component implements Link.Linkable {
    * Or pass in the ARN of an existing Lambda function.
    *
    * ```js title="sst.config.ts"
-   * table.subscribe("arn:aws:lambda:us-east-1:123456789012:function:my-function");
+   * table.subscribe("MySubscriber", "arn:aws:lambda:us-east-1:123456789012:function:my-function");
    * ```
+   */
+  public subscribe(
+    name: string,
+    subscriber: Input<string | FunctionArgs | FunctionArn>,
+    args?: DynamoSubscriberArgs,
+  ): Output<DynamoLambdaSubscriber>;
+  /**
+   * @deprecated The subscribe function now requires a `name` parameter as the first argument.
+   * To migrate, remove the current subscriber, deploy the changes, and then add the subscriber
+   * back with the new `name` argument.
    */
   public subscribe(
     subscriber: Input<string | FunctionArgs | FunctionArn>,
     args?: DynamoSubscriberArgs,
-  ) {
+  ): Output<DynamoLambdaSubscriber>;
+
+  public subscribe(nameOrSubscriber: any, subscriberOrArgs?: any, args?: any) {
     const sourceName = this.constructorName;
 
     // Validate stream is enabled
@@ -604,18 +617,30 @@ export class Dynamo extends Component implements Link.Linkable {
         `Cannot subscribe to "${sourceName}" because stream is not enabled.`,
       );
 
-    return Dynamo._subscribe(
-      this.constructorName,
-      this.nodes.table.streamArn,
-      subscriber,
-      args,
-      { provider: this.constructorOpts.provider },
+    return isFunctionSubscriber(subscriberOrArgs).apply((v) =>
+      v
+        ? Dynamo._subscribe(
+            nameOrSubscriber, // name
+            this.constructorName,
+            this.nodes.table.streamArn,
+            subscriberOrArgs, // subscriber
+            args,
+            { provider: this.constructorOpts.provider },
+          )
+        : Dynamo._subscribeV1(
+            this.constructorName,
+            this.nodes.table.streamArn,
+            nameOrSubscriber, // subscriber
+            subscriberOrArgs, // args
+            { provider: this.constructorOpts.provider },
+          ),
     );
   }
 
   /**
    * Subscribe to the DynamoDB stream of a table that was not created in your app.
    *
+   * @param name The name of the subscriber.
    * @param streamArn The ARN of the DynamoDB Stream to subscribe to.
    * @param subscriber The function that'll be notified.
    * @param args Configure the subscription.
@@ -631,13 +656,13 @@ export class Dynamo extends Component implements Link.Linkable {
    * You can subscribe to it by passing in the ARN.
    *
    * ```js title="sst.config.ts"
-   * sst.aws.Dynamo.subscribe(streamArn, "src/subscriber.handler");
+   * sst.aws.Dynamo.subscribe("MySubscriber", streamArn, "src/subscriber.handler");
    * ```
    *
    * Add a filter to the subscription.
    *
    * ```js title="sst.config.ts"
-   * sst.aws.Dynamo.subscribe(streamArn, "src/subscriber.handler", {
+   * sst.aws.Dynamo.subscribe("MySubscriber", streamArn, "src/subscriber.handler", {
    *   filters: [
    *     {
    *       dynamodb: {
@@ -655,28 +680,80 @@ export class Dynamo extends Component implements Link.Linkable {
    * Customize the subscriber function.
    *
    * ```js title="sst.config.ts"
-   * sst.aws.Dynamo.subscribe(streamArn, {
+   * sst.aws.Dynamo.subscribe("MySubscriber", streamArn, {
    *   handler: "src/subscriber.handler",
    *   timeout: "60 seconds"
    * });
    * ```
    */
   public static subscribe(
+    name: string,
     streamArn: Input<string>,
     subscriber: Input<string | FunctionArgs | FunctionArn>,
     args?: DynamoSubscriberArgs,
+  ): Output<DynamoLambdaSubscriber>;
+  /**
+   * @deprecated The subscribe function now requires a `name` parameter as the first argument.
+   * To migrate, remove the current subscriber, deploy the changes, and then add the subscriber
+   * back with the new `name` argument.
+   */
+  public static subscribe(
+    streamArn: Input<string>,
+    subscriber: Input<string | FunctionArgs | FunctionArn>,
+    args?: DynamoSubscriberArgs,
+  ): Output<DynamoLambdaSubscriber>;
+
+  public static subscribe(
+    nameOrStreamArn: any,
+    streamArnOrSubscriber: any,
+    subscriberOrArgs?: any,
+    args?: any,
   ) {
-    return output(streamArn).apply((streamArn) =>
-      this._subscribe(
-        logicalName(parseDynamoStreamArn(streamArn).tableName),
-        streamArn,
-        subscriber,
-        args,
-      ),
+    return isFunctionSubscriber(subscriberOrArgs).apply((v) =>
+      v
+        ? output(streamArnOrSubscriber).apply((streamArn) =>
+            this._subscribe(
+              nameOrStreamArn, // name
+              logicalName(parseDynamoStreamArn(streamArn).tableName),
+              streamArn,
+              subscriberOrArgs, // subscriber
+              args,
+            ),
+          )
+        : output(nameOrStreamArn).apply((streamArn) =>
+            this._subscribeV1(
+              logicalName(parseDynamoStreamArn(streamArn).tableName),
+              streamArn,
+              streamArnOrSubscriber, // subscriber
+              subscriberOrArgs, // args
+            ),
+          ),
     );
   }
 
   private static _subscribe(
+    subscriberName: string,
+    name: string,
+    streamArn: string | Output<string>,
+    subscriber: Input<string | FunctionArgs | FunctionArn>,
+    args: DynamoSubscriberArgs = {},
+    opts: ComponentResourceOptions = {},
+  ) {
+    return output(args).apply(
+      (args) =>
+        new DynamoLambdaSubscriber(
+          `${name}Subscriber${subscriberName}`,
+          {
+            dynamo: { streamArn },
+            subscriber,
+            ...args,
+          },
+          opts,
+        ),
+    );
+  }
+
+  private static _subscribeV1(
     name: string,
     streamArn: string | Output<string>,
     subscriber: Input<string | FunctionArgs | FunctionArn>,
@@ -700,6 +777,7 @@ export class Dynamo extends Component implements Link.Linkable {
         {
           dynamo: { streamArn },
           subscriber,
+          disableParent: true,
           ...args,
         },
         opts,

@@ -1,7 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { pathToRegexp } from "path-to-regexp";
-import { ComponentResourceOptions, Output, all, output } from "@pulumi/pulumi";
+import { ComponentResourceOptions, Output, all } from "@pulumi/pulumi";
 import {
   SsrSiteArgs,
   createKvStorage,
@@ -16,6 +15,7 @@ import { Kv } from "./kv.js";
 import { buildApp } from "../base/base-ssr-site.js";
 import { Worker } from "./worker.js";
 import { Plugin } from "esbuild";
+import { pathToRegexp } from "../../util/path-to-regex.js";
 
 export interface RemixArgs extends SsrSiteArgs {
   /**

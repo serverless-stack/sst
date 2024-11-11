@@ -17,10 +17,10 @@ export default $config({
     const stream = new sst.aws.KinesisStream("MyStream");
 
     // Create a function subscribing to all events
-    stream.subscribe("subscriber.all");
+    stream.subscribe("AllSub", "subscriber.all");
 
     // Create a function subscribing to events of `bar` type
-    stream.subscribe("subscriber.filtered", {
+    stream.subscribe("FilteredSub", "subscriber.filtered", {
       filters: [
         {
           data: {

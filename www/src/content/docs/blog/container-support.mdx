@@ -1,0 +1,106 @@
+---
+template: splash
+title: Container support
+description: SST now natively supports building containerized applications.
+author: jay
+lastUpdated: 2024-11-08
+pagefind: false
+---
+
+import { YouTube } from '@astro-community/astro-embed-youtube';
+
+Historically, SST has primarily supported deploying serverless applications. But over the last month we've slowly expanded native support for containers on AWS.
+
+<YouTube id="sg4CnvoI7eg" posterQuality="high" />
+
+This includes changes across the entire SST platform.
+
+---
+
+### 1. Components
+
+There's a new family of components that'll help you build with containers.
+
+- [`Cluster`](/docs/component/aws/cluster) & [`Service`](/docs/component/aws/service)
+
+  These help you deploy your containerized applications to AWS using ECS and Fargate.
+
+  ```ts title="sst.config.ts"
+  const cluster = new sst.aws.Cluster("MyCluster", { vpc });
+
+  cluster.addService("MyService", {
+    loadBalancer: {
+      ports: [{ listen: "80/http", forward: "3000/http" }],
+    },
+    dev: {
+      command: "npm run dev",
+    },
+  });
+  ```
+
+  In addition to configuring ECS and Fargate, this also configures [**service discovery**](https://x.com/jayair/status/1853848336538673606) for your applications.
+
+- [`Vpc`](/docs/component/aws/vpc)
+
+  Container applications are usually deployed in a VPC. So this component makes it easy to create a VPC. And optionally add a bastion host or a NAT gateway.
+
+  ```ts title="sst.config.ts"
+  new sst.aws.Vpc("MyVpc", { bastion: true, nat: "managed" });
+  ```
+
+- [`Postgres`](/docs/component/aws/postgres), [`Redis`](/docs/component/aws/redis), & [`Efs`](/docs/component/aws/efs)
+
+   While these components are not specifically for containers, they've been designed to work well with the above `Cluster` and `Vpc` components. 
+
+---
+
+#### Cost
+
+Unlike our serverless components, that are pay-per-use, these components have a more traditional pricing structure. We've taken special care to ensure that these components are as cost effective as possible to get started with. While still allowing you to scale with them.
+
+Unfortunately, AWS' pricing pages for these services is not great. So the above components have a new _Cost_ section in their docs. For example, here's what the [cost of using the `Vpc` component looks like](/docs/component/aws/vpc#cost).
+
+You can [read more about what we've done here](https://x.com/jayair/status/1851019182122652125).
+
+---
+
+### 2. CLI
+
+There are two big things we've done with our CLI to support containers.
+
+1. The `dev` prop allows you to run your application locally in a new tab in the `sst dev` multiplexer.
+
+2. The new [`sst tunnel`](/docs/reference/cli#tunnel) command allows your local machine to connect to resources that've been deployed in a VPC. This is helpful because most of the container related components need a VPC. You can [check it out in action here](https://x.com/jayair/status/1844055259729007084).
+
+---
+
+### 3. Console
+
+The [SST Console](/docs/console) now shows you logs for your containers. And [Autodeploy](/docs/console#autodeploy) will support running in the same VPC as your app. This will allow your deploy process to have access to all the resources in your app.
+
+---
+
+## Get started
+
+We've updated all our tutorials to help you get started with the new containers.
+
+- [Bun](/docs/start/aws/bun)
+- [Nuxt](/docs/start/aws/nuxt)
+- [Solid](/docs/start/aws/solid)
+- [Deno](/docs/start/aws/deno)
+- [Hono](/docs/start/aws/hono)
+- [Astro](/docs/start/aws/astro)
+- [Remix](/docs/start/aws/remix)
+- [Svelte](/docs/start/aws/svelte)
+- [Next.js](/docs/start/aws/nextjs)
+- [Drizzle](/docs/start/aws/drizzle)
+- [Prisma](/docs/start/aws/prisma)
+- [Express](/docs/start/aws/express)
+
+The frontends now support deploying to both serverless and containers.
+
+---
+
+## What's next
+
+Over the next few weeks we'll extend support to other languages and frameworks. Like Rails, Laravel, Python, Elixir, Go, and more.

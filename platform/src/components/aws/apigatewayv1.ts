@@ -449,7 +449,7 @@ export interface ApiGatewayV1RouteArgs {
          *
          * When IAM auth is enabled, clients need to use Signature Version 4 to sign their requests with their AWS credentials.
          */
-        iam?: Input<true>;
+        iam?: Input<boolean>;
         /**
          * Enable custom Lambda authorization for a given API route. Pass in the authorizer ID.
          * @example

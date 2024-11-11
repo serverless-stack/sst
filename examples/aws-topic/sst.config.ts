@@ -18,8 +18,8 @@ export default $config({
     queue.subscribe("subscriber.handler");
 
     const topic = new sst.aws.SnsTopic("MyTopic");
-    topic.subscribe("subscriber.handler", {});
-    topic.subscribeQueue(queue.arn);
+    topic.subscribe("MySubscriber1", "subscriber.handler", {});
+    topic.subscribeQueue("MySubscriber2", queue.arn);
 
     const app = new sst.aws.Function("MyApp", {
       handler: "publisher.handler",

@@ -165,7 +165,7 @@ export interface BucketArgs {
    * Bucket versioning enables you to store multiple versions of an object, protecting
    * against accidental deletion or overwriting.
    *
-   * @default Versioning disabled
+   * @default `false`
    * @example
    * ```js
    * {
@@ -173,7 +173,7 @@ export interface BucketArgs {
    * }
    * ```
    */
-  versioning?: Input<true>;
+  versioning?: Input<boolean>;
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.
@@ -408,21 +408,23 @@ export class Bucket extends Component implements Link.Linkable {
     }
 
     function createVersioning() {
-      if (!args.versioning) return;
+      return output(args.versioning).apply((versioning) => {
+        if (!versioning) return;
 
-      return new s3.BucketVersioningV2(
-        ...transform(
-          args.transform?.versioning,
-          `${name}Versioning`,
-          {
-            bucket: bucket.bucket,
-            versioningConfiguration: {
-              status: "Enabled",
+        return new s3.BucketVersioningV2(
+          ...transform(
+            args.transform?.versioning,
+            `${name}Versioning`,
+            {
+              bucket: bucket.bucket,
+              versioningConfiguration: {
+                status: "Enabled",
+              },
             },
-          },
-          { parent },
-        ),
-      );
+            { parent },
+          ),
+        );
+      });
     }
 
     function createPublicAccess() {

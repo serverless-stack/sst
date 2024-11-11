@@ -19,17 +19,17 @@ To use this template.
 
 1. Head over to [**github.com/sst/monorepo-template**](https://github.com/sst/monorepo-template)
 
-2. Click on **Use this template** and create a new repo
+2. Click on **Use this template** and create a new repo.
 
-3. Clone the repo
+3. Clone the repo.
 
-4. From the project root, run the following to rename it to your app
+4. From the project root, run the following to rename it to your app.
 
    ```bash
    npx replace-in-file /monorepo-template/g MY_APP **/*.* --verbose
    ```
 
-5. Install the dependencies
+5. Install the dependencies.
 
    ```bash
    npm install
@@ -48,7 +48,7 @@ my-sst-app
 ├─ sst.config.ts
 ├─ package.json
 ├─ packages
-│  ├─ frontend
+│  ├─ functions
 │  ├─ scripts
 │  └─ core
 └─ infra
@@ -118,6 +118,8 @@ The `packages/` directory  includes the following:
   ```bash
   npm run shell src/example.ts
   ```
+
+You can add additional packages to the `packages/` directory. For example, you might add a `frontend/` and a `backend/` package.
 
 ---
 

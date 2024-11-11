@@ -1,8 +1,8 @@
-import * as aws from "@pulumi/aws";
-import { Output, output } from "@pulumi/pulumi";
+import { lambda } from "@pulumi/aws";
+import { output } from "@pulumi/pulumi";
 import { Component, transform } from "../component";
 import { Input } from "../input.js";
-import { Function, FunctionArgs } from "./function.js";
+import { FunctionArgs } from "./function.js";
 import { KinesisStreamLambdaSubscriberArgs } from "./kinesis-stream.js";
 import { FunctionBuilder, functionBuilder } from "./helpers/function-builder";
 import { parseFunctionArn } from "./helpers/arn";
@@ -35,7 +35,7 @@ export interface Args extends KinesisStreamLambdaSubscriberArgs {
  */
 export class KinesisStreamLambdaSubscriber extends Component {
   private readonly fn: FunctionBuilder;
-  private readonly eventSourceMapping: aws.lambda.EventSourceMapping;
+  private readonly eventSourceMapping: lambda.EventSourceMapping;
   constructor(name: string, args: Args, opts?: $util.ComponentResourceOptions) {
     super(__pulumiType, name, args, opts);
 
@@ -76,7 +76,7 @@ export class KinesisStreamLambdaSubscriber extends Component {
     }
 
     function createEventSourceMapping() {
-      return new aws.lambda.EventSourceMapping(
+      return new lambda.EventSourceMapping(
         ...transform(
           args.transform?.eventSourceMapping,
           `${name}EventSourceMapping`,
@@ -109,7 +109,9 @@ export class KinesisStreamLambdaSubscriber extends Component {
       /**
        * The Lambda function that'll be notified.
        */
-      function: self.fn.apply((fn) => fn.getFunction()),
+      get function() {
+        return self.fn.apply((fn) => fn.getFunction());
+      },
       /**
        * The Lambda event source mapping.
        */

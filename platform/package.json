@@ -40,11 +40,10 @@
     "aws4fetch": "1.0.18",
     "esbuild": "0.20.2",
     "glob": "10.3.10",
-    "path-to-regexp": "6.2.1",
     "prettier": "3.1.1",
     "typescript": "5.3.3",
     "undici": "^6.19.5",
-    "unenv": "^1.10.0"
+    "unenv": "npm:unenv-nightly@2.0.0-20241024-111401-d4156ac"
   },
   "devDependencies": {
     "@aws-sdk/client-iot": "3.501.0",

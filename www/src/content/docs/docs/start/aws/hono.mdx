@@ -64,10 +64,6 @@ async run() {
     url: true,
     handler: "index.handler",
   });
-
-  return {
-    api: hono.url,
-  };
 }
 ```
 
@@ -86,8 +82,8 @@ npx sst dev
 This will give you the URL of your API.
 
 ```bash frame="none"
-+  Complete
-   api: https://gyrork2ll35rsuml2yr4lifuqu0tsjft.lambda-url.us-east-1.on.aws
+✓  Complete
+   Hono: https://gyrork2ll35rsuml2yr4lifuqu0tsjft.lambda-url.us-east-1.on.aws
 ```
 
 ---
@@ -368,10 +364,10 @@ We are directly accessing our Redis cluster with `Resource.MyRedis.*`.
 Let's update the `/` route.
 
 ```ts title="index.ts"
-if (url.pathname === "/" && req.method === "GET") {
+app.get("/", async (c) => {
   const counter = await redis.incr("counter");
-  return new Response(`Hit counter: ${counter}`);
-}
+  return c.text(`Hit counter: ${counter}`);
+});
 ```
 
 ---

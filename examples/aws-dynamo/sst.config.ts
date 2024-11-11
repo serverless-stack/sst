@@ -21,7 +21,7 @@ export default $config({
       primaryIndex: { hashKey: "id" },
       stream: "new-and-old-images",
     });
-    table.subscribe("subscriber.handler", {
+    table.subscribe("MySubscriber", "subscriber.handler", {
       filters: [
         {
           dynamodb: {

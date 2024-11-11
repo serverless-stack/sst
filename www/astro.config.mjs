@@ -5,14 +5,9 @@ import config from "./config";
 import sst from "astro-sst";
 
 const sidebar = [
-  {
-    label: "Intro",
-    slug: "docs",
-  },
-  {
-    label: "Workflow",
-    slug: "docs/workflow",
-  },
+  { label: "Intro", slug: "docs" },
+  { label: "Workflow", slug: "docs/workflow" },
+  { label: "Enterprise", slug: "docs/enterprise" },
   {
     label: "Get Started",
     items: [
