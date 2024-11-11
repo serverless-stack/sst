@@ -774,7 +774,7 @@ export interface ClusterServiceArgs {
       }[]
     >;
     /**
-     * Configure the health check for the service.
+     * Configure the health check for the load balancer.
      *
      * Health checks are used to ensure that only healthy containers receive traffic.
      * The load balancer checks each target container at the specified health check path
@@ -792,7 +792,7 @@ export interface ClusterServiceArgs {
      *   ports: [
      *     { listen: "80/http", forward: "8080/http" }
      *   ]
-     *   healthCheck: {
+     *   health: {
      *     "8080/http": {
      *       path: "/health",
      *       interval: "10 seconds",
@@ -1160,25 +1160,6 @@ export interface ClusterServiceArgs {
    */
   command?: Input<Input<string>[]>;
   /**
-   * The health check command and associated configuration parameters for the container. This
-   * parameter maps to HealthCheck in the Create a container section of the Docker Remote API and the
-   * HEALTHCHECK parameter of docker run.
-   *
-   * https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_HealthCheck.html
-   * @example
-   * ```js
-   * {
-   *   healthCheck: {
-   *     command: ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"],
-   *     timeout: 5,
-   *     interval: 30,
-   *     retries: 3,
-   *   }
-   * }
-   * ```
-   */
-  healthCheck?: Input<ecs.HealthCheck>;
-  /**
    * The entrypoint to override the default entrypoint in the container.
    * @example
    * ```js
@@ -1302,6 +1283,66 @@ export interface ClusterServiceArgs {
     path: Input<string>;
   }>[];
   /**
+   * Configure the health check for the container. This configuration maps to the
+   * `HEALTHCHECK` parameter of docker run.
+   * Learn more about [container health checks](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_HealthCheck.html).
+   *
+   * @default No container health check
+   * @example
+   * ```js
+   * {
+   *   health: {
+   *     command: ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"],
+   *     startPeriod: "60 seconds"
+   *     timeout: "5 seconds",
+   *     interval: "30 seconds",
+   *     retries: 3,
+   *   }
+   * }
+   * ```
+   */
+  health?: Input<{
+    /**
+     * A string array representing the command that the container runs to determine if it is
+     * healthy.
+     *
+     * The string array must start with `CMD` to run the command arguments directly, or
+     * `CMD-SHELL` to run the command with the container's default shell.
+     *
+     * @example
+     * ```js
+     * {
+     *   command: ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"]
+     * }
+     * ```
+     */
+    command: Input<string[]>;
+    /**
+     * The grace period to provide containers time to bootstrap before failed health checks
+     * count towards the maximum number of retries. Must be between `0 seconds` and
+     * `300 seconds`.
+     * @default `"0 seconds"`
+     */
+    startPeriod?: Input<DurationMinutes>;
+    /**
+     * The time to wait before considering the check to have hung. Must be between `2 seconds`
+     * and `60 seconds`.
+     * @default `"5 seconds"`
+     */
+    timeout?: Input<DurationMinutes>;
+    /**
+     * The time between running the check. Must be between `5 seconds` and `300 seconds`.
+     * @default `"30 seconds"`
+     */
+    interval?: Input<DurationMinutes>;
+    /**
+     * The number of consecutive failures required to consider the check to have failed. Must
+     * be between `1` and `10`.
+     * @default `3`
+     */
+    retries?: Input<number>;
+  }>;
+  /**
    * The containers to run in the service.
    *
    * :::tip
@@ -1385,11 +1426,6 @@ export interface ClusterServiceArgs {
      */
     command?: Input<string[]>;
     /**
-     * Configure the container-level health check. Same as the top-level
-     * [`healthCheck`](#healthCheck).
-     */
-    healthCheck?: Input<ecs.HealthCheck>;
-    /**
      * The entrypoint to override the default entrypoint in the container. Same as the top-level
      * [`entrypoint`](#entrypoint).
      */
@@ -1420,6 +1456,11 @@ export interface ClusterServiceArgs {
      * [`efs`](#efs).
      */
     volumes?: ClusterServiceArgs["volumes"];
+    /**
+     * Configure the health check for the container. Same as the top-level
+     * [`health`](#health).
+     */
+    health?: ClusterServiceArgs["health"];
     /**
      * Configure how this container works in `sst dev`. Same as the top-level
      * [`dev`](#dev).

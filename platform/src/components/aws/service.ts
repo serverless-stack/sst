@@ -250,10 +250,11 @@ export class Service extends Component implements Link.Linkable {
           args.logging ||
           args.environment ||
           args.volumes ||
+          args.health ||
           args.ssm)
       ) {
         throw new VisibleError(
-          `You cannot provide both "containers" and "image", "logging", "environment", "volumes" or "ssm".`,
+          `You cannot provide both "containers" and "image", "logging", "environment", "volumes", "health" or "ssm".`,
         );
       }
 
@@ -268,7 +269,7 @@ export class Service extends Component implements Link.Linkable {
           volumes: args.volumes,
           command: args.command,
           entrypoint: args.entrypoint,
-          healthCheck: args.healthCheck,
+          health: args.health,
           dev: args.dev,
         },
       ];
@@ -765,7 +766,13 @@ export class Service extends Component implements Link.Linkable {
           })(),
           command: container.command,
           entrypoint: container.entrypoint,
-          healthCheck: container.healthCheck,
+          healthCheck: container.health && {
+            command: container.health.command,
+            startPeriod: toSeconds(container.health.startPeriod ?? "0 seconds"),
+            timeout: toSeconds(container.health.timeout ?? "5 seconds"),
+            interval: toSeconds(container.health.interval ?? "30 seconds"),
+            retries: container.health.retries ?? 3,
+          },
           pseudoTerminal: true,
           portMappings: [{ containerPortRange: "1-65535" }],
           logConfiguration: {
