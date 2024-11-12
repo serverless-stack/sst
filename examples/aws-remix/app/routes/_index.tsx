@@ -1,6 +1,5 @@
-import crypto from "crypto";
+import crypto from "node:crypto";
 import { Resource } from "sst";
-import { json } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import type { MetaFunction } from "@remix-run/node";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -13,7 +12,7 @@ export async function loader() {
   });
   const url = await getSignedUrl(new S3Client({}), command);
 
-  return json({ url });
+  return { url };
 }
 
 export const meta: MetaFunction = () => {
