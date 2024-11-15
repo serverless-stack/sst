@@ -16,46 +16,50 @@ type FileChangedEvent struct {
 	Path string
 }
 
-func Start(ctx context.Context, root string) error {
+func Start(ctx context.Context, watchPaths []string) error {
 	defer slog.Info("watcher done")
-	slog.Info("starting watcher", "root", root)
+	slog.Info("starting watcher", "watchPaths", watchPaths)
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return err
 	}
-	err = watcher.AddWith(root)
-	if err != nil {
-		return err
-	}
-	ignoreSubstrings := []string{"node_modules"}
 
-	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	for _, watchPath := range watchPaths {
+		err = watcher.AddWith(watchPath)
 		if err != nil {
 			return err
 		}
-		if info.IsDir() {
-			if strings.HasPrefix(info.Name(), ".") {
-				return filepath.SkipDir
-			}
-			for _, substring := range ignoreSubstrings {
-				if strings.Contains(path, substring) {
-					return filepath.SkipDir
-				}
-			}
-			slog.Info("watching", "path", path)
-			err = watcher.Add(path)
+		ignoreSubstrings := []string{"node_modules"}
+
+		err = filepath.Walk(watchPath, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
+			if info.IsDir() {
+				if strings.HasPrefix(info.Name(), ".") {
+					return filepath.SkipDir
+				}
+				for _, substring := range ignoreSubstrings {
+					if strings.Contains(path, substring) {
+						return filepath.SkipDir
+					}
+				}
+				slog.Info("watching", "path", path)
+				err = watcher.Add(path)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return err
 		}
-		return nil
-	})
-	if err != nil {
-		return err
+
+		headFile := filepath.Join(watchPath, ".git/HEAD")
+		watcher.Add(headFile)
 	}
 
-	headFile := filepath.Join(root, ".git/HEAD")
-	watcher.Add(headFile)
 	limiter := map[string]time.Time{}
 	for {
 		select {
@@ -63,7 +67,8 @@ func Start(ctx context.Context, root string) error {
 			if !ok {
 				return nil
 			}
-			if event.Name == headFile {
+
+			if strings.HasSuffix(event.Name, ".git/HEAD") {
 				return nil
 			}
 			if event.Op&(fsnotify.Write|fsnotify.Create) == 0 {

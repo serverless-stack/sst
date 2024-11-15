@@ -133,11 +133,17 @@ func CmdMosaic(c *cli.Cli) error {
 		return err
 	}
 	os.Setenv("SST_STAGE", p.App().Stage)
-	slog.Info("mosaic", "project", p.PathRoot())
+
+	watchPaths := []string{p.PathRoot()}
+	for _, path := range p.App().DevAdditionalWatchPaths {
+		watchPaths = append(watchPaths, filepath.Join(p.PathRoot(), path))
+	}
+
+	slog.Info("mosaic", "project", watchPaths)
 
 	wg.Go(func() error {
 		defer c.Cancel()
-		return watcher.Start(c.Context, p.PathRoot())
+		return watcher.Start(c.Context, watchPaths)
 	})
 
 	server, err := server.New()
