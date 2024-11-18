@@ -11,3 +11,6 @@ Pulumi.yaml
 .netlify
 .env
 tmp
+
+# Editor
+.idea

@@ -695,11 +695,15 @@ export class Postgres extends Component implements Link.Linkable {
       $cli.state.version[name] = tags?.["sst:component-version"]
         ? parseInt(tags["sst:component-version"])
         : $cli.state.version[name];
-      return new Postgres(name, {
-        ref: true,
-        instance,
-        proxyId: args.proxyId,
-      } as unknown as PostgresArgs);
+      return new Postgres(
+        name,
+        {
+          ref: true,
+          instance,
+          proxyId: args.proxyId,
+        } as unknown as PostgresArgs,
+        opts,
+      );
     });
   }
 }
