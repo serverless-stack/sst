@@ -66,9 +66,12 @@ type Runtime struct {
 
 func New(version string) *Runtime {
 	weight := int64(4)
-	if flag.SST_BUILD_CONCURRENCY != "" {
+	if flag.SST_BUILD_CONCURRENCY_FUNCTION != "" {
+		weight, _ = strconv.ParseInt(flag.SST_BUILD_CONCURRENCY_FUNCTION, 10, 64)
+	} else if flag.SST_BUILD_CONCURRENCY != "" {
 		weight, _ = strconv.ParseInt(flag.SST_BUILD_CONCURRENCY, 10, 64)
 	}
+
 	return &Runtime{
 		contexts:    sync.Map{},
 		results:     sync.Map{},

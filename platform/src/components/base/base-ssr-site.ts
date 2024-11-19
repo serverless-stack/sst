@@ -6,7 +6,7 @@ import { Prettify } from "../component";
 import { Input } from "../input";
 import { Link } from "../link.js";
 import { VisibleError } from "../error.js";
-import { BaseSiteDev, BaseSiteFileOptions, limiter } from "./base-site";
+import { BaseSiteDev, BaseSiteFileOptions } from "./base-site";
 import { Run } from "../providers/run";
 
 export interface BaseSsrSiteArgs {

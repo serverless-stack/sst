@@ -54,10 +54,6 @@ export interface BaseSiteFileOptions {
   contentType?: string;
 }
 
-export const limiter = new Semaphore(
-  parseInt(process.env.SST_SITE_BUILD_CONCURRENCY || "4"),
-);
-
 export function getContentType(filename: string, textEncoding: string) {
   const ext = filename.endsWith(".well-known/site-association-json")
     ? ".json"

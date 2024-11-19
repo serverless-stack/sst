@@ -44,6 +44,7 @@ import { Vpc as VpcV1 } from "./vpc-v1";
 import { DevCommand } from "../experimental/dev-command.js";
 import { Efs } from "./efs.js";
 import { toSeconds } from "../duration.js";
+import { imageBuilder } from "./helpers/container-builder.js";
 
 export interface ServiceArgs extends ClusterServiceArgs {
   /**
@@ -727,7 +728,7 @@ export class Service extends Component implements Link.Linkable {
             }
 
             // Build image
-            const image = new Image(
+            const image = imageBuilder(
               ...transform(
                 args.transform?.image,
                 `${name}Image${container.name}`,

@@ -786,7 +786,7 @@ export class ApiGatewayV1 extends Component implements Link.Linkable {
    *
    * ```js title="sst.config.ts"
    * api.route("GET /", "src/get.handler")
-   * api.route($default, "src/default.handler");
+   * api.route("$default", "src/default.handler");
    * ```
    *
    * Add a parameterized route.
