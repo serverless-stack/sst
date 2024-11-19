@@ -275,7 +275,7 @@ This creates a VPC with a bastion host, an ECS Cluster, and adds a Fargate servi
 By default, your service in not deployed when running in _dev_.
 :::
 
-The `dev.command` tells SST to instead run our Astro site locally in dev mode.
+The `dev.command` tells SST to instead run our Hono app locally in dev mode.
 
 ---
 
@@ -302,7 +302,7 @@ cluster.addService("MyService", {
 });
 ```
 
-This will allow us to reference the Redis cluster in our Astro site.
+This will allow us to reference the Redis cluster in our Hono app.
 
 ---
 
@@ -326,7 +326,7 @@ Start your app in dev mode.
 npx sst dev
 ```
 
-This will deploy your app, start a tunnel in the **Tunnel** tab, and run your Astro site locally in the **MyServiceDev** tab.
+This will deploy your app, start a tunnel in the **Tunnel** tab, and run your Hono app locally in the **MyServiceDev** tab.
 
 ---
 
