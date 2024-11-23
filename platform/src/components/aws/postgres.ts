@@ -88,8 +88,11 @@ export interface PostgresArgs {
   /**
    * The maximum storage limit for the database.
    *
-   * :::tip
-   * You are only billed for the storage you use, not the maximum limit. RDS will autoscale your storage to match your usage up to the limit.
+   * RDS will autoscale your storage to match your usage up to the given limit. 
+   * You are not billed for the maximum storage limit, You are only billed for the storage you use.
+   *
+   * :::note
+   * You are only billed for the storage you use, not the maximum limit.
    * :::
    *
    * By default, [gp3 storage volumes](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_Storage.html#Concepts.Storage.GeneralSSD)
