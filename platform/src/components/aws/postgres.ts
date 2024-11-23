@@ -86,7 +86,11 @@ export interface PostgresArgs {
    */
   instance?: Input<string>;
   /**
-   * The amount of storage to use for the database.
+   * The maximum storage limit for the database.
+   *
+   * :::tip
+   * You are only billed for the storage you use, not the maximum limit.
+   * :::
    *
    * By default, [gp3 storage volumes](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_Storage.html#Concepts.Storage.GeneralSSD)
    * are used without additional provisioned IOPS. This provides a good baseline performance
