@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/charmbracelet/huh"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -43,6 +44,27 @@ func CmdMosaic(c *cli.Cli) error {
 		if err != nil {
 			return err
 		}
+
+		personalStage := project.LoadPersonalStage(cfgPath)
+		if personalStage != "" && stage != personalStage {
+			var confirmed bool
+			err := huh.NewForm(
+				huh.NewGroup(
+					huh.NewConfirm().
+						Title(fmt.Sprintf("It seems like you are about to run dev mode in \"%s\". Are you sure you want to continue?", stage)).
+						Description("Running dev mode in a non-local stage could result in resources being deleted.").
+						Value(&confirmed),
+				),
+			).WithTheme(huh.ThemeCatppuccin()).Run()
+
+			if err != nil {
+				return err
+			}
+			if !confirmed {
+				return nil
+			}
+		}
+
 		url, err := server.Discover(cfgPath, stage)
 		if err != nil {
 			return err
