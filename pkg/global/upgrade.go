@@ -122,7 +122,9 @@ func UpgradeNode(existingVersion string, nextVersion string) (map[string]string,
 	if err != nil {
 		return result, err
 	}
-	re := regexp.MustCompile(`"sst": "[^"]+"`)
+
+	// Ensure we only replace an existing "sst" entry in dependencies/devDependencies of package.json
+	re := regexp.MustCompile(`(("dependencies"|"devDependencies")\s*:\s*{[^}]*"sst"\s*:\s*)"[^"]*"`)
 	for _, file := range files {
 		if strings.HasPrefix(file, ".sst") {
 			continue
@@ -138,7 +140,7 @@ func UpgradeNode(existingVersion string, nextVersion string) (map[string]string,
 		if len(matches) == 0 {
 			continue
 		}
-		data = re.ReplaceAll(data, []byte(`"sst": "`+nextVersion+`"`))
+		data = re.ReplaceAll(data, []byte(`${1}"`+nextVersion+`"`))
 		err = os.WriteFile(file, data, 0666)
 		if err != nil {
 			return result, err
