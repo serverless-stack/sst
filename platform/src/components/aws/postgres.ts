@@ -115,6 +115,22 @@ export interface PostgresArgs {
    */
   proxy?: Input<boolean>;
   /**
+   * Enable [Multi-AZ](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.html) deployment for the database.
+   *
+   * :::tip
+   * This will approximately double the cost of the database since it will be deployed in two AZs.
+   * :::
+   *
+   * @default `false`
+   * @example
+   * ```js
+   * {
+   *   multiAz: false
+   * }
+   * ```
+   */
+  multiAz?: Input<boolean>;
+  /**
    * @internal
    */
   replicas?: Input<number>;
@@ -309,6 +325,7 @@ export class Postgres extends Component implements Link.Linkable {
       return;
     }
 
+    const multiAz = output(args.multiAz).apply((v) => v ?? false);
     const engineVersion = output(args.version).apply((v) => v ?? "16.4");
     const instanceType = output(args.instance).apply((v) => v ?? "t4g.micro");
     const storage = normalizeStorage();
@@ -457,6 +474,7 @@ export class Postgres extends Component implements Link.Linkable {
             storageType: "gp3",
             allocatedStorage: 20,
             maxAllocatedStorage: storage,
+            multiAz,
             backupRetentionPeriod: 7,
             performanceInsightsEnabled: true,
             tags: {
