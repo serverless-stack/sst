@@ -536,7 +536,7 @@ export function createServersAndDistribution(
                 ...(await Promise.all(
                   files.map(async (file) => {
                     const source = path.resolve(outputPath, copy.from, file);
-                    const content = await fs.promises.readFile(source);
+                    const content = await fs.promises.readFile(source, 'utf-8');
                     const hash = crypto
                       .createHash("sha256")
                       .update(content)
@@ -1028,7 +1028,7 @@ async function handler(event) {
                 }).forEach((filePath) =>
                   hash.update(
                     fs.readFileSync(
-                      path.resolve(outputPath, item.from, filePath),
+                      path.resolve(outputPath, item.from, filePath), 'utf-8'
                     ),
                   ),
                 );

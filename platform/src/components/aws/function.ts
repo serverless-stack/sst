@@ -1943,7 +1943,7 @@ export class Function extends Component implements Link.Linkable {
 
           // Calculate hash of the zip file
           const hash = crypto.createHash("sha256");
-          hash.update(await fs.promises.readFile(zipPath));
+          hash.update(await fs.promises.readFile(zipPath, 'utf-8'));
           const hashValue = hash.digest("hex");
           const assetBucket = region.apply((region) =>
             bootstrap.forRegion(region).then((d) => d.asset),

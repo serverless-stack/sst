@@ -760,7 +760,7 @@ export class StaticSite extends Component implements Link.Linkable {
             ...(await Promise.all(
               files.map(async (file) => {
                 const source = path.resolve(outputPath, file);
-                const content = await fs.promises.readFile(source);
+                const content = await fs.promises.readFile(source, 'utf-8');
                 const hash = crypto
                   .createHash("sha256")
                   .update(content)
@@ -942,7 +942,7 @@ async function handler(event) {
             follow: true,
             cwd: path.resolve(outputPath),
           }).forEach((filePath) =>
-            hash.update(fs.readFileSync(path.resolve(outputPath, filePath))),
+            hash.update(fs.readFileSync(path.resolve(outputPath, filePath), 'utf-8')),
           );
 
           return {
