@@ -253,7 +253,7 @@ export interface FunctionArgs {
   /**
    * The runtime environment for the function. Support for other runtimes is on our roadmap.
    *
-   * @default `"nodejs20.x"`
+   * @default `"nodejs22.x"`
    * @example
    * ```js
    * {
@@ -264,6 +264,7 @@ export interface FunctionArgs {
   runtime?: Input<
     | "nodejs18.x"
     | "nodejs20.x"
+    | "nodejs22.x"
     | "provided.al2023"
     | "python3.9"
     | "python3.10"
@@ -1368,7 +1369,7 @@ export class Function extends Component implements Link.Linkable {
     }
 
     function normalizeRuntime() {
-      return all([args.runtime]).apply(([v]) => v ?? "nodejs20.x");
+      return all([args.runtime]).apply(([v]) => v ?? "nodejs22.x");
     }
 
     function normalizeTimeout() {
