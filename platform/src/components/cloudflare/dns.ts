@@ -77,6 +77,22 @@ export interface DnsArgs {
    */
   override?: Input<boolean>;
   /**
+   * Set to `true` to create a [proxied](https://developers.cloudflare.com/learning-paths/get-started-free/onboarding/proxy-dns-records/) record.
+   *
+   * :::tip
+   * Proxied records help you prevent DDoS attacks and allow you to use Cloudflare's global content delivery network (CDN) for caching.
+   * :::
+   *
+   * @default `false`
+   * @example
+   * ```js
+   * {
+   *   proxied: true
+   * }
+   * ```
+   */
+  proxied?: Input<boolean>;
+  /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.
    */
@@ -138,16 +154,20 @@ export function dns(args: DnsArgs = {}) {
       }
 
       function createRecord() {
+        const isACMCertificate = record.value.includes("acm-validations.aws")
+        const proxied = args.proxied && !isACMCertificate;
+
         return new cloudflare.Record(
           ...transform(
             args.transform?.record,
             `${namePrefix}${record.type}Record${nameSuffix}`,
             {
               zoneId,
+              proxied,
               name: record.name,
               content: record.value,
               type: record.type,
-              ttl: 60,
+              ttl: proxied ? 1 : 60,
               allowOverwrite: args.override,
             },
             opts,
