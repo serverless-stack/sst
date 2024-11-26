@@ -134,7 +134,7 @@ export interface SsrSiteArgs extends BaseSsrSiteArgs {
     /**
      * The runtime environment for the server function.
      *
-     * @default `"nodejs20.x"`
+     * @default `"nodejs22.x"`
      * @example
      * ```js
      * {
@@ -144,7 +144,7 @@ export interface SsrSiteArgs extends BaseSsrSiteArgs {
      * }
      * ```
      */
-    runtime?: Input<"nodejs18.x" | "nodejs20.x">;
+    runtime?: Input<"nodejs18.x" | "nodejs20.x" | "nodejs22.x">;
     /**
      * The [architecture](https://docs.aws.amazon.com/lambda/latest/dg/foundation-arch.html)
      * of the server function.
@@ -439,7 +439,7 @@ export function createDevServer(
       `${name}DevServer`,
       {
         description: `${name} dev server`,
-        runtime: "nodejs20.x",
+        runtime: "nodejs22.x",
         timeout: "20 seconds",
         memory: "128 MB",
         bundle: path.join($cli.paths.platform, "functions", "empty-function"),
@@ -586,7 +586,7 @@ export function createServersAndDistribution(
           const fn = new Function(
             `${name}Edge${logicalName(fnName)}`,
             {
-              runtime: "nodejs20.x",
+              runtime: "nodejs22.x",
               timeout: "20 seconds",
               memory: "1024 MB",
               ...props,
@@ -688,7 +688,7 @@ export function createServersAndDistribution(
             ...props.function,
             description: props.function.description ?? `${name} server`,
             runtime: output(args.server?.runtime).apply(
-              (v) => v ?? props.function.runtime ?? "nodejs20.x",
+              (v) => v ?? props.function.runtime ?? "nodejs22.x",
             ),
             timeout: props.function.timeout ?? "20 seconds",
             memory: output(args.server?.memory).apply(
@@ -1097,7 +1097,7 @@ async function handler(event) {
           job: {
             description: `${name} warmer`,
             bundle: path.join($cli.paths.platform, "dist", "ssr-warmer"),
-            runtime: "nodejs20.x",
+            runtime: "nodejs22.x",
             handler: "index.handler",
             timeout: "900 seconds",
             memory: "128 MB",
