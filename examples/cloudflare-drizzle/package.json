@@ -1,0 +1,19 @@
+{
+  "name": "cloudflare-drizzle",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241112.0",
+    "@types/bun": "latest",
+    "drizzle-kit": "^0.28.1"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.14.0",
+    "@std/ulid": "npm:@jsr/std__ulid",
+    "drizzle-orm": "^0.36.4",
+    "hono": "^4.6.12"
+  }
+}

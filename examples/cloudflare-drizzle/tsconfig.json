@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "lib": [
+      "ESNext",
+      "DOM"
+    ],
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "strictNullChecks": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+    "types": [
+      "@cloudflare/workers-types"
+    ]
+  }
+}
