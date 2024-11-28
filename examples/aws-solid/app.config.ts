@@ -1,7 +1,11 @@
-import { defineConfig } from "@solidjs/start/config";
+import { defineConfig } from '@solidjs/start/config'
 
 export default defineConfig({
   server: {
-    preset: "aws-lambda-streaming",
+    compatibilityDate: '2024-11-05',
+    preset: 'aws-lambda',
+    awsLambda: {
+      streaming: true,
+    },
   },
 });
