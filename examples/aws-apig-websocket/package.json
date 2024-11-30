@@ -10,7 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@aws-sdk/client-apigatewaymanagementapi": "^3.568.0",
-    "sst": "^3.0.2"
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.699.0",
+    "sst": "latest"
   }
 }
