@@ -605,31 +605,8 @@ export class React extends Component implements Link.Linkable {
       ].join("\n");
       fs.writeFileSync(path.join(buildPath, "server.mjs"), content);
 
-      // Copy the React polyfil to the server build directory
-      //
-      // Note: We need to ensure that the polyfills are injected above other code that
-      // will depend on them when not using Vite. Importing them within the top of the
-      // lambda code doesn't appear to guarantee this, we therefore leverage ESBUild's
-      // `inject` option to ensure that the polyfills are injected at the top of
-      // the bundle.
-      const polyfillDest = path.join(buildPath, "polyfill.mjs");
-      fs.copyFileSync(
-        path.join(
-          $cli.paths.platform,
-          "functions",
-          "react-server",
-          "polyfill.mjs",
-        ),
-        polyfillDest,
-      );
-
       return {
         handler: path.join(buildPath, "server.handler"),
-        nodejs: {
-          esbuild: {
-            inject: [path.resolve(polyfillDest)],
-          },
-        },
         streaming: !isEdge,
       };
     }

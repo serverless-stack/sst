@@ -1,7 +1,7 @@
 // This is a custom Lambda URL handler which imports the Remix server
 // build and performs the Remix server rendering.
 
-import { createRequestHandler as createNodeRequestHandler } from "@react-router/node";
+import { createRequestHandler as createNodeRequestHandler } from "react-router";
 
 /**
  * Common binary MIME types
