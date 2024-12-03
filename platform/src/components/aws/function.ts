@@ -257,7 +257,7 @@ export interface FunctionArgs {
    * @example
    * ```js
    * {
-   *   runtime: "nodejs18.x"
+   *   runtime: "nodejs20.x"
    * }
    * ```
    */
@@ -1336,7 +1336,7 @@ export class Function extends Component implements Link.Linkable {
                 links,
                 handler: handler,
                 bundle: bundle,
-                runtime: runtime || "nodejs20.x",
+                runtime: runtime || "nodejs22.x",
                 copyFiles,
                 properties: nodejs,
               };

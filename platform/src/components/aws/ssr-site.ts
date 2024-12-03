@@ -139,7 +139,7 @@ export interface SsrSiteArgs extends BaseSsrSiteArgs {
      * ```js
      * {
      *   server: {
-     *     runtime: "nodejs18.x"
+     *     runtime: "nodejs20.x"
      *   }
      * }
      * ```
