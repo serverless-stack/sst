@@ -110,6 +110,7 @@ export class DevCommand extends Component {
           .apply(Link.build)
           .apply((links) => links.map((link) => link.name)),
         environment: args.environment,
+        title: args.dev?.title,
         directory: args.dev?.directory,
         autostart: args.dev?.autostart !== false,
         command: args.dev?.command,

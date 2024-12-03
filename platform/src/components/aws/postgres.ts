@@ -16,6 +16,7 @@ import { Vpc as VpcV1 } from "./vpc-v1";
 import { VisibleError } from "../error";
 import { Postgres as PostgresV1 } from "./postgres-v1";
 import { SizeGbTb, toGBs } from "../size";
+import { DevCommand } from "../experimental/dev-command.js";
 export type { PostgresArgs as PostgresV1Args } from "./postgres-v1";
 
 export interface PostgresArgs {
@@ -86,7 +87,14 @@ export interface PostgresArgs {
    */
   instance?: Input<string>;
   /**
-   * The amount of storage to use for the database.
+   * The maximum storage limit for the database.
+   *
+   * RDS will autoscale your storage to match your usage up to the given limit.
+   * You are not billed for the maximum storage limit, You are only billed for the storage you use.
+   *
+   * :::note
+   * You are only billed for the storage you use, not the maximum limit.
+   * :::
    *
    * By default, [gp3 storage volumes](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_Storage.html#Concepts.Storage.GeneralSSD)
    * are used without additional provisioned IOPS. This provides a good baseline performance
@@ -144,15 +152,71 @@ export interface PostgresArgs {
    * }
    * ```
    */
-  vpc: Input<
+  vpc:
     | Vpc
-    | {
+    | Input<{
         /**
          * A list of subnet IDs in the VPC.
          */
         subnets: Input<Input<string>[]>;
-      }
-  >;
+      }>;
+  /**
+   * Configure how this component works in `sst dev`.
+   *
+   * By default, your Postgres database is deployed in `sst dev`. But if you want to instead
+   * connect to a locally running Postgres database, you can configure the `dev` prop.
+   *
+   * :::note
+   * By default, this creates a new RDS database even in `sst dev`.
+   * :::
+   *
+   * This will skip deploying an RDS database and link to the locally running Postgres database
+   * instead.
+   *
+   * @example
+   *
+   * Setting the `dev` prop also means that any linked resources will connect to the right
+   * database both in `sst dev` and `sst deploy`.
+   *
+   * ```ts
+   * {
+   *   dev: {
+   *     username: "postgres",
+   *     password: "password",
+   *     database: "postgres",
+   *     host: "localhost",
+   *     port: 5432
+   *   }
+   * }
+   * ```
+   */
+  dev?: {
+    /**
+     * The host of the local Postgres to connect to when running in dev.
+     * @default `"localhost"`
+     */
+    host?: Input<string>;
+    /**
+     * The port of the local Postgres to connect to when running in dev.
+     * @default `5432`
+     */
+    port?: Input<number>;
+    /**
+     * The database of the local Postgres to connect to when running in dev.
+     * @default Inherit from the top-level [`database`](#database).
+     */
+    database?: Input<string>;
+    /**
+     * The username of the local Postgres to connect to when running in dev.
+     * @default Inherit from the top-level [`username`](#username).
+     */
+    username?: Input<string>;
+    /**
+     * The password of the local Postgres to connect to when running in dev.
+     * @default Inherit from the top-level [`password`](#password).
+     */
+    password?: Input<string>;
+  };
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.
@@ -186,7 +250,7 @@ export interface PostgresGetArgs {
 
 interface PostgresRef {
   ref: boolean;
-  instance: rds.Instance;
+  id: Input<string>;
   proxyId?: Input<string>;
 }
 
@@ -230,6 +294,39 @@ interface PostgresRef {
  * await client.connect();
  * ```
  *
+ * #### Running locally
+ *
+ * By default, your RDS Postgres database is deployed in `sst dev`. But let's say you are running
+ * Postgres locally.
+ *
+ * ```bash
+ * docker run \
+ *   --rm \
+ *   -p 5432:5432 \
+ *   -v $(pwd)/.sst/storage/postgres:/var/lib/postgresql/data \
+ *   -e POSTGRES_USER=postgres \
+ *   -e POSTGRES_PASSWORD=password \
+ *   -e POSTGRES_DB=local \
+ *   postgres:16.4
+ * ```
+ *
+ * You can connect to it in `sst dev` by configuring the `dev` prop.
+ *
+ * ```ts title="sst.config.ts" {3-8}
+ * const postgres = new sst.aws.Postgres("MyPostgres", {
+ *   vpc,
+ *   dev: {
+ *     username: "postgres",
+ *     password: "password",
+ *     database: "local",
+ *     port: 5432
+ *   }
+ * });
+ * ```
+ *
+ * This will skip deploying an RDS database and link to the locally running Postgres database
+ * instead. [Check out the full example](/docs/examples/#aws-postgres-local).
+ *
  * ---
  *
  * ### Cost
@@ -254,9 +351,17 @@ interface PostgresRef {
  * [RDS Proxy pricing](https://aws.amazon.com/rds/proxy/pricing/) for more details.
  */
 export class Postgres extends Component implements Link.Linkable {
-  private instance: rds.Instance;
-  private _password: Output<string>;
-  private proxy: Output<rds.Proxy | undefined>;
+  private instance?: rds.Instance;
+  private _password?: Output<string>;
+  private proxy?: Output<rds.Proxy | undefined>;
+  private dev?: {
+    enabled: boolean;
+    host: Output<string>;
+    port: Output<number>;
+    username: Output<string>;
+    password: Output<string>;
+    database: Output<string>;
+  };
   public static v1 = PostgresV1;
 
   constructor(
@@ -264,60 +369,36 @@ export class Postgres extends Component implements Link.Linkable {
     args: PostgresArgs,
     opts?: ComponentResourceOptions,
   ) {
+    super(__pulumiType, name, args, opts);
     const _version = 2;
-    super(__pulumiType, name, args, opts, {
-      _version,
-      _message: [
-        `This component has been renamed. Please change:`,
-        ``,
-        `"sst.aws.Postgres" to "sst.aws.Postgres.v${$cli.state.version[name]}"`,
-        ``,
-        `Learn more https://sst.dev/docs/components/#versioning`,
-      ].join("\n"),
-    });
-
-    const parent = this;
+    const self = this;
 
     if (args && "ref" in args) {
-      const ref = args as unknown as PostgresRef;
-
-      const proxy = ref.proxyId
-        ? rds.Proxy.get(`${name}Proxy`, ref.proxyId, undefined, { parent })
-        : undefined;
-
-      const secret = ref.instance.tags.apply((tags) =>
-        tags?.["sst:lookup:password"]
-          ? secretsmanager.getSecretVersionOutput(
-              {
-                secretId: tags["sst:lookup:password"],
-              },
-              { parent },
-            )
-          : output(undefined),
-      );
-      const password = secret.apply((v) => {
-        if (!v) {
-          throw new VisibleError(
-            `Failed to get password for Postgres ${name}.`,
-          );
-        }
-        return JSON.parse(v.secretString).password as string;
-      });
+      const ref = reference();
       this.instance = ref.instance;
-      this._password = password;
-      this.proxy = output(proxy);
+      this._password = ref.password;
+      this.proxy = output(ref.proxy);
       return;
     }
 
+    registerVersion();
     const engineVersion = output(args.version).apply((v) => v ?? "16.4");
     const instanceType = output(args.instance).apply((v) => v ?? "t4g.micro");
+    const username = output(args.username).apply((v) => v ?? "postgres");
     const storage = normalizeStorage();
     const dbName = output(args.database).apply(
       (v) => v ?? $app.name.replaceAll("-", "_"),
     );
     const vpc = normalizeVpc();
-    const username = output(args.username).apply((v) => v ?? "postgres");
-    const { password, secret } = createPassword();
+
+    const dev = registerDev();
+    if (dev?.enabled) {
+      this.dev = dev;
+      return;
+    }
+
+    const password = createPassword();
+    const secret = createSecret();
     const subnetGroup = createSubnetGroup();
     const parameterGroup = createParameterGroup();
     const instance = createInstance();
@@ -327,6 +408,63 @@ export class Postgres extends Component implements Link.Linkable {
     this.instance = instance;
     this._password = password;
     this.proxy = proxy;
+
+    function reference() {
+      const ref = args as unknown as PostgresRef;
+      const instance = rds.Instance.get(`${name}Instance`, ref.id, undefined, {
+        parent: self,
+      });
+
+      const input = instance.tags.apply((tags) => {
+        registerVersion(
+          tags?.["sst:component-version"]
+            ? parseInt(tags["sst:component-version"])
+            : undefined,
+        );
+
+        return {
+          proxyId: output(ref.proxyId),
+          passwordTag: tags?.["sst:lookup:password"],
+        };
+      });
+
+      const proxy = input.proxyId.apply((proxyId) =>
+        proxyId
+          ? rds.Proxy.get(`${name}Proxy`, proxyId, undefined, {
+              parent: self,
+            })
+          : undefined,
+      );
+
+      const password = input.passwordTag.apply((passwordTag) => {
+        if (!passwordTag)
+          throw new VisibleError(
+            `Failed to get password for Postgres ${name}.`,
+          );
+
+        const secret = secretsmanager.getSecretVersionOutput(
+          { secretId: passwordTag },
+          { parent: self },
+        );
+        return $jsonParse(secret.secretString).apply(
+          (v) => v.password as string,
+        );
+      });
+
+      return { instance, proxy, password };
+    }
+
+    function registerVersion(overrideVersion?: number) {
+      self.registerVersion({
+        new: _version,
+        old: overrideVersion ?? $cli.state.version[name],
+        message: [
+          `This component has been renamed. Please change:\n`,
+          `"sst.aws.Postgres" to "sst.aws.Postgres.v${$cli.state.version[name]}"\n`,
+          `Learn more https://sst.dev/docs/components/#versioning`,
+        ].join("\n"),
+      });
+    }
 
     function normalizeStorage() {
       return output(args.storage ?? "20 GB").apply((v) => {
@@ -346,24 +484,77 @@ export class Postgres extends Component implements Link.Linkable {
     }
 
     function normalizeVpc() {
-      return output(args.vpc).apply((vpc) => {
-        // "vpc" is a Vpc.v1 component
-        if (vpc instanceof VpcV1) {
-          throw new VisibleError(
-            `You are using the "Vpc.v1" component. Please migrate to the latest "Vpc" component.`,
-          );
-        }
+      // "vpc" is a Vpc.v1 component
+      if (args.vpc instanceof VpcV1) {
+        throw new VisibleError(
+          `You are using the "Vpc.v1" component. Please migrate to the latest "Vpc" component.`,
+        );
+      }
 
-        // "vpc" is a Vpc component
-        if (vpc instanceof Vpc) {
-          return {
-            subnets: vpc.privateSubnets,
-          };
-        }
+      // "vpc" is a Vpc component
+      if (args.vpc instanceof Vpc) {
+        return {
+          subnets: args.vpc.privateSubnets,
+        };
+      }
 
-        // "vpc" is object
-        return vpc;
+      // "vpc" is object
+      return output(args.vpc);
+    }
+
+    function registerDev() {
+      if (!args.dev) return undefined;
+
+      if (
+        $dev &&
+        args.dev.password === undefined &&
+        args.password === undefined
+      ) {
+        throw new VisibleError(
+          `You must provide the password to connect to your locally running Postgres database either by setting the "dev.password" or by setting the top-level "password" property.`,
+        );
+      }
+
+      const dev = {
+        enabled: $dev,
+        host: output(args.dev.host ?? "localhost"),
+        port: output(args.dev.port ?? 5432),
+        username: args.dev.username ? output(args.dev.username) : username,
+        password: output(args.dev.password ?? args.password ?? ""),
+        database: args.dev.database ? output(args.dev.database) : dbName,
+      };
+
+      new DevCommand(`${name}Dev`, {
+        dev: {
+          title: name,
+          autostart: true,
+          command: `sst print-and-not-quit`,
+        },
+        environment: {
+          SST_DEV_COMMAND_MESSAGE: interpolate`Make sure your local PostgreSQL server is using:
+
+  username: "${dev.username}"
+  password: "${dev.password}"
+  database: "${dev.database}"
+
+Listening on "${dev.host}:${dev.port}"...`,
+        },
       });
+
+      return dev;
+    }
+
+    function createPassword() {
+      return args.password
+        ? output(args.password)
+        : new RandomPassword(
+            `${name}Password`,
+            {
+              length: 32,
+              special: false,
+            },
+            { parent: self },
+          ).result;
     }
 
     function createSubnetGroup() {
@@ -374,7 +565,7 @@ export class Postgres extends Component implements Link.Linkable {
           {
             subnetIds: vpc.subnets,
           },
-          { parent },
+          { parent: self },
         ),
       );
     }
@@ -398,29 +589,18 @@ export class Postgres extends Component implements Link.Linkable {
               },
             ],
           },
-          { parent },
+          { parent: self },
         ),
       );
     }
 
-    function createPassword() {
-      const password = args.password
-        ? output(args.password)
-        : new RandomPassword(
-            `${name}Password`,
-            {
-              length: 32,
-              special: false,
-            },
-            { parent },
-          ).result;
-
+    function createSecret() {
       const secret = new secretsmanager.Secret(
         `${name}ProxySecret`,
         {
           recoveryWindowInDays: 0,
         },
-        { parent },
+        { parent: self },
       );
 
       new secretsmanager.SecretVersion(
@@ -432,10 +612,10 @@ export class Postgres extends Component implements Link.Linkable {
             password,
           }),
         },
-        { parent },
+        { parent: self },
       );
 
-      return { secret, password };
+      return secret;
     }
 
     function createInstance() {
@@ -464,7 +644,7 @@ export class Postgres extends Component implements Link.Linkable {
               "sst:lookup:password": secret.id,
             },
           },
-          { parent, deleteBeforeReplace: true },
+          { parent: self, deleteBeforeReplace: true },
         ),
       );
     }
@@ -494,7 +674,7 @@ export class Postgres extends Component implements Link.Linkable {
                   (v) => v!,
                 ),
               },
-              { parent },
+              { parent: self },
             ),
         ),
       );
@@ -524,7 +704,7 @@ export class Postgres extends Component implements Link.Linkable {
               },
             ],
           },
-          { parent },
+          { parent: self },
         );
 
         const rdsProxy = new rds.Proxy(
@@ -541,7 +721,7 @@ export class Postgres extends Component implements Link.Linkable {
             roleArn: role.arn,
             vpcSubnetIds: vpc.subnets,
           },
-          { parent },
+          { parent: self },
         );
 
         const targetGroup = new rds.ProxyDefaultTargetGroup(
@@ -549,7 +729,7 @@ export class Postgres extends Component implements Link.Linkable {
           {
             dbProxyName: rdsProxy.name,
           },
-          { parent },
+          { parent: self },
         );
 
         new rds.ProxyTarget(
@@ -559,7 +739,7 @@ export class Postgres extends Component implements Link.Linkable {
             targetGroupName: targetGroup.name,
             dbInstanceIdentifier: instance.identifier,
           },
-          { parent },
+          { parent: self },
         );
 
         return rdsProxy;
@@ -571,14 +751,18 @@ export class Postgres extends Component implements Link.Linkable {
    * The identifier of the Postgres instance.
    */
   public get id() {
-    return this.instance.identifier;
+    return this.dev?.enabled
+      ? output("placeholder")
+      : this.instance!.identifier;
   }
 
   /**
    * The name of the Postgres proxy.
    */
   public get proxyId() {
-    return this.proxy.apply((v) => {
+    if (this.dev?.enabled) return output("placeholder");
+
+    return this.proxy!.apply((v) => {
       if (!v) {
         throw new VisibleError(
           `Proxy is not enabled. Enable it with "proxy: true".`,
@@ -590,11 +774,13 @@ export class Postgres extends Component implements Link.Linkable {
 
   /** The username of the master user. */
   public get username() {
-    return this.instance.username;
+    if (this.dev?.enabled) return this.dev.username;
+    return this.instance!.username;
   }
 
   /** The password of the master user. */
   public get password() {
+    if (this.dev?.enabled) return this.dev.password;
     return this._password;
   }
 
@@ -602,21 +788,25 @@ export class Postgres extends Component implements Link.Linkable {
    * The name of the database.
    */
   public get database() {
-    return this.instance.dbName;
+    if (this.dev?.enabled) return this.dev.database;
+    return this.instance!.dbName;
   }
 
   /**
    * The port of the database.
    */
   public get port() {
-    return this.instance.port;
+    if (this.dev?.enabled) return this.dev.port;
+    return this.instance!.port;
   }
 
   /**
    * The host of the database.
    */
   public get host() {
-    return all([this.instance.endpoint, this.proxy]).apply(
+    if (this.dev?.enabled) return this.dev.host;
+
+    return all([this.instance!.endpoint, this.proxy!]).apply(
       ([endpoint, proxy]) => proxy?.endpoint ?? output(endpoint.split(":")[0]),
     );
   }
@@ -684,23 +874,15 @@ export class Postgres extends Component implements Link.Linkable {
     args: PostgresGetArgs,
     opts?: ComponentResourceOptions,
   ) {
-    const instance = rds.Instance.get(
-      `${name}Instance`,
-      args.id,
-      undefined,
+    return new Postgres(
+      name,
+      {
+        ref: true,
+        id: args.id,
+        proxyId: args.proxyId,
+      } as unknown as PostgresArgs,
       opts,
     );
-    return instance.tags.apply((tags) => {
-      // override version
-      $cli.state.version[name] = tags?.["sst:component-version"]
-        ? parseInt(tags["sst:component-version"])
-        : $cli.state.version[name];
-      return new Postgres(name, {
-        ref: true,
-        instance,
-        proxyId: args.proxyId,
-      } as unknown as PostgresArgs);
-    });
   }
 }
 

@@ -5,8 +5,6 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "deploy": "go run ../../cmd/sst deploy",
-    "remove": "go run ../../cmd/sst remove",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

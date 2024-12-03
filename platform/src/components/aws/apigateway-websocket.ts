@@ -226,7 +226,7 @@ export class ApiGatewayWebSocket extends Component implements Link.Linkable {
     const accessLog = normalizeAccessLog();
     const domain = normalizeDomain();
 
-    const apigAccount = setupApiGatewayAccount(name);
+    const apigAccount = setupApiGatewayAccount(name, opts);
     const api = createApi();
     const logGroup = createLogGroup();
     const stage = createStage();

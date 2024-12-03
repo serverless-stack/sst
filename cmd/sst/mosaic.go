@@ -196,7 +196,10 @@ func CmdMosaic(c *cli.Cli) error {
 
 	mode := c.String("mode")
 	if mode == "" {
-		multi := multiplexer.New(c.Context)
+		multi, err := multiplexer.New(c.Context)
+		if err != nil {
+			return err
+		}
 		multiEnv := append(
 			c.Env(),
 			fmt.Sprintf("SST_SERVER=http://localhost:%v", server.Port),

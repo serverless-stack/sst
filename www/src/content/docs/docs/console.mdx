@@ -242,7 +242,7 @@ Here are a few of the things the Console does for you.
 
 ### Logs
 
-With the Console, you don't need to go to CloudWatch to look at the logs for your functions. You can view:
+With the Console, you don't need to go to CloudWatch to look at the logs for your functions, containers and other log groups. You can view:
 
 - Past logs
 - Live logs
@@ -267,6 +267,8 @@ With Issues, there is:
 :::tip
 Issues works out of the box and has no impact on performance or cold starts.
 :::
+
+Issues currently only supports Node.js functions. Other runtimes and containers are on the roadmap.
 
 ---
 
@@ -381,21 +383,30 @@ It also shows the SST command that was run that triggered the update. If the upd
 
 ### Autodeploy
 
-The Console can auto-deploy your apps when you _git push_ to your repo. Autodeploy uses [AWS CodeBuild](https://aws.amazon.com/codebuild/) in your account to run the build.
+The Console can auto-deploy your apps when you _git push_ to your GitHub repo. Autodeploy uses [AWS CodeBuild](https://aws.amazon.com/codebuild/) in your account to run the build.
 
 ![SST Console Autodeploy](../../../assets/docs/console/sst-console-autodeploy.png)
+
+We designed Autodeploy to be a better fit for SST apps when compared to alternatives like GitHub Actions or CircleCI.
+
+1. **Easy to get started**
+   - Autodeploy supports the standard branch and PR workflow out of the box. You don't need a config file to get started.
+   - There are no complicated steps in configuring your AWS credentials; since your AWS account is already connected to the Console.
+2. **Configurable**
+   - You can configure how Autodeploy works directly through your `sst.config.ts`.
+   - It's typesafe and the callbacks let you customize how to respond to incoming git events.
+3. **Runs in your AWS account**
+   - The builds are run in your AWS account.
+   - It can also be configured to run in your VPC. This is useful if your builds need to access private resources.
+4. **Integrates with the Console**
+   - You can see which resources were updated in a deploy.
+   - Your resource updates will also show you the related git commit.
 
 :::note
 Autodeploy is currently free while in beta.
 :::
 
-You are only charged for the number of build minutes that you use. The pricing is based on the machine config used. [Learn more about CodeBuild pricing](https://aws.amazon.com/codebuild/pricing/).
-
-:::tip
-You can configure how Autodeploy works through your `sst.config.ts`.
-:::
-
-By default, a small CodeBuild machine is used. But you can configure this, we'll look at how below.
+Autodeploy is free while in beta. But AWS will charge you for the CodeBuild build minutes that are used. [Learn more about CodeBuild pricing](https://aws.amazon.com/codebuild/pricing/).
 
 ---
 
@@ -422,7 +433,7 @@ To get started with Autodeploy:
    Next you can configure a branch or PR environment by selecting the **stage** you want deployed to an **AWS account**. You can optionally configure **environment variables** as well.
 
    :::note
-   Stage names by default are generated based on the branch or PR that's configured.
+   Stage names by default are generated based on the branch or PR.
    :::
 
    By default, stages are based on the branch name or PR. We'll look at this in detail below.
@@ -435,42 +446,112 @@ To get started with Autodeploy:
    PR stages are removed when the PR is closed while branch stages are not.
    :::
 
-   For example, if you configures a branch environment for the stage `production`, any git pushes to the `production` branch will be auto-deployed. Similarly, if you create a new PR, say PR#12, the Console will auto-deploy a stage called `pr-12`.
+   For example, if you configure a branch environment for the stage `production`, any git pushes to the `production` branch will be auto-deployed. Similarly, if you create a new PR, say PR#12, the Console will auto-deploy a stage called `pr-12`.
+
+   You can also manually trigger a deployment through the Console by passing in a Git ref and the stage you want to deploy to.
 
 5. **Setup alerts**
 
    Once your deploys are working, you can set the Console to send alerts for your deploys. Head over to your **Workspace Settings** > **Alerts** and add a new alert to be notified on any Autodeploys, or only on Autodeploy errors.
 
+:::tip
+You can configure how Autodeploy works through your `sst.config.ts`.
+:::
+
+While Autodeploy supports the standard branch and PR workflow out of the box, it can be configured in depth through your `sst.config.ts`.
+
 ---
 
-#### Config
+#### Configure
 
-The above behavior can be configured through the [`console.autodeploy`](/docs/reference/config/#console-autodeploy) option in the `sst.config.ts`.
+The above can be configured through the [`console.autodeploy`](/docs/reference/config/#console-autodeploy) option in the `sst.config.ts`.
 
-For example, if you want git pushes to the `main` branch auto-deploy the `production` stage and use a _large_ build machine, you set something like this in your `sst.config.ts`.
+```ts title="sst.config.ts" {7-15}
+export default $config({
+  // Your app's config
+  app(input) { },
+  // Your app's resources
+  async run() { },
+  // Your app's Console config
+  console: {
+    autodeploy: {
+      target(event) {
+        if (event.type === "branch" && event.branch === "main" && event.action === "pushed") {
+          return { stage: "production" };
+        }
+      }
+    }
+  }
+});
+```
+
+In the above example we are using the `console.autodeploy.target` option to change the stage that's tied to a git event. Only git pushes to the `main` branch to auto-deploy to the `production` stage.
+
+This works because if `target` returns `undefined`, the deploy is skipped. And if you provide your own `target` callback, it overrides the default behavior.
+
+:::tip
+You can use the git events to configure how your app is auto-deployed.
+:::
+
+Through the `console.autodeploy.runner` option, you can configure the runner that's used. For example, if you wanted to increase the timeouts to 2 hours, you can.
 
 ```ts title="sst.config.ts"
 console: {
   autodeploy: {
-    target(event) {
-      if (event.type === "branch" && event.branch === "main" && event.action === "pushed") {
-        return {
-          stage: "production",
-          runner: { engine: "codebuild", compute: "large" }
-        };
+    runner: { timeout: "2 hours" }
+  }
+}
+```
+
+This also takes the stage name, so you can set the runner config for a specific stage.
+
+```ts title="sst.config.ts"
+console: {
+  autodeploy: {
+    runner(stage) {
+      if (stage === "production") return { timeout: "3 hours" };
+    }
+  }
+}
+```
+
+You can also have your builds run inside your VPC.
+
+```ts title="sst.config.ts"
+console: {
+  autodeploy: {
+    runner: {
+      vpc: {
+        id: "vpc-0be8fa4de860618bb",
+        securityGroups: ["sg-0399348378a4c256c"],
+        subnets: ["subnet-0b6a2b73896dc8c4c", "subnet-021389ebee680c2f0"]
+      }
+    }
+  }
+} 
+```
+
+Or specify files and directories to be cached.
+
+```ts title="sst.config.ts"
+console: {
+  autodeploy: {
+    runner: {
+      cache: {
+        paths: ["node_modules", "/path/to/cache"]
       }
     }
   }
 }
 ```
 
-Read more about this over on the [Config doc](/docs/reference/config/#console-autodeploy).
+Read more about the [`console.autodeploy`](/docs/reference/config/#console-autodeploy) config.
 
 ---
 
 #### Environments
 
-The Console needs to know which account it needs to autodeploy into. You configure this under **App's Settings** > **Autodeploy**. Each environment takes:
+The Console needs to know which account it needs to autodeploy into. You configure this under the **App's Settings** > **Autodeploy**. Each environment takes:
 
 1. **Stage**
 
@@ -496,51 +577,20 @@ The Console needs to know which account it needs to autodeploy into. You configu
 
 ---
 
-#### Build image
+#### How it works
 
-Autodeploy is run on an `x86_64` machine using the [`al2/standard/5.0`](https://github.com/aws/aws-codebuild-docker-images/tree/master/al2/x86_64/standard/5.0) build image.
+When you _git push_ to a branch, pull request, or tag, the following happens:
 
-You can change the architecture to use `arm64` and it'll use the [`al2/aarch64/standard/3.0`](https://github.com/aws/aws-codebuild-docker-images/tree/master/al2/aarch64/standard/3.0) image instead. You change this by setting `runner.architecture` through the [Config](/docs/reference/config/#console). 
+1. The stage name is generated based on the `console.autodeploy.target` callback.
+   1. If there is no callback, the stage name is a sanitized version of the branch or tag.
+   2. If there is a callback but no stage is returned, the deploy is skipped.
+2. The stage is matched against the environments in the Console to get the AWS account and any environment variables for the deploy.
+3. The runner config is generated based on the `console.autodeploy.runner`. Or the defaults are used.
+4. The deploy is run based on the above config.
 
-You can also configure what's used in the image:
+This only applies only to git events. If you trigger a deploy through the Console, you are asked to specify the stage you want to deploy to. So in this case, it skips step 1 from above and does not call `console.autodeploy.target`.
 
-- **Node**
-
-  To specify the version of Node you want to use in your build, you can use the `.node-version`, `.nvmrc`, or use the `engine` field in your `package.json`.
-
-  <Tabs>
-    <TabItem label="package.json">
-    ```js title="package.json"
-    {
-      engine: {
-        node: "20.15.1"
-      }
-    }
-    ```
-    </TabItem>
-    <TabItem label="node-version">
-    ```bash title=".node-version"
-    20.15.1
-    ```
-    </TabItem>
-    <TabItem label="nvmrc">
-    ```bash title=".nvmrc"
-    20.15.1
-    ```
-    </TabItem>
-  </Tabs>
-
-- **Package manager**
-
-  To specify the package manager you want to use you can configure it through your `package.json`. 
-
-  ```js title="package.json"
-  {
-    packageManager: "pnpm@8.6.3"
-  }
-  ```
-
-Feel free to get in touch if you want to use your own build image or configure what's used in the build image further.
+Both `target` and `runner` are optional and come with defaults, but they can be customized.
 
 ---
 
