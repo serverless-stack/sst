@@ -1,0 +1,24 @@
+{
+  "name": "aws-nextjs-redis",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "lint": "next lint",
+    "start": "next start"
+  },
+  "dependencies": {
+    "ioredis": "^5.4.1",
+    "next": "14.2.14",
+    "react": "^18",
+    "react-dom": "^18",
+    "sst": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "typescript": "^5"
+  }
+}

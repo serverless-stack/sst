@@ -17,6 +17,7 @@ We'll use both to build a couple of simple apps below.
 We also have a few other Remix examples that you can refer to.
 
 - [Enabling streaming in your Remix app](/docs/examples/#aws-remix-streaming)
+- [Hit counter with Redis and Remix in a container](/docs/examples/#aws-remix-container-with-redis)
 
 ---
 
@@ -102,29 +103,46 @@ Add the upload form client in `app/routes/_index.tsx`. Replace the `Index` compo
 export default function Index() {
   const data = useLoaderData<typeof loader>();
   return (
-    <div style={{ fontFamily: "system-ui, sans-serif", lineHeight: "1.8" }}>
-      <h1>Welcome to Remix</h1>
-      <form
-        onSubmit={async (e) => {
-          e.preventDefault();
+    <div className="flex h-screen items-center justify-center">
+      <div className="flex flex-col items-center gap-8">
+        <h1 className="leading text-2xl font-bold text-gray-800 dark:text-gray-100">
+          Welcome to Remix
+        </h1>
+        <form
+          className="flex flex-row gap-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
 
-          const file = (e.target as HTMLFormElement).file.files?.[0]!;
+            const file = (e.target as HTMLFormElement).file.files?.[0]!;
 
-          const image = await fetch(data.url, {
-            body: file,
-            method: "PUT",
-            headers: {
-              "Content-Type": file.type,
-              "Content-Disposition": `attachment; filename="${file.name}"`,
-            },
-          });
+            const image = await fetch(data.url, {
+              body: file,
+              method: "PUT",
+              headers: {
+                "Content-Type": file.type,
+                "Content-Disposition": `attachment; filename="${file.name}"`,
+              },
+            });
 
-          window.location.href = image.url.split("?")[0];
-        }}
-      >
-        <input name="file" type="file" accept="image/png, image/jpeg" />
-        <button type="submit">Upload</button>
-      </form>
+            window.location.href = image.url.split("?")[0];
+          }}
+        >
+          <input
+            name="file"
+            type="file"
+            accept="image/png, image/jpeg"
+            className="block w-full text-sm text-slate-500
+              file:mr-4 file:py-2 file:px-4
+              file:rounded-full file:border-0
+              file:text-sm file:font-semibold
+              file:bg-violet-50 file:text-violet-700
+              hover:file:bg-violet-100" />
+          <button className="bg-violet-500 hover:bg-violet-700 text-white text-sm
+            font-semibold py-2 px-4 rounded-full">
+            Upload
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
@@ -136,6 +154,8 @@ export default function Index() {
 
 When our app loads, we'll generate a pre-signed URL for the file upload and use it in the form.
 
+Add this above the `Index` component in `app/routes/_index.tsx`.
+
 ```tsx title="app/routes/_index.tsx" {4}
 export async function loader() {
   const command = new PutObjectCommand({
@@ -144,7 +164,7 @@ export async function loader() {
   });
   const url = await getSignedUrl(new S3Client({}), command);
 
-  return json({ url });
+  return { url };
 }
 ```
 
@@ -156,7 +176,6 @@ Add the relevant imports.
 
 ```tsx title="app/routes/_index.tsx"
 import { Resource } from "sst";
-import { json } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
@@ -169,6 +188,8 @@ npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
 ```
 
 Head over to the local Remix app in your browser, `http://localhost:5173` and try **uploading an image**. You should see it upload and then download the image.
+
+![SST Remix app local](../../../../../assets/docs/start/start-remix-local.png)
 
 ---
 
@@ -184,13 +205,11 @@ You can use any stage name here but it's good to create a new stage for producti
 
 Congrats! Your site should now be live!
 
-![SST Remix app](../../../../../assets/docs/start/start-remix.png)
-
 ---
 
 ## Containers
 
-We are going to build a hit counter Remix app with Redis. We’ll the deploy it to AWS in a container using the `Cluster` component.
+We are going to create a Remix app, add an S3 Bucket for file uploads, and deploy it in a container with the `Cluster` component.
 
 :::tip[View source]
 You can [view the source](https://github.com/sst/sst/tree/dev/examples/aws-remix-container) of this example in our repo.
@@ -225,13 +244,13 @@ Select the defaults and pick **AWS**. This'll create a `sst.config.ts` file in y
 
 ---
 
-### 2. Add a Cluster
+### 2. Add a Service
 
 To deploy our Remix app in a container, we'll use [AWS Fargate](https://aws.amazon.com/fargate/) with [Amazon ECS](https://aws.amazon.com/ecs/). Replace the `run` function in your `sst.config.ts`.
 
 ```js title="sst.config.ts" {9-11}
 async run() {
-  const vpc = new sst.aws.Vpc("MyVpc", { bastion: true });
+  const vpc = new sst.aws.Vpc("MyVpc");
   const cluster = new sst.aws.Cluster("MyCluster", { vpc });
 
   cluster.addService("MyService", {
@@ -245,7 +264,7 @@ async run() {
 }
 ```
 
-This creates a VPC with a bastion host, an ECS Cluster, and adds a Fargate service to it.
+This creates a VPC, and an ECS Cluster with a Fargate service in it.
 
 :::note
 By default, your service in not deployed when running in _dev_.
@@ -255,181 +274,185 @@ The `dev.command` tells SST to instead run our Remix app locally in dev mode.
 
 ---
 
-### 3. Add Redis
-
-Let's add an [Amazon ElastiCache](https://aws.amazon.com/elasticache/) Redis cluster. Add this below the `Vpc` component in your `sst.config.ts`.
-
-```js title="sst.config.ts"
-const redis = new sst.aws.Redis("MyRedis", { vpc });
-```
-
-This shares the same VPC as our ECS cluster.
-
----
-
-#### Link Redis
-
-Now, link the Redis cluster to the container.
-
-```ts title="sst.config.ts" {3}
-cluster.addService("MyService", {
-  // ...
-  link: [redis],
-});
-```
-
-This will allow us to reference the Redis cluster in our Remix app.
-
----
-
-#### Install a tunnel
-
-Since our Redis cluster is in a VPC, we'll need a tunnel to connect to it from our local machine.
-
-```bash "sudo"
-sudo npx sst tunnel install
-```
-
-This needs _sudo_ to create a network interface on your machine. You'll only need to do this once on your machine.
-
----
-
 #### Start dev mode
 
-Start your app in dev mode.
+Run the following to start dev mode. This'll start SST and your Remix app.
 
 ```bash
 npx sst dev
 ```
 
-This will deploy your app, start a tunnel in the **Tunnel** tab, and run your Remix app locally in the **MyServiceDev** tab.
+Once complete, click on **MyService** in the sidebar and open your Remix app in your browser.
 
 ---
 
-### 4. Connect to Redis
+### 3. Add an S3 Bucket
 
-We want the `/` route to increment a counter in our Redis cluster. Let's start by installing the npm package we'll use.
+Let's allow public `access` to our S3 Bucket for file uploads. Update your `sst.config.ts`.
 
-```bash
-npm install ioredis
+```ts title="sst.config.ts"
+const bucket = new sst.aws.Bucket("MyBucket", {
+  access: "public"
+});
 ```
 
-We'll add a `loader` to increment the counter.
+Add this below the `Vpc` component.
 
-```ts title="app/routes/_index.tsx" {2}
-const redis = new Cluster(
-  [{ host: Resource.MyRedis.host, port: Resource.MyRedis.port }],
-  {
-    dnsLookup: (address, callback) => callback(null, address),
-    redisOptions: {
-      tls: {},
-      username: Resource.MyRedis.username,
-      password: Resource.MyRedis.password,
-    },
-  }
-);
+---
 
-export async function loader() {
-  const counter = await redis.incr("counter");
+##### Link the bucket
 
-  return json({ counter });
-}
+Now, link the bucket to the container.
+
+```ts title="sst.config.ts" {3}
+cluster.addService("MyService", {
+  // ...
+  link: [bucket],
+});
 ```
 
-:::tip
-We are directly accessing our Redis cluster with `Resource.MyRedis.*`.
-:::
+This will allow us to reference the bucket in our Remix app.
 
-Add the relevant imports.
+---
 
-```ts title="app/routes/_index.tsx"
-import { Resource } from "sst";
-import { Cluster } from "ioredis";
-import { json } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
-```
+### 4. Create an upload form
 
-Let's now use this in our `Index` component.
+Add the upload form client in `app/routes/_index.tsx`. Replace the `Index` component with:
 
-```ts title="app/routes/_index.tsx"
+```tsx title="app/routes/_index.tsx"
 export default function Index() {
   const data = useLoaderData<typeof loader>();
-
   return (
-    <h1 className="leading text-2xl font-bold text-gray-800 dark:text-gray-100">
-      Hit counter: {data.counter}
-    </h1>
+    <div className="flex h-screen items-center justify-center">
+      <div className="flex flex-col items-center gap-8">
+        <h1 className="leading text-2xl font-bold text-gray-800 dark:text-gray-100">
+          Welcome to Remix
+        </h1>
+        <form
+          className="flex flex-row gap-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+
+            const file = (e.target as HTMLFormElement).file.files?.[0]!;
+
+            const image = await fetch(data.url, {
+              body: file,
+              method: "PUT",
+              headers: {
+                "Content-Type": file.type,
+                "Content-Disposition": `attachment; filename="${file.name}"`,
+              },
+            });
+
+            window.location.href = image.url.split("?")[0];
+          }}
+        >
+          <input
+            name="file"
+            type="file"
+            accept="image/png, image/jpeg"
+            className="block w-full text-sm text-slate-500
+              file:mr-4 file:py-2 file:px-4
+              file:rounded-full file:border-0
+              file:text-sm file:font-semibold
+              file:bg-violet-50 file:text-violet-700
+              hover:file:bg-violet-100" />
+          <button className="bg-violet-500 hover:bg-violet-700 text-white text-sm
+            font-semibold py-2 px-4 rounded-full">
+            Upload
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }
 ```
 
 ---
 
-#### Test your app
+### 5. Generate a pre-signed URL
 
-Let's head over to `http://localhost:5173` in your browser and it'll show the current hit counter.
+When our app loads, we'll generate a pre-signed URL for the file upload and use it in the form.
 
-You should see it increment every time you **refresh the page**.
+Add this above the `Index` component in `app/routes/_index.tsx`.
+
+```tsx title="app/routes/_index.tsx" {4}
+export async function loader() {
+  const command = new PutObjectCommand({
+    Key: crypto.randomUUID(),
+    Bucket: Resource.MyBucket.name,
+  });
+  const url = await getSignedUrl(new S3Client({}), command);
+
+  return { url };
+}
+```
+
+:::tip
+We are directly accessing our S3 bucket with `Resource.MyBucket.name`.
+:::
+
+Add the relevant imports.
+
+```tsx title="app/routes/_index.tsx"
+import { Resource } from "sst";
+import { useLoaderData } from "@remix-run/react";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+```
+
+And install the npm packages.
+
+```bash
+npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
+```
+
+Head over to the local Remix app in your browser, `http://localhost:5173` and try **uploading an image**. You should see it upload and then download the image.
+
+![SST Remix app local](../../../../../assets/docs/start/start-remix-local-container.png)
 
 ---
 
-### 5. Deploy your app
+### 6. Deploy your app
 
 To deploy our app we'll add a `Dockerfile`.
 
-<details>
-<summary>View Dockerfile</summary>
-
 ```dockerfile title="Dockerfile"
-# Based on https://github.com/remix-run/blues-stack/blob/main/Dockerfile
-
-# base node image
-FROM node:18-bullseye-slim as base
-
-# set for base and all layer that inherit from it
+FROM node:lts-alpine as base
 ENV NODE_ENV production
 
-# Install all node_modules, including dev dependencies
+# Stage 1: Install all node_modules, including dev dependencies
 FROM base as deps
-
 WORKDIR /myapp
-
 ADD package.json ./
 RUN npm install --include=dev
 
-# Setup production node_modules
+# Stage 2: Setup production node_modules
 FROM base as production-deps
-
 WORKDIR /myapp
-
 COPY --from=deps /myapp/node_modules /myapp/node_modules
 ADD package.json ./
 RUN npm prune --omit=dev
 
-# Build the app
+# Stage 3: Build the app
 FROM base as build
-
 WORKDIR /myapp
-
 COPY --from=deps /myapp/node_modules /myapp/node_modules
-
 ADD . .
 RUN npm run build
 
-# Finally, build the production image with minimal footprint
+# Stage 4: Build the production image
 FROM base
-
 WORKDIR /myapp
-
 COPY --from=production-deps /myapp/node_modules /myapp/node_modules
-
 COPY --from=build /myapp/build /myapp/build
 COPY --from=build /myapp/public /myapp/public
 ADD . .
 
 CMD ["npm", "start"]
 ```
-</details>
+
+This builds our Remix app in a Docker image.
 
 :::tip
 You need to be running [Docker Desktop](https://www.docker.com/products/docker-desktop/) to deploy your app.
@@ -454,13 +477,11 @@ You can use any stage name here but it's good to create a new stage for producti
 
 Congrats! Your app should now be live!
 
-![SST Remix container app](../../../../../assets/docs/start/start-remix-container.png)
-
 ---
 
 ## Connect the console
 
-As a next step, you can setup the [SST Console](/docs/console/) to _**git push to deploy**_ your app and monitor it for any issues. 
+As a next step, you can setup the [SST Console](/docs/console/) to _**git push to deploy**_ your app and view logs from it.
 
 ![SST Console Autodeploy](../../../../../assets/docs/start/sst-console-autodeploy.png)
 

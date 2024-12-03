@@ -6,16 +6,16 @@
     "astro": "astro",
     "build": "astro check && astro build",
     "dev": "astro dev",
-    "preview": "astro preview",
-    "start": "astro dev"
+    "preview": "astro preview"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.4",
     "@astrojs/node": "^8.3.4",
-    "astro": "^4.16.3",
+    "@aws-sdk/client-s3": "^3.701.0",
+    "@aws-sdk/s3-request-presigner": "^3.701.0",
+    "astro": "^4.16.16",
     "astro-sst": "2.43.5",
-    "ioredis": "^5.4.1",
     "sst": "latest",
-    "typescript": "^5.6.3"
+    "typescript": "^5.7.2"
   }
 }

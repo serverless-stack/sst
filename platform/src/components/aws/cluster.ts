@@ -151,9 +151,9 @@ export interface ClusterArgs {
    * }
    * ```
    */
-  vpc: Input<
+  vpc:
     | Vpc
-    | {
+    | Input<{
         /**
          * The ID of the VPC.
          */
@@ -178,8 +178,7 @@ export interface ClusterArgs {
          * The name of the Cloud Map namespace to use for the service.
          */
         cloudmapNamespaceName: Input<string>;
-      }
-  >;
+      }>;
   /**
    * Force upgrade from `Cluster.v1` to the latest `Cluster` version. The only valid value
    * is `v2`, which is the version of the new `Cluster`.
@@ -514,6 +513,13 @@ export interface ClusterServiceArgs {
          */
         forward?: Input<Port>;
         /**
+         * Configure path-based routing. Only requests matching the path are forwarded to
+         * the container. Only applicable to "http" protocols.
+         *
+         * @default Requests to all paths are forwarded.
+         */
+        path?: Input<string>;
+        /**
          * The name of the container to forward the traffic to.
          *
          * If there is only one container, this is not needed. The traffic is automatically
@@ -524,6 +530,10 @@ export interface ClusterServiceArgs {
          * @default The container name when there is only one container.
          */
         container?: Input<string>;
+        /**
+         * The port and protocol to redirect the traffic to. Uses the format `{port}/{protocol}`.
+         */
+        redirect?: Input<Port>;
       }[]
     >;
   }>;
@@ -548,7 +558,7 @@ export interface ClusterServiceArgs {
    *   loadBalancer: {
    *     domain: "example.com",
    *     ports: [
-   *       { listen: "80/http" },
+   *       { listen: "80/http", redirect: "443/https" },
    *       { listen: "443/https", forward: "80/http" }
    *     ]
    *   }
@@ -702,7 +712,7 @@ export interface ClusterServiceArgs {
         }
     >;
     /**
-     * Configure the mapping for the ports the load balancer listens to and forwards to
+     * Configure the mapping for the ports the load balancer listens to, forwards, or redirects to
      * the service.
      * This supports two types of protocols:
      *
@@ -749,6 +759,29 @@ export interface ClusterServiceArgs {
      *   ]
      * }
      * ```
+     *
+     * You can also route the same port to multiple containers via path-based routing.
+     *
+     * ```js
+     * {
+     *   ports: [
+     *     { listen: "80/http", container: "app", path: "/api/*" },
+     *     { listen: "80/http", container: "admin", path: "/admin/*" }
+     *   ]
+     * }
+     * ```
+     *
+     * Additionally, you can redirect traffic from one port to another. This is
+     * commonly used to redirect http to https.
+     *
+     * ```js
+     * {
+     *   ports: [
+     *     { listen: "80/http", redirect: "443/https" },
+     *     { listen: "443/https", forward: "80/http" }
+     *   ]
+     * }
+     * ```
      */
     ports: Input<
       {
@@ -763,6 +796,22 @@ export interface ClusterServiceArgs {
          */
         forward?: Input<Port>;
         /**
+         * Configure path-based routing. Only requests matching the path are forwarded to
+         * the container. Only applicable to "http" protocols.
+         *
+         * The path pattern is case-sensitive, supports wildcards, and can be up to 128
+         * characters.
+         * - `*` matches 0 or more characters.
+         * - `?` matches exactly 1 character.
+         *
+         * For example:
+         * - `/api/*`
+         * - `/api/*.png
+         *
+         * @default Requests to all paths are forwarded.
+         */
+        path?: Input<string>;
+        /**
          * The name of the container to forward the traffic to.
          *
          * You need this if there's more than one container.
@@ -771,6 +820,10 @@ export interface ClusterServiceArgs {
          * container.
          */
         container?: Input<string>;
+        /**
+         * The port and protocol to redirect the traffic to. Uses the format `{port}/{protocol}`.
+         */
+        redirect?: Input<Port>;
       }[]
     >;
     /**
@@ -1147,6 +1200,16 @@ export interface ClusterServiceArgs {
          * ```
          */
         args?: Input<Record<string, Input<string>>>;
+        /**
+         * Tags to apply to the Docker image.
+         * @example
+         * ```js
+         * {
+         *   tags: ["v1.0.0", "commit-613c1b2"]
+         * }
+         * ```
+         */
+        tags?: Input<Input<string>[]>;
       }
   >;
   /**
@@ -1727,10 +1790,14 @@ export class Cluster extends Component {
     args: ClusterArgs,
     opts: ComponentResourceOptions = {},
   ) {
+    super(__pulumiType, name, args, opts);
     const _version = 2;
-    super(__pulumiType, name, args, opts, {
-      _version,
-      _message: [
+    const self = this;
+
+    self.registerVersion({
+      new: _version,
+      old: $cli.state.version[name],
+      message: [
         `There is a new version of "Cluster" that has breaking changes.`,
         ``,
         `What changed:`,
@@ -1743,10 +1810,8 @@ export class Cluster extends Component {
         `To continue using v${$cli.state.version[name]}:`,
         `  - Rename "Cluster" to "Cluster.v${$cli.state.version[name]}". Learn more about versioning - https://sst.dev/docs/components/#versioning`,
       ].join("\n"),
-      _forceUpgrade: args.forceUpgrade,
+      forceUpgrade: args.forceUpgrade,
     });
-
-    const parent = this;
 
     const cluster = createCluster();
 
@@ -1756,7 +1821,12 @@ export class Cluster extends Component {
 
     function createCluster() {
       return new ecs.Cluster(
-        ...transform(args.transform?.cluster, `${name}Cluster`, {}, { parent }),
+        ...transform(
+          args.transform?.cluster,
+          `${name}Cluster`,
+          {},
+          { parent: self },
+        ),
       );
     }
   }

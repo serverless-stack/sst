@@ -68,9 +68,10 @@ func Start(ctx context.Context, watchPaths []string) error {
 				return nil
 			}
 
-			if strings.HasSuffix(event.Name, ".git/HEAD") {
-				return nil
-			}
+			// if strings.HasSuffix(event.Name, ".git/HEAD") {
+		  //		return nil
+			// }
+      
 			if event.Op&(fsnotify.Write|fsnotify.Create) == 0 {
 				slog.Info("ignoring file event", "path", event.Name, "op", event.Op)
 				continue

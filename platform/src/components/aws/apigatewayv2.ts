@@ -251,9 +251,9 @@ export interface ApiGatewayV2Args {
    * }
    * ```
    */
-  vpc?: Input<
+  vpc?:
     | Vpc
-    | {
+    | Input<{
         /**
          * A list of VPC security group IDs.
          */
@@ -262,8 +262,7 @@ export interface ApiGatewayV2Args {
          * A list of VPC subnet IDs.
          */
         subnets: Input<Input<string>[]>;
-      }
-  >;
+      }>;
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.
@@ -774,18 +773,16 @@ export class ApiGatewayV2 extends Component implements Link.Linkable {
       // "vpc" is undefined
       if (!args.vpc) return;
 
-      return output(args.vpc).apply((vpc) => {
-        // "vpc" is a Vpc component
-        if (vpc instanceof Vpc) {
-          return {
-            subnets: vpc.publicSubnets,
-            securityGroups: vpc.securityGroups,
-          };
-        }
+      // "vpc" is a Vpc component
+      if (args.vpc instanceof Vpc) {
+        return {
+          subnets: args.vpc.publicSubnets,
+          securityGroups: args.vpc.securityGroups,
+        };
+      }
 
-        // "vpc" is object
-        return vpc;
-      });
+      // "vpc" is object
+      return output(args.vpc);
     }
 
     function createVpcLink() {
@@ -1053,7 +1050,7 @@ export class ApiGatewayV2 extends Component implements Link.Linkable {
    *
    * ```js title="sst.config.ts"
    * api.route("GET /", "src/get.handler")
-   * api.route($default, "src/default.handler");
+   * api.route("$default", "src/default.handler");
    * ```
    *
    * Add a parameterized route.

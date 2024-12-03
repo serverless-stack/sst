@@ -12,6 +12,14 @@ We'll use both to build a couple of simple apps below.
 
 ---
 
+#### Examples
+
+We also have a few other SvelteKit examples that you can refer to.
+
+- [Hit counter with Redis and SvelteKit in a container](/docs/examples/#aws-sveltekit-container-with-redis)
+
+---
+
 ## Serverless
 
 We are going to create a SvelteKit app, add an S3 Bucket for file uploads, and deploy it using the `SvelteKit` component.
@@ -29,11 +37,11 @@ Before you get started, make sure to [configure your AWS credentials](/docs/iam-
 Let's start by creating our app.
 
 ```bash
-npm create svelte@latest aws-svelte
-cd aws-svelte
+npx sv create aws-svelte-kit
+cd aws-svelte-kit
 ```
 
-We are picking the **_Skeleton project_** and **_Yes, using TypeScript syntax_** options.
+We are picking the **_SvelteKit minimal_** and **_Yes, using TypeScript syntax_** options.
 
 ---
 
@@ -146,7 +154,7 @@ Add some styles.
 
 ### 4. Generate a pre-signed URL
 
-When our route loads, we'll generate a pre-signed URL for S3 and our form will upload to it. Create a new `+page.server.ts` and add the following.
+When our route loads, we'll generate a pre-signed URL for S3 and our form will upload to it. Create a new `src/routes/+page.server.ts` and add the following.
 
 ```ts title="src/routes/+page.server.ts" {5}
 /** @type {import('./$types').PageServerLoad} */
@@ -182,6 +190,8 @@ npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
 
 Head over to the local SvelteKit app in your browser, `http://localhost:5173` and try **uploading an image**. You should see it upload and then download the image.
 
+![SST SvelteKit app local](../../../../../assets/docs/start/start-svelte-kit-local.png)
+
 ---
 
 ### 5. Deploy your app
@@ -196,13 +206,11 @@ You can use any stage name here but it's good to create a new stage for producti
 
 Congrats! Your app should now be live!
 
-![SST SvelteKit app](../../../../../assets/docs/start/start-svelte-kit.png)
-
 ---
 
 ## Containers
 
-We are going to build a hit counter SvelteKit app with Redis. We'll deploy it to AWS in a container using the `Cluster` component.
+We are going to create a SvelteKit app, add an S3 Bucket for file uploads, and deploy it in a container with the `Cluster` component.
 
 :::tip[View source]
 You can [view the source](https://github.com/sst/sst/tree/dev/examples/aws-svelte-container) of this example in our repo.
@@ -217,11 +225,11 @@ Before you get started, make sure to [configure your AWS credentials](/docs/iam-
 Let's start by creating our project.
 
 ```bash
-npm create svelte@latest aws-svelte-container
+npx sv create aws-svelte-container
 cd aws-svelte-container
 ```
 
-We are picking the **_Skeleton project_** and **_Yes, using TypeScript syntax_** options.
+We are picking the **_SvelteKit minimal_** and **_Yes, using TypeScript syntax_** options.
 
 ---
 
@@ -236,7 +244,7 @@ npm install
 
 Select the defaults and pick **AWS**. This'll create a `sst.config.ts` file in your project root.
 
-It'll also ask you to update your `svelte.config.mjs`. But we'll instead use the [**Node.js adapter**](https://kit.svelte.dev/docs/adapter-node) since we're deploying it through a container.
+It'll also ask you to update your `svelte.config.mjs`. But **we'll instead use** the [Node.js adapter](https://kit.svelte.dev/docs/adapter-node) since we're deploying it through a container.
 
 ```bash
 npm i -D @sveltejs/adapter-node
@@ -244,25 +252,20 @@ npm i -D @sveltejs/adapter-node
 
 And updating your `svelte.config.js`.
 
-```js title="svelte.config.js"
-import adapter from '@sveltejs/adapter-node';
-
-export default {
-  kit: {
-    adapter: adapter()
-  }
-};
+```diff lang="js" title="svelte.config.mjs"
+- import adapter from '@sveltejs/adapter-auto';
++ import adapter from '@sveltejs/adapter-node';
 ```
 
 ---
 
-### 2. Add a Cluster
+### 2. Add a Service
 
 To deploy our SvelteKit app in a container, we'll use [AWS Fargate](https://aws.amazon.com/fargate/) with [Amazon ECS](https://aws.amazon.com/ecs/). Replace the `run` function in your `sst.config.ts`.
 
 ```js title="sst.config.ts" {9-11}
 async run() {
-  const vpc = new sst.aws.Vpc("MyVpc", { bastion: true });
+  const vpc = new sst.aws.Vpc("MyVpc");
   const cluster = new sst.aws.Cluster("MyCluster", { vpc });
 
   cluster.addService("MyService", {
@@ -276,7 +279,7 @@ async run() {
 }
 ```
 
-This creates a VPC with a bastion host, an ECS Cluster, and adds a Fargate service to it.
+This creates a VPC, and an ECS Cluster with a Fargate service in it.
 
 :::note
 By default, your service in not deployed when running in _dev_.
@@ -286,164 +289,165 @@ The `dev.command` tells SST to instead run our SvelteKit app locally in dev mode
 
 ---
 
-### 3. Add Redis
-
-Let's add an [Amazon ElastiCache](https://aws.amazon.com/elasticache/) Redis cluster. Add this below the `Vpc` component in your `sst.config.ts`.
-
-```js title="sst.config.ts"
-const redis = new sst.aws.Redis("MyRedis", { vpc });
-```
-
-This shares the same VPC as our ECS cluster.
-
----
-
-#### Link Redis
-
-Now, link the Redis cluster to the container.
-
-```ts title="sst.config.ts" {3}
-cluster.addService("MyService", {
-  // ...
-  link: [redis],
-});
-```
-
-This will allow us to reference the Redis cluster in our SvelteKit app.
-
----
-
-#### Install a tunnel
-
-Since our Redis cluster is in a VPC, we'll need a tunnel to connect to it from our local machine.
-
-```bash "sudo"
-sudo npx sst tunnel install
-```
-
-This needs _sudo_ to create a network interface on your machine. You'll only need to do this once on your machine.
-
----
-
 #### Start dev mode
 
-Start your app in dev mode.
+Run the following to start dev mode. This'll start SST and your SvelteKit app.
 
 ```bash
 npx sst dev
 ```
 
-This will deploy your app, start a tunnel in the **Tunnel** tab, and run your SvelteKit app locally in the **MyServiceDev** tab.
+Once complete, click on **MyService** in the sidebar and open your SvelteKit app in your browser.
 
 ---
 
-### 4. Connect to Redis
+### 3. Add an S3 Bucket
 
-We want the `/` route to increment a counter in our Redis cluster. Let's start by installing the npm package we'll use.
+Let's allow public `access` to our S3 Bucket for file uploads. Update your `sst.config.ts`.
 
-```bash
-npm install ioredis
+```ts title="sst.config.ts"
+const bucket = new sst.aws.Bucket("MyBucket", {
+  access: "public"
+});
 ```
 
-We'll increment the counter when the page loads. Create a new `+page.server.ts` and add the following.
+Add this below the `Vpc` component.
 
-```ts title="src/routes/+page.server.ts" {5}
-import { Resource } from "sst";
-import { Cluster } from "ioredis";
+---
 
-const redis = new Cluster(
-	[{ host: Resource.MyRedis.host, port: Resource.MyRedis.port }],
-	{
-		dnsLookup: (address, callback) => callback(null, address),
-		redisOptions: {
-			tls: {},
-			username: Resource.MyRedis.username,
-			password: Resource.MyRedis.password,
-		},
-	}
-);
+##### Link the bucket
 
-/** @type {import('./$types').PageServerLoad} */
-export async function load() {
-	const counter = await redis.incr("counter");
+Now, link the bucket to the container.
 
-	return { counter };
-}
+```ts title="sst.config.ts" {3}
+cluster.addService("MyService", {
+  // ...
+  link: [bucket],
+});
 ```
 
-:::tip
-We are directly accessing our Redis cluster with `Resource.MyRedis.*`.
-:::
+This will allow us to reference the bucket in our SvelteKit app.
 
-Let's update our page to show the counter. Replace the `src/routes/+page.svelte` component.
+---
+
+### 4. Create an upload form
+
+Let's add a file upload form. Replace your `src/routes/+page.svelte`. This will upload a file to a given pre-signed upload URL.
 
 ```svelte title="src/routes/+page.svelte"
 <script>
   /** @type {import('./$types').PageData} */
   export let data;
+
+  const handleSubmit = async (e) => {
+    const formData = new FormData(e.target);
+    const file = formData.get("file");
+
+    const image = await fetch(data.url, {
+      body: file,
+      method: "PUT",
+      headers: {
+        "Content-Type": file.type,
+        "Content-Disposition": `attachment; filename="${file.name}"`,
+      },
+    });
+
+    window.location.href = image.url.split("?")[0];
+  };
 </script>
 
-<h1>Hit counter: {data.counter}</h1>
+<section>
+  <form on:submit|preventDefault={handleSubmit}>
+    <input name="file" type="file" accept="image/png, image/jpeg" />
+    <button type="submit">Upload</button>
+  </form>
+</section>
+```
+
+Add some styles.
+
+```css title="src/routes/+page.svelte"
+<style>
+  section {
+    flex: 0.6;
+    display: flex;
+    padding-top: 4rem;
+    align-items: center;
+    flex-direction: column;
+    justify-content: center;
+  }
+</style>
 ```
 
 ---
 
-#### Test your app
+### 5. Generate a pre-signed URL
 
-Let's head over to `http://localhost:5173` in your browser and it'll show the current hit counter.
+When our route loads, we'll generate a pre-signed URL for S3 and our form will upload to it. Create a new `src/routes/+page.server.ts` and add the following.
 
-You should see it increment every time you **refresh the page**.
+```ts title="src/routes/+page.server.ts" {5}
+/** @type {import('./$types').PageServerLoad} */
+export async function load() {
+  const command = new PutObjectCommand({
+    Key: crypto.randomUUID(),
+    Bucket: Resource.MyBucket.name,
+  });
+  const url = await getSignedUrl(new S3Client({}), command);
+
+  return { url };
+}
+```
+
+:::tip
+We are directly accessing our S3 bucket with `Resource.MyBucket.name`.
+:::
+
+Add the relevant imports.
+
+```ts title="src/routes/+page.server.ts"
+import { Resource } from "sst";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+
+```
+
+And install the npm packages.
+
+```bash
+npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
+```
+
+Head over to the local SvelteKit app in your browser, `http://localhost:5173` and try **uploading an image**. You should see it upload and then download the image.
+
+![SST SvelteKit app local](../../../../../assets/docs/start/start-svelte-kit-local-container.png)
 
 ---
 
-### 5. Deploy your app
+### 6. Deploy your app
 
 To deploy our app we'll add a `Dockerfile`.
-
-<details>
-<summary>View Dockerfile</summary>
 
 ```diff lang="dockerfile" title="Dockerfile"
 FROM node:18.18.0-alpine AS builder
 
-+# Add linked resources to the environment
-+ARG SST_RESOURCE_MyRedis
-
 WORKDIR /app
-
 COPY package*.json .
-
 RUN npm install
-
 COPY . .
-
 RUN npm run build
 RUN npm prune --prod
 
 FROM builder AS deployer
 
 WORKDIR /app
-
 COPY --from=builder /app/build build/
 COPY --from=builder /app/package.json .
-
 EXPOSE 3000
-
 ENV NODE_ENV=production
-
 CMD [ "node", "build" ]
 ```
 
-</details>
-
-This builds our SvelteKit app in a Docker image. To make sure that the build process in Docker has access to our Redis cluster, we have the following.
-
-```dockerfile title="Dockerfile" "MyRedis"
-# Add linked resources to the environment
-ARG SST_RESOURCE_MyRedis
-```
-
-Here `MyRedis` is the name of the component in our `sst.config.ts` file.
+This builds our SvelteKit app in a Docker image.
 
 :::tip
 You need to be running [Docker Desktop](https://www.docker.com/products/docker-desktop/) to deploy your app.
@@ -466,13 +470,11 @@ You can use any stage name here but it's good to create a new stage for producti
 
 Congrats! Your app should now be live!
 
-![SST SvelteKit container app](../../../../../assets/docs/start/start-svelte-container.png)
-
 ---
 
 ## Connect the console
 
-As a next step, you can setup the [SST Console](/docs/console/) to _**git push to deploy**_ your app and monitor it for any issues. 
+As a next step, you can setup the [SST Console](/docs/console/) to _**git push to deploy**_ your app and view logs from it.
 
 ![SST Console Autodeploy](../../../../../assets/docs/start/sst-console-autodeploy.png)
 

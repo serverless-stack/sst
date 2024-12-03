@@ -177,7 +177,7 @@ export class Realtime extends Component implements Link.Linkable {
     this.constructorOpts = opts;
     this.iotEndpoint = iot.getEndpointOutput({
       endpointType: "iot:Data-ATS",
-    }).endpointAddress;
+    }, { parent }).endpointAddress;
     this.constructorName = name;
     this.authHadler = authHadler;
     this.iotAuthorizer = iotAuthorizer;

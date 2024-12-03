@@ -9,7 +9,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -69,6 +71,16 @@ func main() {
 func run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGHUP)
+
+	go func() {
+		slog.Info("waiting for interrupt signal")
+		<-sigs
+		slog.Info("got interrupt signal")
+		cancel()
+	}()
+	defer cancel()
 
 	logStreamName := os.Getenv("AWS_LAMBDA_LOG_STREAM_NAME")
 	workerID := logStreamName[len(logStreamName)-32:]
@@ -82,6 +94,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	defer conn.Publish(ctx, prefix+"/exit", bridge.ExitEvent{
+		WorkerID:   workerID,
+		FunctionID: SST_FUNCTION_ID,
+	})
+	defer slog.Info("exiting")
 
 	init := bridge.InitEvent{
 		FunctionID:  SST_FUNCTION_ID,
@@ -99,8 +116,19 @@ func run() error {
 	next := make(chan *http.Response)
 	step := make(chan string, 1)
 	go func() {
+		client := &http.Client{
+			Transport: &http.Transport{
+				DisableKeepAlives: false,
+			},
+			Timeout: 0,
+		}
 		for {
-			resp, _ := http.Get("http://" + LAMBDA_RUNTIME_API + "/2018-06-01/runtime/invocation/next")
+			resp, err := client.Get("http://" + LAMBDA_RUNTIME_API + "/2018-06-01/runtime/invocation/next")
+			fmt.Println("status", resp.Status)
+			if err != nil {
+				cancel()
+				return
+			}
 			requestID := resp.Header.Get("lambda-runtime-aws-request-id")
 			conn.Publish(ctx, prefix+"/ping", bridge.PingEvent{WorkerID: workerID})
 
@@ -110,7 +138,7 @@ func run() error {
 					return
 				case <-time.After(time.Second * 3):
 					fmt.Println("timeout", requestID)
-					http.Post("http://"+LAMBDA_RUNTIME_API+"/2018-06-01/runtime/invocation/"+requestID+"/response", "application/json", strings.NewReader(`{"body":"sst dev is not running"}`))
+					client.Post("http://"+LAMBDA_RUNTIME_API+"/2018-06-01/runtime/invocation/"+requestID+"/response", "application/json", strings.NewReader(`{"body":"sst dev is not running"}`))
 					step <- "done"
 					return
 				}

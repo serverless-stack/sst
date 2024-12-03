@@ -30,16 +30,14 @@ This setup of running your functions locally and proxying the results back allow
 
 ## How it works
 
-Live uses [IoT over WebSocket](https://docs.aws.amazon.com/iot/latest/developerguide/protocols.html) to communicate between your local machine and the remote Lambda function.
+Live uses [AWS AppSync Events](https://docs.aws.amazon.com/appsync/latest/eventapi/event-api-welcome.html) to communicate between your local machine and the remote Lambda function.
 
-:::note
-Every AWS account comes with a AWS IoT Core endpoint by default.
-:::
+When you run `sst dev`, it [bootstraps](/docs/state#bootstrap) a new AppSync Events API for the region you are using.
 
 This is roughly what the flow looks like:
 
 1. When you run `sst dev`, it deploys your app and replaces the Lambda functions with a _stub_ version.
-2. It also starts up a local WebSocket client and connects to your AWS accounts' IoT endpoint.
+2. It also starts up a local WebSocket client and connects to the AppSync API endpoint.
 3. When a Lambda function in your app is invoked, it publishes an event, where the payload is the Lambda function request.
 4. Your local WebSocket client receives this event. It publishes an event acknowledging that it received the request.
 5. Next, it runs the local version of the function and publishes an event with the function response as the payload. The local version is run as a Node.js Worker.
@@ -51,18 +49,7 @@ This is roughly what the flow looks like:
 
 There are a couple of quirks with this setup that are worth noting.
 
-1. **Initial IoT delay**
-
-   New AWS accounts (or accounts that have not previously used AWS IoT Core) need around **10 minutes** before it can be used. The `sst dev` CLI starts this up as early as possible but you might run into this error.
-
-   ```
-   failed to connect to mqtt: network Error : dial tcp: lookup
-   xxx.iot.eu-central-1.amazonaws.com: no such host
-   ```
-
-   This will only happen once in that account.
-
-2. **Runtime change**
+1. **Runtime change**
 
    The stub function that's deployed uses a **different runtime** than your Lambda function. You might run into this when you change the runtime in your config but the runtime of the Lambda function in the AWS Console doesn't change.
 
@@ -72,7 +59,7 @@ There are a couple of quirks with this setup that are worth noting.
 
    We use a different runtime because we want the function to be as fast as possible at proxying requests.
 
-3. **Live mode persists**
+2. **Live mode persists**
 
    If you kill the `sst dev` CLI, your functions are not run locally anymore but the stub function in AWS are still there. This means that it'll attempt to proxy requests to your machine and timeout.
 
@@ -117,9 +104,9 @@ const dbHost = process.env.SST_DEV
 
 ## Cost
 
-AWS IoT that powers Live is **completely serverless**. So you don't get charged when it's not in use.
+AWS AppSync Events that powers Live is **completely serverless**. So you don't get charged when it's not in use.
 
-It's also pretty cheap. With a free tier of 500k events per month and roughly $1.00 per million for the next billion messages. You can [check out the details here](https://aws.amazon.com/iot-core/pricing/).
+It's also pretty cheap. It's roughly $1.00 per million messages and $0.08 per million connection minutes. You can [check out the details here](https://aws.amazon.com/appsync/pricing/#AppSync_Events_).
 
 This approach has been economical even for large teams with dozens of developers.
 
