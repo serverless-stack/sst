@@ -17,6 +17,7 @@ We'll use both to build a couple of simple apps below.
 We also have a few other Hono examples that you can refer to.
 
 - [Enabling streaming in your Hono app](/docs/examples/#aws-hono-streaming)
+- [Hit counter with Redis and Hono in a container](/docs/examples/#aws-hono-container-with-redis)
 
 ---
 
@@ -37,9 +38,11 @@ Before you get started, make sure to [configure your AWS credentials](/docs/iam-
 Let's start by creating our app.
 
 ```bash
-mkdir aws-hono && cd aws-hono
-npm init -y
+npm create hono@latest aws-hono
+cd aws-hono
 ```
+
+We are picking the **aws-lambda** template.
 
 ##### Init SST
 
@@ -60,7 +63,7 @@ Let's add a Hono API using an AWS Lambda. Update your `sst.config.ts`.
 
 ```js title="sst.config.ts"
 async run() {
-  const hono = new sst.aws.Function("Hono", {
+  new sst.aws.Function("Hono", {
     url: true,
     handler: "index.handler",
   });
@@ -101,7 +104,7 @@ const bucket = new sst.aws.Bucket("MyBucket");
 Now, link the bucket to the API.
 
 ```ts title="sst.config.ts" {3}
-const hono = new sst.aws.Function("Hono", {
+new sst.aws.Function("Hono", {
   url: true,
   link: [bucket],
   handler: "index.handler",
@@ -112,20 +115,17 @@ const hono = new sst.aws.Function("Hono", {
 
 ### 4. Upload a file
 
-We want the `/` route of our API to generate a pre-signed URL to upload a file to our S3 Bucket. Create an `index.ts` file and add the following.
+We want the `/` route of our API to generate a pre-signed URL to upload a file to our S3 Bucket. Replace the _Hello Hono_ route in `src/index.ts`.
 
-```ts title="index.ts" {5}
-const app = new Hono()
-  .get("/", async (c) => {
-    const command = new PutObjectCommand({
-      Key: crypto.randomUUID(),
-      Bucket: Resource.MyBucket.name,
-    });
-
-    return c.text(await getSignedUrl(s3, command));
+```ts title="src/index.ts" {4}
+app.get('/', async (c) => {
+  const command = new PutObjectCommand({
+    Key: crypto.randomUUID(),
+    Bucket: Resource.MyBucket.name,
   });
 
-export const handler = handle(app);
+  return c.text(await getSignedUrl(s3, command));
+});
 ```
 
 :::tip
@@ -135,55 +135,50 @@ We are directly accessing our S3 bucket with `Resource.MyBucket.name`.
 Install the npm packages.
 
 ```bash
-npm install hono @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
+npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
 ```
 
-Then add the relevant imports.
+Then add the relevant imports. We'll use the extra ones below.
 
-```ts title="index.ts"
-import { Resource } from "sst";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+```ts title="src/index.ts"
+import { Resource } from 'sst'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import {
   S3Client,
   GetObjectCommand,
   PutObjectCommand,
   ListObjectsV2Command,
-} from "@aws-sdk/client-s3";
-import { Hono } from "hono";
-import { handle } from "hono/aws-lambda";
+} from '@aws-sdk/client-s3'
 
-const s3 = new S3Client({});
+const s3 = new S3Client();
 ```
-
 
 ---
 
 ### 5. Download a file
 
-We want the `/latest` route of our API to generate a pre-signed URL to download the last uploaded file in our S3 Bucket. Add this to your routes in `index.ts`.
+We want the `/latest` route of our API to generate a pre-signed URL to download the last uploaded file in our S3 Bucket. Add this to your routes in `src/index.ts`.
 
-```ts title="index.ts"
-const app = new Hono()
-  // ...
-  .get("/latest", async (c) => {
-    const objects = await s3.send(
-      new ListObjectsV2Command({
-        Bucket: Resource.MyBucket.name,
-      }),
-    );
-
-    const latestFile = objects.Contents!.sort(
-      (a, b) =>
-        (b.LastModified?.getTime() ?? 0) - (a.LastModified?.getTime() ?? 0),
-    )[0];
-
-    const command = new GetObjectCommand({
-      Key: latestFile.Key,
+```ts title="src/index.ts"
+app.get('/latest', async (c) => {
+  const objects = await s3.send(
+    new ListObjectsV2Command({
       Bucket: Resource.MyBucket.name,
-    });
+    }),
+  );
 
-    return c.redirect(await getSignedUrl(s3, command));
+  const latestFile = objects.Contents!.sort(
+    (a, b) =>
+      (b.LastModified?.getTime() ?? 0) - (a.LastModified?.getTime() ?? 0),
+  )[0];
+
+  const command = new GetObjectCommand({
+    Key: latestFile.Key,
+    Bucket: Resource.MyBucket.name,
   });
+
+  return c.redirect(await getSignedUrl(s3, command));
+});
 ```
 
 ---
@@ -214,7 +209,7 @@ You can use any stage name here but it's good to create a new stage for producti
 
 ## Containers
 
-We are going to build a hit counter Hono API with Redis. We'll deploy it to AWS in a container using the `Cluster` component.
+We are going to create a Hono API, add an S3 Bucket for file uploads, and deploy it in a container with the `Cluster` component.
 
 :::tip[View source]
 You can [view the source](https://github.com/sst/sst/tree/dev/examples/aws-hono-container) of this example in our repo.
@@ -248,14 +243,14 @@ Select the defaults and pick **AWS**. This'll create a `sst.config.ts` file in y
 
 ---
 
-### 2. Add a Cluster
+### 2. Add a Service
 
 To deploy our Hono app in a container, we'll use [AWS Fargate](https://aws.amazon.com/fargate/) with [Amazon ECS](https://aws.amazon.com/ecs/). Replace the `run` function in
 
 
 ```ts title="sst.config.ts" {9-11}
 async run() {
-  const vpc = new sst.aws.Vpc("MyVpc", { bastion: true });
+  const vpc = new sst.aws.Vpc("MyVpc");
   const cluster = new sst.aws.Cluster("MyCluster", { vpc });
 
   cluster.addService("MyService", {
@@ -269,7 +264,7 @@ async run() {
 }
 ```
 
-This creates a VPC with a bastion host, an ECS Cluster, and adds a Fargate service to it.
+This creates a VPC, and an ECS Cluster with a Fargate service in it.
 
 :::note
 By default, your service in not deployed when running in _dev_.
@@ -279,94 +274,111 @@ The `dev.command` tells SST to instead run our Hono app locally in dev mode.
 
 ---
 
-### 3. Add Redis
-
-Let's add an [Amazon ElastiCache](https://aws.amazon.com/elasticache/) Redis cluster. Add this below the `Vpc` component in your `sst.config.ts`.
-
-```js title="sst.config.ts"
-const redis = new sst.aws.Redis("MyRedis", { vpc });
-```
-
-This shares the same VPC as our ECS cluster.
-
----
-
-#### Link Redis
-
-Now, link the Redis cluster to the container.
-
-```ts title="sst.config.ts" {3}
-cluster.addService("MyService", {
-  // ...
-  link: [redis],
-});
-```
-
-This will allow us to reference the Redis cluster in our Hono app.
-
----
-
-#### Install a tunnel
-
-Since our Redis cluster is in a VPC, we'll need a tunnel to connect to it from our local machine.
-
-```bash "sudo"
-sudo npx sst tunnel install
-```
-
-This needs _sudo_ to create a network interface on your machine. You'll only need to do this once on your machine.
-
----
-
 #### Start dev mode
 
-Start your app in dev mode.
+Run the following to start dev mode. This'll start SST and your Hono app.
 
 ```bash
 npx sst dev
 ```
 
-This will deploy your app, start a tunnel in the **Tunnel** tab, and run your Hono app locally in the **MyServiceDev** tab.
+Once complete, click on **MyService** in the sidebar and open your Hono app in your browser.
 
 ---
 
-### 4. Connect to Redis
+### 3. Add an S3 Bucket
 
-We want the `/` route to increment a counter in our Redis cluster. Let's start by installing the npm package we'll use.
+Let's add an S3 Bucket for file uploads. Add this to your `sst.config.ts` below the `Vpc` component.
+
+```ts title="sst.config.ts"
+const bucket = new sst.aws.Bucket("MyBucket");
+```
+
+---
+
+##### Link the bucket
+
+Now, link the bucket to the container.
+
+```ts title="sst.config.ts" {3}
+cluster.addService("MyService", {
+  // ...
+  link: [bucket],
+});
+```
+
+This will allow us to reference the bucket in our Hono app.
+
+---
+
+### 4. Upload a file
+
+We want a `POST` request made to the `/` route to upload a file to our S3 bucket. Let's add this below our _Hello Hono_ route in our `src/index.ts`.
+
+```ts title="src/index.ts" {6}
+app.post('/', async (c) => {
+  const body = await c.req.parseBody();
+  const file = body['file'] as File;
+
+  const params = {
+    Bucket: Resource.MyBucket.name,
+    ContentType: file.type,
+    Key: file.name,
+    Body: file,
+  };
+  const upload = new Upload({
+    params,
+    client: s3,
+  });
+  await upload.done();
+
+  return c.text('File uploaded successfully.');
+});
+```
+
+Add the imports. We'll use the extra ones below.
+
+```tsx title="src/index.ts"
+import { Resource } from 'sst'
+import {
+  S3Client,
+  GetObjectCommand,
+  ListObjectsV2Command,
+} from '@aws-sdk/client-s3'
+import { Upload } from '@aws-sdk/lib-storage'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+
+const s3 = new S3Client();
+```
+
+And install the npm packages.
 
 ```bash
-npm install ioredis
+npm install @aws-sdk/client-s3 @aws-sdk/lib-storage @aws-sdk/s3-request-presigner
 ```
 
-Add the relevant imports to your `index.ts`.
+---
 
-```ts title="index.ts" {5}
-import { Resource } from "sst";
-import { Cluster } from "ioredis";
+### 5. Download the file
 
-const redis = new Cluster(
-  [{ host: Resource.MyRedis.host, port: Resource.MyRedis.port }],
-  {
-    dnsLookup: (address, callback) => callback(null, address),
-    redisOptions: {
-      tls: {},
-      username: Resource.MyRedis.username,
-      password: Resource.MyRedis.password,
-    },
-  }
-);
-```
+We'll add a `/latest` route that'll download the latest file in our S3 bucket. Let's add this below our upload route in `src/index.ts`.
 
-:::tip
-We are directly accessing our Redis cluster with `Resource.MyRedis.*`.
-:::
-
-Let's update the `/` route.
-
-```ts title="index.ts"
-app.get("/", async (c) => {
-  const counter = await redis.incr("counter");
-  return c.text(`Hit counter: ${counter}`);
+```ts title="src/index.ts"
+app.get('/latest', async (c) => {
+  const objects = await s3.send(
+    new ListObjectsV2Command({
+      Bucket: Resource.MyBucket.name,
+    }),
+  );
+  const latestFile = objects.Contents!.sort(
+    (a, b) =>
+      (b.LastModified?.getTime() ?? 0) - (a.LastModified?.getTime() ?? 0),
+  )[0];
+  const command = new GetObjectCommand({
+    Key: latestFile.Key,
+    Bucket: Resource.MyBucket.name,
+  });
+  return c.redirect(await getSignedUrl(s3, command));
 });
 ```
 
@@ -374,54 +386,47 @@ app.get("/", async (c) => {
 
 #### Test your app
 
-Let's head over to `http://localhost:3000` in your browser and it'll show the current hit counter.
+To upload file run the following from your project root.
 
-You should see it increment every time you refresh the page.
+```bash
+curl -F file=@package.json http://localhost:3000/
+```
+
+This should upload the `package.json`. Now head over to `http://localhost:3000/latest` in your browser and it'll show you what you just uploaded.
 
 ---
 
-### 5. Deploy your app
+### 6. Deploy your app
 
 To deploy our app we'll first add a `Dockerfile`. This is building our app by running our `build` script from above.
 
-<details>
-<summary>View Dockerfile</summary>
-
 ```diff lang="dockerfile" title="Dockerfile"
-FROM node:20-alpine AS base
+FROM node:lts-alpine AS base
 
 FROM base AS builder
-
 RUN apk add --no-cache gcompat
 WORKDIR /app
-
 COPY package*json tsconfig.json src ./
-
-+# Copy over generated types
-+COPY sst-env.d.ts* ./
-
++ # Copy over generated types
++ COPY sst-env.d.ts* ./
 RUN npm ci && \
   npm run build && \
   npm prune --production
 
 FROM base AS runner
 WORKDIR /app
-
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 hono
-
 COPY --from=builder --chown=hono:nodejs /app/node_modules /app/node_modules
 COPY --from=builder --chown=hono:nodejs /app/dist /app/dist
 COPY --from=builder --chown=hono:nodejs /app/package.json /app/package.json
 
 USER hono
 EXPOSE 3000
-
 CMD ["node", "/app/dist/index.js"]
 ```
-</details>
 
-This is pretty much the same setup from the [Hono docs](https://hono.dev/docs/getting-started/nodejs#dockerfile).
+This builds our Hono app in a Docker image.
 
 :::tip
 You need to be running [Docker Desktop](https://www.docker.com/products/docker-desktop/) to deploy your app.
@@ -454,8 +459,9 @@ npm install typescript --save-dev
 
 And add a `build` script to our `package.json`.
 
-```diff lang="json" title="package.json" {2}
+```diff lang="json" title="package.json"
 "scripts": {
+  // ...
 +  "build": "tsc"
 }
 ```
@@ -477,9 +483,8 @@ You can use any stage name here but it's good to create a new stage for producti
 
 ## Connect the console
 
-As a next step, you can setup the [SST Console](/docs/console/) to _**git push to deploy**_ your app and monitor it for any issues. 
+As a next step, you can setup the [SST Console](/docs/console/) to _**git push to deploy**_ your app and view logs from it.
 
 ![SST Console Autodeploy](../../../../../assets/docs/start/sst-console-autodeploy.png)
 
 You can [create a free account](https://console.sst.dev) and connect it to your AWS account.
-

@@ -118,6 +118,10 @@ func Start(
 	if err != nil {
 		return err
 	}
+	exitChan, err := conn.Subscribe(ctx, prefix+"/exit")
+	if err != nil {
+		return err
+	}
 	client := bridge.NewClient(ctx, conn, prefix)
 
 	go fileLogger(p)
@@ -271,6 +275,16 @@ func Start(
 				}(ping.WorkerID)
 
 				break
+
+			case evt := <-exitChan:
+				var exit bridge.ExitEvent
+				json.Unmarshal([]byte(evt), &exit)
+				info, ok := workers[exit.WorkerID]
+				if !ok {
+					continue
+				}
+				info.Worker.Stop()
+				continue
 			case evt := <-workerResponseChan:
 				info, ok := workers[evt.workerID]
 				if !ok {

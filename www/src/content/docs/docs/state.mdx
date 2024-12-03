@@ -71,6 +71,7 @@ As SST starts deploying the resources in your app, it creates some additional _b
 1. An assets bucket to store the function packages, typically named `sst-asset-<hash>`.
 2. An ECR repository to store container images, called `sst-asset`.
 3. An SSM parameter to store the assets bucket name and the ECR repository, stored under `/sst/bootstrap`.
+4. An AppSync Events API endpoint to power [Live](/docs/live).
 
 The SSM parameter is used to look up the location of these resources.
 

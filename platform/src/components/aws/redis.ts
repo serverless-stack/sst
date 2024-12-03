@@ -7,7 +7,7 @@ import {
   output,
 } from "@pulumi/pulumi";
 import { RandomPassword } from "@pulumi/random";
-import { $print, Component, Transform, transform } from "../component.js";
+import { Component, Transform, transform } from "../component.js";
 import { Link } from "../link.js";
 import { Input } from "../input.js";
 import { elasticache, secretsmanager } from "@pulumi/aws";
@@ -15,27 +15,25 @@ import { Vpc } from "./vpc.js";
 import { physicalName } from "../naming.js";
 import { VisibleError } from "../error.js";
 import { DevCommand } from "../experimental/dev-command.js";
-import path from "path";
 
 export interface RedisArgs {
   /**
-   * The Redis engine to use.
+   * The Redis engine to use. The following engines are supported:
    *
-   * Two engines are supported:
-   * - `"redis"`: The open source version of Redis.
-   * - `"valkey"`: A Redis-compatible engine built for improved scalability and performance (https://valkey.io/).
+   * - `"redis"`: The open-source version of Redis.
+   * - `"valkey"`: [Valkey](https://valkey.io/) is a Redis-compatible in-memory key-value store.
    *
    * @default `"redis"`
    */
   engine?: Input<"redis" | "valkey">;
   /**
-   * The Redis engine version.
+   * The version of Redis.
    *
-   * The default version is `"7.1"` for the `"redis"` engine and `"7.2"` for the `"valkey"` engine.
+   * The default is `"7.1"` for the `"redis"` engine and `"7.2"` for the `"valkey"` engine.
    *
    * Check out the [supported versions](https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/supported-engine-versions.html).
    *
-   * @default `"7.1"` for Redis`, `"7.2"` for Valkey
+   * @default `"7.1"` for Redis, `"7.2"` for Valkey
    * @example
    * ```js
    * {
@@ -97,9 +95,9 @@ export interface RedisArgs {
    * }
    * ```
    */
-  vpc: Input<
+  vpc:
     | Vpc
-    | {
+    | Input<{
         /**
          * A list of subnet IDs in the VPC to deploy the Redis cluster in.
          */
@@ -108,55 +106,55 @@ export interface RedisArgs {
          * A list of VPC security group IDs.
          */
         securityGroups: Input<Input<string>[]>;
-      }
-  >;
+      }>;
   /**
    * Configure how this component works in `sst dev`.
    *
-   * By default, your Redis cluster is deployed in `sst dev`. Instead, you can not
-   * deploy it in `sst dev`, and use the `dev.command` to run Redis locally. It'll be run
-   * as a separate process in the `sst dev` multiplexer. Read more about [`sst dev`](/docs/reference/cli/#dev).
+   * By default, your Redis cluster is deployed in `sst dev`. But if you want to instead
+   * connect to a locally running Redis server, you can configure the `dev` prop.
+   *
+   * :::note
+   * By default, this creates a new Redis ElastiCache cluster even in `sst dev`.
+   * :::
+   *
+   * This will skip deploying a Redis ElastiCache cluster and link to the locally running Redis
+   * server instead.
+   *
+   * @example
+   *
+   * Setting the `dev` prop also means that any linked resources will connect to the right
+   * Redis instance both in `sst dev` and `sst deploy`.
+   *
+   * ```ts
+   * {
+   *   dev: {
+   *     host: "localhost",
+   *     port: 6379
+   *   }
+   * }
+   * ```
    */
   dev?: {
     /**
-     * The `port` of the local Redis server when running in dev mode.
+     * The host of the local Redis server to connect to when running in dev.
+     * @default `"localhost"`
+     */
+    host?: Input<string>;
+    /**
+     * The port of the local Redis server when running in dev.
      * @default `6379`
      */
     port?: Input<number>;
     /**
-     * The command that `sst dev` runs to start this in dev mode. This is the command you
-     * run when you want to run your Redis server locally.
-     *
-     * @example
-     * Running Redis locally with Docker.
-     * ```ts
-     * {
-     *   command: `docker run \
-     *     --rm \
-     *     -p 6379:6379 \
-     *     -v ${path.join(process.cwd(), ".sst", "storage", $app.stage, "redis")}:/data \
-     *     redis:latest`
-     * ```
-     *
-     * This will start a Redis container on the default port `6379` with the latest Redis
-     * image. And the data is persisted in the `.sst/storage` folder inside your app.
-     * So if you restart the dev server, the data will still be there.
-     *
-     * @example
-     * Running Redis locally with redis-server CLI.
-     * ```ts
-     * {
-     *   command: `redis-server --dir ${path.join(process.cwd(), ".sst", "storage", $app.stage, "redis")}`
-     * }
-     * ```
+     * The username of the local Redis server to connect to when running in dev.
+     * @default `"default"`
      */
-    command: Input<string>;
+    username?: Input<string>;
     /**
-     * Configure if you want to automatically start this when `sst dev` starts. You can
-     * still start it manually later.
-     * @default `true`
+     * The password of the local Redis server to connect to when running in dev.
+     * @default No password
      */
-    autostart?: Input<boolean>;
+    password?: Input<string>;
   };
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
@@ -225,6 +223,34 @@ interface RedisRef {
  * );
  * ```
  *
+ * #### Running locally
+ *
+ * By default, your Redis cluster is deployed in `sst dev`. But let's say you are running Redis
+ * locally.
+ *
+ * ```bash
+ * docker run \
+ *   --rm \
+ *   -p 6379:6379 \
+ *   -v $(pwd)/.sst/storage/redis:/data \
+ *   redis:latest
+ * ```
+ *
+ * You can connect to it in `sst dev` by configuring the `dev` prop.
+ *
+ * ```ts title="sst.config.ts" {3-6}
+ * const redis = new sst.aws.Redis("MyRedis", {
+ *   vpc,
+ *   dev: {
+ *     host: "localhost",
+ *     port: 6379
+ *   }
+ * });
+ * ```
+ *
+ * This will skip deploying a Redis ElastiCache cluster and link to the locally running Redis
+ * server instead. [Check out the full example](/docs/examples/#aws-redis-local).
+ *
  * ---
  *
  * ### Cost
@@ -232,7 +258,8 @@ interface RedisRef {
  * By default this component uses _On-demand nodes_ with a single `cache.t4g.micro` instance.
  *
  * The default `redis` engine costs $0.016 per hour. That works out to $0.016 x 24 x 30 or **$12 per month**.
- * If the `valkey` engine is used, the cost is $0.0128 per hour. That works out to $0.0128 x 24 x 30 or **$9.22 per month**.
+ *
+ * If the `valkey` engine is used, the cost is $0.0128 per hour. That works out to $0.0128 x 24 x 30 or **$9 per month**.
  *
  * Adjust this for the `instance` type and number of `nodes` you are using.
  *
@@ -243,9 +270,10 @@ export class Redis extends Component implements Link.Linkable {
   private cluster?: elasticache.ReplicationGroup;
   private _authToken?: Output<string>;
   private dev?: {
-    host?: Output<string>;
-    port?: Output<number>;
-    username?: Output<string>;
+    enabled: boolean;
+    host: Output<string>;
+    port: Output<number>;
+    username: Output<string>;
     password?: Output<string>;
   };
 
@@ -260,7 +288,6 @@ export class Redis extends Component implements Link.Linkable {
     }
 
     const parent = this;
-    const dev = normalizeDev();
     const engine = output(args.engine).apply((v) => v ?? "redis");
     const version = all([engine, args.version]).apply(
       ([engine, v]) => v ?? (engine === "redis" ? "7.1" : "7.2"),
@@ -269,10 +296,9 @@ export class Redis extends Component implements Link.Linkable {
     const nodes = output(args.nodes).apply((v) => v ?? 1);
     const vpc = normalizeVpc();
 
-    if (dev) {
+    const dev = registerDev();
+    if (dev?.enabled) {
       this.dev = dev;
-      this._authToken = dev.password;
-      registerReceiver();
       return;
     }
 
@@ -282,34 +308,50 @@ export class Redis extends Component implements Link.Linkable {
 
     this.cluster = cluster;
     this._authToken = authToken;
-    registerReceiver();
 
-    function normalizeDev() {
-      if (!$dev) return undefined;
-      if (args.dev === undefined) return undefined;
+    function registerDev() {
+      if (!args.dev) return undefined;
 
-      return {
-        host: output("localhost"),
+      const dev = {
+        enabled: $dev,
+        host: output(args.dev.host ?? "localhost"),
         port: output(args.dev.port ?? 6379),
-        password: output("password"),
-        command: output(args.dev.command),
-        autostart: output(args.dev.autostart ?? true),
+        username: output(args.dev.username ?? "default"),
+        password: args.dev.password ? output(args.dev.password) : undefined,
       };
+
+      new DevCommand(`${name}Dev`, {
+        dev: {
+          title: name,
+          autostart: true,
+          command: `sst print-and-not-quit`,
+        },
+        environment: {
+          SST_DEV_COMMAND_MESSAGE: interpolate`Make sure your local Redis server is using:
+
+  username: "${dev.username}"
+  password: ${
+    dev.password ? `"${dev.password}"` : "\x1b[38;5;8m[no password]\x1b[0m"
+  }
+
+Listening on "${dev.host}:${dev.port}"...`,
+        },
+      });
+
+      return dev;
     }
 
     function normalizeVpc() {
-      return output(args.vpc).apply((vpc) => {
-        // "vpc" is a Vpc component
-        if (vpc instanceof Vpc) {
-          return output({
-            subnets: vpc.privateSubnets,
-            securityGroups: vpc.securityGroups,
-          });
-        }
+      // "vpc" is a Vpc component
+      if (args.vpc instanceof Vpc) {
+        return output({
+          subnets: args.vpc.privateSubnets,
+          securityGroups: args.vpc.securityGroups,
+        });
+      }
 
-        // "vpc" is object
-        return output(vpc);
-      });
+      // "vpc" is object
+      return output(args.vpc);
     }
 
     function createAuthToken() {
@@ -389,15 +431,6 @@ export class Redis extends Component implements Link.Linkable {
         ),
       );
     }
-
-    function registerReceiver() {
-      new DevCommand(`${name}Dev`, {
-        dev: {
-          autostart: dev?.autostart,
-          command: dev?.command,
-        },
-      });
-    }
   }
 
   /**
@@ -411,14 +444,14 @@ export class Redis extends Component implements Link.Linkable {
    * The username to connect to the Redis cluster.
    */
   public get username() {
-    return output("default");
+    return this.dev ? this.dev.username : output("default");
   }
 
   /**
    * The password to connect to the Redis cluster.
    */
   public get password() {
-    return this._authToken;
+    return this.dev ? this.dev.password ?? output("") : this._authToken;
   }
 
   /**

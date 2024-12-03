@@ -26,6 +26,7 @@ import {
   cloudwatch,
   ecr,
   getCallerIdentityOutput,
+  getPartitionOutput,
   getRegionOutput,
   iam,
   lambda,
@@ -253,17 +254,18 @@ export interface FunctionArgs {
   /**
    * The runtime environment for the function. Support for other runtimes is on our roadmap.
    *
-   * @default `"nodejs20.x"`
+   * @default `"nodejs22.x"`
    * @example
    * ```js
    * {
-   *   runtime: "nodejs18.x"
+   *   runtime: "nodejs20.x"
    * }
    * ```
    */
   runtime?: Input<
     | "nodejs18.x"
     | "nodejs20.x"
+    | "nodejs22.x"
     | "provided.al2023"
     | "python3.9"
     | "python3.10"
@@ -1089,9 +1091,9 @@ export interface FunctionArgs {
    * }
    * ```
    */
-  vpc?: Input<
+  vpc?:
     | Vpc
-    | {
+    | Input<{
         /**
          * A list of VPC security group IDs.
          */
@@ -1105,8 +1107,7 @@ export interface FunctionArgs {
          * @deprecated Use `privateSubnets` instead.
          */
         subnets?: Input<Input<string>[]>;
-      }
-  >;
+      }>;
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.
@@ -1256,7 +1257,8 @@ export class Function extends Component implements Link.Linkable {
     const isContainer = all([args.python, dev]).apply(
       ([python, dev]) => !dev && (python?.container ?? false),
     );
-    const region = normalizeRegion();
+    const partition = getPartitionOutput({}, opts).partition;
+    const region = getRegionOutput({}, opts).name;
     const bootstrapData = region.apply((region) => bootstrap.forRegion(region));
     const injections = normalizeInjections();
     const runtime = normalizeRuntime();
@@ -1335,7 +1337,7 @@ export class Function extends Component implements Link.Linkable {
                 links,
                 handler: handler,
                 bundle: bundle,
-                runtime: runtime || "nodejs20.x",
+                runtime: runtime || "nodejs22.x",
                 copyFiles,
                 properties: nodejs,
               };
@@ -1359,16 +1361,12 @@ export class Function extends Component implements Link.Linkable {
       );
     }
 
-    function normalizeRegion() {
-      return getRegionOutput(undefined, { parent }).name;
-    }
-
     function normalizeInjections() {
       return output(args.injections).apply((injections) => injections ?? []);
     }
 
     function normalizeRuntime() {
-      return all([args.runtime]).apply(([v]) => v ?? "nodejs20.x");
+      return all([args.runtime]).apply(([v]) => v ?? "nodejs22.x");
     }
 
     function normalizeTimeout() {
@@ -1501,25 +1499,26 @@ export class Function extends Component implements Link.Linkable {
       // "vpc" is undefined
       if (!args.vpc) return;
 
-      return output(args.vpc).apply((vpc) => {
-        // "vpc" is a Vpc component
-        if (vpc instanceof Vpc) {
-          const result = {
-            privateSubnets: vpc.privateSubnets,
-            securityGroups: vpc.securityGroups,
-          };
-          return all([vpc.nodes.natGateways, vpc.nodes.natInstances]).apply(
-            ([natGateways, natInstances]) => {
-              if (natGateways.length === 0 && natInstances.length === 0) {
-                throw new VisibleError(
-                  `Functions that are running in a VPC need a NAT gateway. Enable it by setting "nat" on the "sst.aws.Vpc" component.`,
-                );
-              }
-              return result;
-            },
-          );
-        }
+      // "vpc" is a Vpc component
+      if (args.vpc instanceof Vpc) {
+        const result = {
+          privateSubnets: args.vpc.privateSubnets,
+          securityGroups: args.vpc.securityGroups,
+        };
+        return all([
+          args.vpc.nodes.natGateways,
+          args.vpc.nodes.natInstances,
+        ]).apply(([natGateways, natInstances]) => {
+          if (natGateways.length === 0 && natInstances.length === 0) {
+            throw new VisibleError(
+              `Functions that are running in a VPC need a NAT gateway. Enable it by setting "nat" on the "sst.aws.Vpc" component.`,
+            );
+          }
+          return result;
+        });
+      }
 
+      return output(args.vpc).apply((vpc) => {
         // "vpc" is object
         if (vpc.subnets) {
           throw new VisibleError(
@@ -1729,8 +1728,8 @@ export class Function extends Component implements Link.Linkable {
                     {
                       actions: ["s3:*"],
                       resources: [
-                        interpolate`arn:aws:s3:::${bootstrapData.asset}`,
-                        interpolate`arn:aws:s3:::${bootstrapData.asset}/*`,
+                        interpolate`arn:${partition}:s3:::${bootstrapData.asset}`,
+                        interpolate`arn:${partition}:s3:::${bootstrapData.asset}/*`,
                       ],
                     },
                   ]
@@ -1760,8 +1759,8 @@ export class Function extends Component implements Link.Linkable {
                         {
                           type: "AWS",
                           identifiers: [
-                            interpolate`arn:aws:iam::${
-                              getCallerIdentityOutput().accountId
+                            interpolate`arn:${partition}:iam::${
+                              getCallerIdentityOutput({}, opts).accountId
                             }:root`,
                           ],
                         },
@@ -1777,12 +1776,12 @@ export class Function extends Component implements Link.Linkable {
             managedPolicyArns: logging.apply((logging) => [
               ...(logging
                 ? [
-                    "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+                    interpolate`arn:${partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole`,
                   ]
                 : []),
               ...(vpc
                 ? [
-                    "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+                    interpolate`arn:${partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole`,
                   ]
                 : []),
             ]),
@@ -1943,7 +1942,7 @@ export class Function extends Component implements Link.Linkable {
 
           // Calculate hash of the zip file
           const hash = crypto.createHash("sha256");
-          hash.update(await fs.promises.readFile(zipPath));
+          hash.update(await fs.promises.readFile(zipPath, 'utf-8'));
           const hashValue = hash.digest("hex");
           const assetBucket = region.apply((region) =>
             bootstrap.forRegion(region).then((d) => d.asset),

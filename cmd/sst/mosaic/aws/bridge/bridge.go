@@ -41,6 +41,11 @@ type PingEvent struct {
 	WorkerID string `json:"workerID"`
 }
 
+type ExitEvent struct {
+	WorkerID   string `json:"workerID"`
+	FunctionID string `json:"functionID"`
+}
+
 func NewWriter(conn *appsync.Connection, channel string, requestID string) *Writer {
 	return &Writer{
 		id:       requestID,
@@ -111,7 +116,7 @@ func NewClient(ctx context.Context, as *appsync.Connection, prefix string) *Clie
 		responses: map[string]chan []byte{},
 	}
 	go func() {
-		for msg := range sorted(sub) {
+		for msg := range sorted(ctx, sub) {
 			result.lock.RLock()
 			responseChannel, ok := result.responses[msg.ID]
 			result.lock.RUnlock()
@@ -201,7 +206,7 @@ func Listen(
 ) error {
 	requests := map[string]chan []byte{}
 	sub, _ := as.Subscribe(ctx, prefix+"/"+workerID)
-	for msg := range sorted(sub) {
+	for msg := range sorted(ctx, sub) {
 		decoded, _ := base64.StdEncoding.DecodeString(msg.Data)
 		reqChan, ok := requests[msg.ID]
 		if !ok {
@@ -229,34 +234,40 @@ func Listen(
 	return nil
 }
 
-func sorted(sub appsync.SubscriptionChannel) iter.Seq[Envelope] {
+func sorted(ctx context.Context, sub appsync.SubscriptionChannel) iter.Seq[Envelope] {
 	return func(yield func(Envelope) bool) {
 		history := make(map[string]map[int]Envelope)
 		next := map[string]int{}
-		for msg := range sub {
-			var envelope Envelope
-			json.Unmarshal([]byte(msg), &envelope)
-			unprocessed, ok := history[envelope.ID]
-			if !ok {
-				unprocessed = map[int]Envelope{}
-				history[envelope.ID] = unprocessed
-			}
-			unprocessed[envelope.Index] = envelope
-			for {
-				index := next[envelope.ID]
-				envelope, ok := unprocessed[index]
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg := <-sub:
+				var envelope Envelope
+				json.Unmarshal([]byte(msg), &envelope)
+				unprocessed, ok := history[envelope.ID]
 				if !ok {
-					break
+					unprocessed = map[int]Envelope{}
+					history[envelope.ID] = unprocessed
 				}
-				delete(unprocessed, index)
-				next[envelope.ID] = index + 1
-				if !yield(envelope) {
-					return
-				}
-				if envelope.Final {
-					delete(history, envelope.ID)
+				unprocessed[envelope.Index] = envelope
+				for {
+					index := next[envelope.ID]
+					envelope, ok := unprocessed[index]
+					if !ok {
+						break
+					}
+					delete(unprocessed, index)
+					next[envelope.ID] = index + 1
+					if !yield(envelope) {
+						return
+					}
+					if envelope.Final {
+						delete(history, envelope.ID)
+					}
 				}
 			}
+
 		}
 	}
 }

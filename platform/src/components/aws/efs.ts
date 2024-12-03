@@ -69,15 +69,14 @@ export interface EfsArgs {
    * }
    * ```
    */
-  vpc: Input<
+  vpc:
     | Vpc
-    | {
+    | Input<{
         /**
          * A list of subnet IDs in the VPC to create the EFS mount targets in.
          */
         subnets: Input<Input<string>[]>;
-      }
-  >;
+      }>;
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.
@@ -189,17 +188,15 @@ export class Efs extends Component {
     this._accessPoint = waited.accessPoint;
 
     function normalizeVpc() {
-      return output(args.vpc).apply((vpc) => {
-        // "vpc" is a Vpc component
-        if (vpc instanceof Vpc) {
-          return output({
-            subnets: vpc.privateSubnets,
-          });
-        }
+      // "vpc" is a Vpc component
+      if (args.vpc instanceof Vpc) {
+        return output({
+          subnets: args.vpc.privateSubnets,
+        });
+      }
 
-        // "vpc" is object
-        return vpc;
-      });
+      // "vpc" is object
+      return output(args.vpc);
     }
 
     function createFileSystem() {

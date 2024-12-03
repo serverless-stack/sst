@@ -37,11 +37,15 @@ type Multiplexer struct {
 	click    *tcell.EventMouse
 }
 
-func New(ctx context.Context) *Multiplexer {
+func New(ctx context.Context) (*Multiplexer, error) {
+	var err error
 	result := &Multiplexer{}
 	result.ctx = ctx
 	result.processes = []*pane{}
-	result.screen, _ = tcell.NewScreen()
+	result.screen, err = tcell.NewScreen()
+	if err != nil {
+		return nil, err
+	}
 	result.screen.Init()
 	result.screen.EnableMouse()
 	result.screen.Show()
@@ -55,7 +59,7 @@ func New(ctx context.Context) *Multiplexer {
 	if os.Getenv("TMUX") != "" {
 		process.Command("tmux", "set-option", "-p", "set-clipboard", "on").Run()
 	}
-	return result
+	return result, nil
 }
 
 func (s *Multiplexer) mainRect() (int, int) {

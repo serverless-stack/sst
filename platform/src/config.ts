@@ -26,13 +26,20 @@
  *     return {
  *       bucket: bucket.name
  *     };
+ *   },
+ *   // Optionally, your app's Console config
+ *   console: {
+ *     autodeploy: {
+ *       runner: { compute: "large" }
+ *     }
  *   }
  * });
  * ```
  *
- * The `Config` object takes two functions:
+ * The `Config` object takes:
  * 1. [`app`](#app-2) — Your config
  * 2. [`run`](#run) — Your resources
+ * 3. [`console`](#console) — Optionally, your app's Console config
  *
  * The `app` function is evaluated right when your app loads. It's used to define the app config and its providers.
  *
@@ -110,7 +117,6 @@ export interface App {
    * ```
    */
   version?: string;
-
   /**
    * The name of the app. This is used to prefix the names of the resources in your app.
    *
@@ -201,7 +207,6 @@ export interface App {
    * @default The `home` provider.
    */
   providers?: Record<string, any>;
-
   /**
    * The provider SST will use to store the state for your app. The state keeps track of all your resources and secrets. The state is generated locally and backed up in your cloud provider.
    *
@@ -242,87 +247,170 @@ export interface AppInput {
   stage: string;
 }
 
+export interface RunnerInput {
+  /**
+   * The stage the deployment will be run in.
+   */
+  stage: string;
+}
+
 export interface Target {
   /**
    * The stage the app will be deployed to.
    */
   stage: string;
+}
+
+export interface Runner {
   /**
-   * Configure the runner that will run the build.
+   * The service used to run the build. Currently, only AWS CodeBuild is supported.
+   */
+  engine: "codebuild";
+  /**
+   * The timeout for the build. It can be from `5 minutes` to `36 hours`.
+   * @default `1 hour`
+   */
+  timeout?: `${number} ${"minute" | "minutes" | "hour" | "hours"}`;
+  /**
+   * The architecture of the build machine.
+   * @default `x86_64`
    *
-   * It uses this to create a _runner_ — a
-   * [AWS CodeBuild](https://aws.amazon.com/codebuild/) project and an IAM Role,
-   * in **your account**. By default it uses:
+   * The `x86_64` machine uses the [`al2/standard/5.0`](https://github.com/aws/aws-codebuild-docker-images/tree/master/al2/x86_64/standard/5.0) build image.
+   * While `arm64` uses the [`al2/aarch64/standard/3.0`](https://github.com/aws/aws-codebuild-docker-images/tree/master/al2/aarch64/standard/3.0) image instead.
+   * 
+   * You can also configure what's used in the image:
+   * 
+   * - **Node**
+   * 
+   *   To specify the version of Node you want to use in your build, you can use the
+   *   `.node-version`, `.nvmrc`, or use the `engine` field in your `package.json`.
+   * 
+   *   <Tabs>
+   *     <TabItem label="package.json">
+   *     ```js title="package.json"
+   *     {
+   *       engine: {
+   *         node: "20.15.1"
+   *       }
+   *     }
+   *     ```
+   *     </TabItem>
+   *     <TabItem label="node-version">
+   *     ```bash title=".node-version"
+   *     20.15.1
+   *     ```
+   *     </TabItem>
+   *     <TabItem label="nvmrc">
+   *     ```bash title=".nvmrc"
+   *     20.15.1
+   *     ```
+   *     </TabItem>
+   *   </Tabs>
+   * 
+   * - **Package manager**
+   * 
+   *   To specify the package manager you want to use you can configure it through your
+   *   `package.json`. 
+   * 
+   *   ```js title="package.json"
+   *   {
+   *     packageManager: "pnpm@8.6.3"
+   *   }
+   *   ```
+   * 
+   * Feel free to get in touch if you want to use your own build image or configure what's used
+   * in the build image.
+   */
+  architecture?: "x86_64" | "arm64";
+  /**
+   * The compute size of the build environment.
+   *
+   * For `x86_64`, the following compute sizes are supported:
+   * - `small`: 3 GB, 2 vCPUs
+   * - `medium`: 7 GB, 4 vCPUs
+   * - `large`: 15 GB, 8 vCPUs
+   * - `xlarge`: 70 GB, 36 vCPUs
+   * - `2xlarge`: 145 GB, 72 vCPUs
+   *
+   * For `arm64` architecture, the following compute sizes are supported:
+   * - `small`: 4 GB, 2 vCPUs
+   * - `medium`: 8 GB, 4 vCPUs
+   * - `large`: 16 GB, 8 vCPUs
+   * - `xlarge`: 64 GB, 32 vCPUs
+   * - `2xlarge`: 96 GB, 48 vCPUs
+   *
+   * To increase the memory used by your Node.js process in the build environment, you'll want
+   * to set the `NODE_OPTIONS` environment variable to `--max-old-space-size=xyz`. Where `xyz`
+   * is the memory size in MB. By default, this is set to 1.5 GB.
+   *
+   * Read more about the [CodeBuild build environments](https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-compute-types.html).
+   *
+   * @default `medium`
+   */
+  compute?: "small" | "medium" | "large" | "xlarge" | "2xlarge";
+  /**
+   * The VPC to run the build in. If provided, the build environment will have access to
+   * resources in the VPC.
+   *
+   * This is useful for building Next.js apps that might make queries to your database
+   * as a part of the build process.
+   *
+   * You can get these from the outputs of the `Vpc` component your are using or from the
+   * [Console](/docs/console/#resources).
+   *
+   * @example
    *
    * ```ts
    * {
-   *   engine: "codebuild",
-   *   architecture: "x86_64",
-   *   compute: "small",
-   *   timeout: "1 hour"
+   *   vpc: {
+   *     id: "vpc-0be8fa4de860618bb",
+   *     subnets: ["subnet-0be8fa4de860618bb"],
+   *     securityGroups: ["sg-0be8fa4de860618bb"]
+   *   }
+   * }
+   * ```
+   */
+  vpc?: {
+    /**
+     * The ID of the VPC.
+     */
+    id: string;
+    /**
+     * The subnets to run the build in.
+     */
+    subnets: string[];
+    /**
+     * The security groups to run the build in.
+     */
+    securityGroups: string[];
+  };
+  /**
+   * Paths to cache as a part of the build. By default the `.git` directory is cached.
+   *
+   * The given list of files and directories will be saved to the cache at the end of the build.
+   * And they will be restored at the start of the build process.
+   *
+   * ```ts
+   * {
+   *   cache: {
+   *     paths: ["node_modules", "/path/to/cache"]
+   *   }
    * }
    * ```
    *
-   * :::note
-   * Runners are shared across all apps in the same account and region.
-   * :::
+   * The relative paths are for caching files inside your repo. While the absolute path is for
+   * any global caches.
    *
-   * Once a runner is created, it can be used to run multiple builds of the same
-   * machine config concurrently.
-   *
-   * You are only charged for the number of build
-   * minutes that you use. The pricing is based on the machine config used.
-   * [Learn more about CodeBuild pricing](https://aws.amazon.com/codebuild/pricing/).
-   *
-   * :::note
-   * A runner can run multiple builds concurrently.
-   * :::
-   *
-   * If a runner with the given config has been been previously created,
-   * it'll be reused. The Console will also automatically remove runners that
-   * have not been used for more than 7 days.
+   * To clear the cache, you can trigger a new deploy using the **Force** deploy option in the
+   * Console.
    */
-  runner?: {
+  cache?: {
     /**
-     * The service used to run the build. Currently, only AWS CodeBuild is supported.
+     * The paths to cache. These are relative to the root of the repository.
+     *
+     * By default, the `.git` directory is always cached.
      */
-    engine: "codebuild";
-    /**
-     * The timeout for the build. It can be from `5 minutes` to `1 hour`.
-     * @default `1 hour`
-     */
-    timeout?: `${number} ${"minute" | "minutes" | "hour" | "hours"}`;
-    /**
-     * The architecture of the build machine.
-     * @default `x86_64`
-     */
-    architecture?: "x86_64" | "arm64";
-    /**
-     * The compute size of the build environment.
-     *
-     * For `x86_64`, the following compute sizes are supported:
-     * - `small`: 3 GB, 2 vCPUs
-     * - `medium`: 7 GB, 4 vCPUs
-     * - `large`: 15 GB, 8 vCPUs
-     * - `xlarge`: 70 GB, 36 vCPUs
-     * - `2xlarge`: 145 GB, 72 vCPUs
-     *
-     * For `arm64` architecture, the following compute sizes are supported:
-     * - `small`: 4 GB, 2 vCPUs
-     * - `medium`: 8 GB, 4 vCPUs
-     * - `large`: 16 GB, 8 vCPUs
-     * - `xlarge`: 64 GB, 32 vCPUs
-     * - `2xlarge`: 96 GB, 48 vCPUs
-     *
-     * To increase the memory used by your Node.js process in the build environment, you'll want
-     * to set the `NODE_OPTIONS` environment variable to `--max-old-space-size=xyz`. Where `xyz`
-     * is the memory size in MB. By default, this is set to 1.5 GB.
-     *
-     * Read more about the [CodeBuild build environments](https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-compute-types.html).
-     *
-     * @default `medium`
-     */
-    compute?: "small" | "medium" | "large" | "xlarge" | "2xlarge";
+    paths: string[];
   };
 }
 
@@ -630,32 +718,36 @@ export interface Config {
    */
   app(input: AppInput): App;
   /**
-   * Configure how your app works with the SST Console. [Learn more about Autodeploy](/docs/console#autodeploy).
+   * Configure how your app works with the SST Console.
    */
   console?: {
     /**
      * Auto-deploys your app when you _git push_ to your repo. Uses
      * [AWS CodeBuild](https://aws.amazon.com/codebuild/) in your account to run the build.
      *
-     * You are only charged for the number of build
-     * minutes that you use. The pricing is based on the machine config used.
-     * [Learn more about CodeBuild pricing](https://aws.amazon.com/codebuild/pricing/).
+     * To get started, first [make sure to set up Autodeploy](/docs/console#setup).
+     * Specifically, you need to configure an environment with the stage and AWS account
+     * you want to auto-deploy to.
      *
-     * By default, this auto-deploys when you _git push_ to a:
+     * Now when you _git push_ to a branch, pull request, or tag, the following happens:
      *
-     * - **branch**: The stage name is a sanitized version of the branch name. When a branch
-     *   is removed, the stage is **not removed**.
-     * - **pull request**: The stage name is `pr-<number>`. When a pull request is closed,
-     *   the stage **is removed**.
+     * 1. The stage name is generated based on the `autodeploy.target` callback.
+     *    1. If there is no callback, the stage name is a sanitized version of the branch or tag.
+     *    2. If there is a callback but no stage is returned, the deploy is skipped.
+     * 2. The runner config is generated based on the `autodeploy.runner`. Or the defaults are
+     *    used.
+     * 3. The stage is matched against the environments in the Console to get the AWS account
+     *    and any environment variables for the deploy.
+     * 4. The deploy is run based on the above config.
      *
-     * :::note
-     * You need to configure an environment in the Console to be able to auto-deploy to it.
-     * :::
+     * This only applies only to git events. If you trigger a deploy through the Console, you
+     * are asked to sepcify the stage you want to deploy to. So in this case, it skips step 1
+     * from above and does not call `autodeploy.target`.
      *
-     * You can pass in your own `target` function to customize this behaviour and the machine
-     * that'll be used to run the build.
+     * Both `target` and `runner` are optional and come with defaults, so you don't need to
+     * configure anything. But you can customize them.
      *
-     * ```ts title="sst.config.ts"
+     * ```ts title="sst.config.ts" {"target", "runner"}
      * console: {
      *   autodeploy: {
      *     target(event) {
@@ -664,15 +756,19 @@ export interface Config {
      *         event.branch === "main" &&
      *         event.action === "pushed"
      *        ) {
-     *         return {
-     *           stage: "production",
-     *           runner: { engine: "codebuild", compute: "large" }
-     *         };
+     *         return { stage: "production" };
      *       }
+     *     },
+     *     runner(stage) {
+     *       if (stage === "production") return { timeout: "3 hours" };
      *     }
      *   }
      * }
      * ```
+     *
+     * For example, here we are only auto-deploying to the `production` stage when you git push
+     * to the `main` branch. We are also setting the timeout to 3 hours for the `production`
+     * stage.
      *
      * @default Auto-deploys branches and PRs.
      */
@@ -684,48 +780,84 @@ export interface Config {
        * git event. This function should return the stage the app will be deployed to.
        * Or `undefined` if the deploy should be skipped.
        *
-       * :::note
-       * Git push events for branches, pull requests, and tags are currently supported.
+       * :::tip
+       * Return `undefined` to skip the deploy.
        * :::
+       *
+       * The stage that is returned is then compared to the environments set in the
+       * [app settings in the Console](/docs/console/#setup). If the stage matches an
+       * environment, the stage will be deployed to that environment. If no matching environment
+       * is found, the deploy will be skipped.
+       *
+       * :::note
+       * You need to configure an environment in the Console to be able to deploy to it.
+       * :::
+       *
+       * Currently, only git events for **branches**, **pull requests**, and **tags** are
+       * supported.
+       *
+       * :::tip
+       * This is not called when you manually trigger a deploy through the Console.
+       * :::
+       *
+       * This config only applies to git events. If you trigger a deploy through the Console,
+       * you are asked to sepcify the stage you want to deploy to. In this case, and
+       * when you redeploy a manual deploy, the `target` function is not called.
        *
        * By default, this is what the `target` function looks like:
        *
-       * ```ts title="sst.config.ts"
-       * target(event) {
-       *   if (event.type === "branch" && event.action === "pushed") {
-       *     return {
-       *       stage: event.branch
-       *         .replace(/[^a-zA-Z0-9-]/g, "-")
-       *         .replace(/-+/g, "-")
-       *         .replace(/^-/g, "")
-       *         .replace(/-$/g, "")
-       *     };
-       *   }
+       * ```ts
+       * {
+       *   target(event) {
+       *     if (event.type === "branch" && event.action === "pushed") {
+       *       return {
+       *         stage: event.branch
+       *           .replace(/[^a-zA-Z0-9-]/g, "-")
+       *           .replace(/-+/g, "-")
+       *           .replace(/^-/g, "")
+       *           .replace(/-$/g, "")
+       *       };
+       *     }
        *
-       *   if (event.type === "pull_request") {
-       *     return { stage: `pr-${event.number}` };
+       *     if (event.type === "pull_request") {
+       *       return { stage: `pr-${event.number}` };
+       *     }
        *   }
        * }
        * ```
        *
-       * Here we are sanitizing the branch name to generate the stage name. We are also
-       * only deploying when _pushed_ to a branch, and **not** when a branch is removed.
+       * So for a:
+       *
+       * - **branch**: The stage name is a sanitized version of the branch name. When a branch
+       *   is removed, the stage is **not removed**.
+       * - **pull request**: The stage name is `pr-<number>`. When a pull request is closed,
+       *   the stage **is removed**.
        *
        * :::tip
-       * Use the git event to configure how your app will be auto-deployed.
+       * Git events to tags are not auto-deployed by default.
        * :::
        *
-       * You can change the default behavior by passing in your own `target` function.
-       * For example, to auto-deploy to the `production` stage when you git push to the
-       * `main` branch.
+       * Git events to tags are not auto-deployed by default. You can change this by adding it
+       * to your config.
        *
-       * ```ts title="sst.config.ts"
-       * target(event) {
-       *   if (event.type === "branch" && event.branch === "main" && event.action === "pushed") {
-       *     return { stage: "production" };
+       * ```ts
+       * {
+       *   target(event) {
+       *     if (event.type === "tag" && event.action === "pushed") {
+       *       return {
+       *         stage: "tag-" + event.tag
+       *           .replace(/[^a-zA-Z0-9-]/g, "-")
+       *           .replace(/-+/g, "-")
+       *           .replace(/^-/g, "")
+       *           .replace(/-$/g, "")
+       *       };
+       *     }
        *   }
        * }
        * ```
+       *
+       * Here, similar to the branch event, we are sanitizing the tag name to generate the stage.
+       * Just make sure to configure the environment for these tag stages in the Console.
        *
        * If you don't want to auto-deploy for a given event, you can return `undefined`. For
        * example, to skip any deploys to the `staging` stage.
@@ -738,36 +870,89 @@ export interface Config {
        *   }
        * }
        * ```
+       */
+      target?(
+        input: BranchEvent | PullRequestEvent | TagEvent,
+      ): Target | undefined;
+      /**
+       * Configure the runner that will run the build. By default it uses the following config:
        *
-       * The stage that is returned is then compared to the environments set in the
-       * [app settings in the Console](/docs/console/#setup). If the stage matches a deployment
-       * target, the stage will be deployed to that environment. If no matching environment is
-       * found, the deploy will be skipped.
-       *
-       * :::note
-       * If a target is not returned, the app will not be deployed.
-       * :::
-       *
-       * In addition to the `stage` you can also configure the `runner` that will run the build.
-       * For example, to use a larger machine for the `production` stage.
-       *
-       * ```ts title="sst.config.ts"
-       * target(event) {
-       *   if (event.type === "branch" && event.branch === "main" && event.action === "pushed") {
-       *     return {
-       *       stage: "production"
-       *       runner: {
-       *         engine: "codebuild",
-       *         compute: "large"
-       *       };
-       *     };
+       * ```ts
+       * {
+       *   runner: {
+       *     engine: "codebuild",
+       *     architecture: "x86_64",
+       *     compute: "medium",
+       *     timeout: "1 hour"
        *   }
        * }
        * ```
+       *
+       * Most of these are optional and come with defaults. But you can configure them.
+       *
+       * ```ts
+       * {
+       *   runner: { timeout: "3 hours" }
+       * }
+       * ```
+       *
+       * You can also configure it based on the stage that's being deployed. Let's say you
+       * want to use the defaults for all stages except for `production`.
+       *
+       * ```ts
+       * {
+       *   runner(stage) {
+       *     if (stage === "production") return { timeout: "3 hours" };
+       *   }
+       * }
+       * ```
+       *
+       * Aside from the above, you can also have the deploys run inside a VPC.
+       *
+       * ```ts
+       * {
+       *   runner: {
+       *     vpc: {
+       *       id: "vpc-0be8fa4de860618bb",
+       *       securityGroups: ["sg-0399348378a4c256c"],
+       *       subnets: ["subnet-0b6a2b73896dc8c4c", "subnet-021389ebee680c2f0"]
+       *     }
+       *   }
+       * } 
+       * ```
+       *
+       * Or configure files or directories to be cached.
+       *
+       * ```ts
+       * {
+       *   runner: {
+       *     cache: {
+       *       paths: ["node_modules", "/path/to/cache"]
+       *     }
+       *   }
+       * } 
+       * ```
+       *
+       * A _runner_ is a [AWS CodeBuild](https://aws.amazon.com/codebuild/) project and an
+       * IAM Role. This is created in **your account**.
+       *
+       * Once a runner is created, it can be used to run multiple builds of the same
+       * machine config concurrently. Runners are also shared across all apps in the same
+       * account and region.
+       *
+       * :::note
+       * You are only charged for the number of build minutes that you use.
+       * :::
+       *
+       * If a runner with a given config has been been previously created,
+       * it'll be reused. The Console will also automatically remove runners that
+       * have not been used for more than 7 days.
+       *
+       * You are not charged for the number of runners you have, only for the number of build
+       * minutes that you use. The pricing is based on the machine config used.
+       * [Learn more about CodeBuild pricing](https://aws.amazon.com/codebuild/pricing/).
        */
-      target(
-        input: BranchEvent | PullRequestEvent | TagEvent,
-      ): Target | undefined;
+      runner?: Runner | ((input: RunnerInput) => Runner);
     };
   };
   /**

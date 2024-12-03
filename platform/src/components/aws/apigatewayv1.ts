@@ -664,7 +664,7 @@ export class ApiGatewayV1 extends Component implements Link.Linkable {
 
     const region = normalizeRegion();
     const endpoint = normalizeEndpoint();
-    const apigAccount = setupApiGatewayAccount(name);
+    const apigAccount = setupApiGatewayAccount(name, opts);
     const api = createApi();
 
     this.resources["/"] = api.rootResourceId;

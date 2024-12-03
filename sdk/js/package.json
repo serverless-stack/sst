@@ -20,10 +20,9 @@
   },
   "devDependencies": {
     "@tsconfig/node20": "20.1.4",
-    "@types/bun": "^1.1.6",
-    "@types/node": "20.11.0",
+    "@types/node": "22.10.0",
     "hono": "4.3.9",
-    "typescript": "5.3.3",
+    "typescript": "5.7.2",
     "valibot": "0.30.0",
     "zod": "3.23.8"
   },

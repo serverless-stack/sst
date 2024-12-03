@@ -408,6 +408,14 @@ var steps = []bootstrapStep{
 	func(ctx context.Context, cfg aws.Config, data *AwsBootstrapData) error {
 		s3Client := s3.NewFromConfig(cfg)
 
+		// set partition based on region
+		partition := "aws"
+		if strings.HasPrefix(cfg.Region, "cn-") {
+			partition = "aws-cn"
+		} else if strings.HasPrefix(cfg.Region, "us-gov-") {
+			partition = "aws-us-gov"
+		}
+
 		buckets := []string{data.Asset, data.State}
 		for _, bucket := range buckets {
 			slog.Info("enforcing SSL for bucket", "name", bucket)
@@ -420,8 +428,8 @@ var steps = []bootstrapStep{
 						"Principal": "*",
 						"Action":    "s3:*",
 						"Resource": []string{
-							fmt.Sprintf("arn:aws:s3:::%s", bucket),
-							fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+							fmt.Sprintf("arn:%s:s3:::%s", partition, bucket),
+							fmt.Sprintf("arn:%s:s3:::%s/*", partition, bucket),
 						},
 						"Condition": map[string]interface{}{
 							"Bool": map[string]interface{}{

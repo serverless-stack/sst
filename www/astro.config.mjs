@@ -246,7 +246,7 @@ export default defineConfig({
           attrs: {
             src: "https://widget.kapa.ai/kapa-widget.bundle.js",
             "data-website-id": "6853540a-5c1e-4de3-9e2f-b893b6b825a8",
-            "data-project-name": "Ion",
+            "data-project-name": "SST",
             "data-project-color": "#E27152",
             "data-modal-header-bg-color": "white",
             "data-button-hide": "true",

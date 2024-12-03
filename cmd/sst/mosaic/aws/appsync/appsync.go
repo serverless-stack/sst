@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -138,7 +137,6 @@ func (c *Connection) getAuth(ctx context.Context, body interface{}) (interface{}
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("got auth", "body", credentials)
 	bodyJson, err := json.Marshal(body)
 	if err != nil {
 		return nil, err

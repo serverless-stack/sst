@@ -77,6 +77,23 @@ export interface DnsArgs {
    */
   override?: Input<boolean>;
   /**
+   * Configure ALIAS DNS records as [proxy records](https://developers.cloudflare.com/learning-paths/get-started-free/onboarding/proxy-dns-records/).
+   *
+   * :::tip
+   * Proxied records help prevent DDoS attacks and allow you to use Cloudflare's global
+   * content delivery network (CDN) for caching.
+   * :::
+   *
+   * @default `false`
+   * @example
+   * ```js
+   * {
+   *   proxy: true
+   * }
+   * ```
+   */
+  proxy?: Input<boolean>;
+  /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.
    */
@@ -100,12 +117,13 @@ export function dns(args: DnsArgs = {}) {
     record: AliasRecord,
     opts: ComponentResourceOptions,
   ) {
-    return createRecord(
+    return handleCreate(
       namePrefix,
       {
         name: record.name,
         type: "CNAME",
         value: record.aliasName,
+        isAlias: true,
       },
       opts,
     );
@@ -114,6 +132,14 @@ export function dns(args: DnsArgs = {}) {
   function createRecord(
     namePrefix: string,
     record: Record,
+    opts: ComponentResourceOptions,
+  ) {
+    return handleCreate(namePrefix, record, opts);
+  }
+
+  function handleCreate(
+    namePrefix: string,
+    record: Record & { isAlias?: boolean },
     opts: ComponentResourceOptions,
   ) {
     return output(record).apply((record) => {
@@ -138,16 +164,21 @@ export function dns(args: DnsArgs = {}) {
       }
 
       function createRecord() {
+        const proxy = output(args.proxy).apply(
+          (proxy) => (proxy && record.isAlias) ?? false,
+        );
+
         return new cloudflare.Record(
           ...transform(
             args.transform?.record,
             `${namePrefix}${record.type}Record${nameSuffix}`,
             {
               zoneId,
+              proxied: output(proxy),
               name: record.name,
               content: record.value,
               type: record.type,
-              ttl: 60,
+              ttl: output(proxy).apply((proxy) => (proxy ? 1 : 60)),
               allowOverwrite: args.override,
             },
             opts,
