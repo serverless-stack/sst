@@ -266,12 +266,17 @@ export default $config({
   app(input) {
     return {
       name: "my-sst-app",
+      home: "aws",
       providers: {
         aws: {
           profile: input.stage === "production" ? "acme-production" : "acme-dev"
         }
       }
     };
+  },
+
+  async run() {
+    // your app's resources
   }
 });
 ```
