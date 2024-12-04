@@ -123,17 +123,24 @@ export interface PostgresArgs {
    */
   proxy?: Input<boolean>;
   /**
-   * Enable [Multi-AZ](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.html) deployment for the database.
+   * Enable [Multi-AZ](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.html)
+   * deployment for the database.
    *
-   * :::tip
-   * This will approximately double the cost of the database since it will be deployed in two AZs.
+   * This creates a standby replica for the database in another availability zone (AZ). The
+   * standby database provides automatic failover in case the primary database fails. However,
+   * when the primary database is healthy, the standby database is not used for serving read
+   * traffic.
+   *
+   * :::caution
+   * Using Multi-AZ will approximately double the cost of the database since it will be
+   * deployed in two AZs.
    * :::
    *
    * @default `false`
    * @example
    * ```js
    * {
-   *   multiAz: false
+   *   multiAz: true
    * }
    * ```
    */
