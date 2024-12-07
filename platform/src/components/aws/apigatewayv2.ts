@@ -524,7 +524,7 @@ export interface ApiGatewayV2RouteArgs {
         /**
          * Enable IAM authorization for a given API route. When IAM auth is enabled, clients need to use Signature Version 4 to sign their requests with their AWS credentials.
          */
-        iam?: Input<true>;
+        iam?: Input<boolean>;
         /**
          * Enable JWT or JSON Web Token authorization for a given API route. When JWT auth is enabled, clients need to include a valid JWT in their requests.
          *
@@ -1050,7 +1050,7 @@ export class ApiGatewayV2 extends Component implements Link.Linkable {
    *
    * ```js title="sst.config.ts"
    * api.route("GET /", "src/get.handler")
-   * api.route($default, "src/default.handler");
+   * api.route("$default", "src/default.handler");
    * ```
    *
    * Add a parameterized route.

@@ -12,7 +12,7 @@ export default $config({
     const vpc = new sst.aws.Vpc("MyVpc", { bastion: true, nat: "ec2" });
     const rds = new sst.aws.Postgres("MyPostgres", { vpc, proxy: true });
 
-    const api = new sst.aws.Function("MyApi", {
+    new sst.aws.Function("MyApi", {
       vpc,
       url: true,
       link: [rds],
@@ -25,9 +25,5 @@ export default $config({
         command: "npx drizzle-kit studio",
       },
     });
-
-    return {
-      api: api.url,
-    };
   },
 });

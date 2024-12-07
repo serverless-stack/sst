@@ -101,6 +101,7 @@ func Start(ctx context.Context, p *project.Project, server *server.Server) error
 		slog.Info("dev not found", "directory", directory)
 		http.Error(w, "dev not found", http.StatusNotFound)
 		return
+
 	})
 
 	return wg.Wait()

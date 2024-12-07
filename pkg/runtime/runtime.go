@@ -52,9 +52,10 @@ func (input *BuildInput) Out() string {
 }
 
 type BuildOutput struct {
-	Out     string   `json:"out"`
-	Handler string   `json:"handler"`
-	Errors  []string `json:"errors"`
+	Out        string   `json:"out"`
+	Handler    string   `json:"handler"`
+	Errors     []string `json:"errors"`
+	Sourcemaps []string `json:"sourcemaps"`
 }
 
 type RunInput struct {
@@ -124,6 +125,9 @@ func (c *Collection) Build(ctx context.Context, input *BuildInput) (*BuildOutput
 	}
 
 	result.Out = out
+	if result.Sourcemaps == nil {
+		result.Sourcemaps = []string{}
+	}
 
 	if len(input.CopyFiles) > 0 {
 		for _, item := range input.CopyFiles {

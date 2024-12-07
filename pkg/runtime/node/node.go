@@ -66,9 +66,12 @@ type Runtime struct {
 
 func New(version string) *Runtime {
 	weight := int64(4)
-	if flag.SST_BUILD_CONCURRENCY != "" {
+	if flag.SST_BUILD_CONCURRENCY_FUNCTION != "" {
+		weight, _ = strconv.ParseInt(flag.SST_BUILD_CONCURRENCY_FUNCTION, 10, 64)
+	} else if flag.SST_BUILD_CONCURRENCY != "" {
 		weight, _ = strconv.ParseInt(flag.SST_BUILD_CONCURRENCY, 10, 64)
 	}
+
 	return &Runtime{
 		contexts:    sync.Map{},
 		results:     sync.Map{},
@@ -116,7 +119,7 @@ type NodeProperties struct {
 	ESBuild      esbuild.BuildOptions `json:"esbuild"`
 	Minify       bool                 `json:"minify"`
 	Format       string               `json:"format"`
-	SourceMap    bool                 `json:"sourceMap"`
+	SourceMap    *bool                `json:"sourceMap"`
 	Splitting    bool                 `json:"splitting"`
 	Plugins      string               `json:"plugins"`
 	Architecture string               `json:"architecture"`
@@ -140,7 +143,7 @@ func (r *Runtime) Run(ctx context.Context, input *runtime.RunInput) (runtime.Wor
 	cmd.Env = append(cmd.Env, "NODE_OPTIONS="+os.Getenv("NODE_OPTIONS"))
 	cmd.Env = append(cmd.Env, "VSCODE_INSPECTOR_OPTIONS="+os.Getenv("VSCODE_INSPECTOR_OPTIONS"))
 	cmd.Env = append(cmd.Env, "AWS_LAMBDA_RUNTIME_API="+input.Server)
-	slog.Info("starting worker", "env", cmd.Env, "args", cmd.Args)
+	slog.Info("starting worker", "server", input.Server)
 	cmd.Dir = input.Build.Out
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()

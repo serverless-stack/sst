@@ -183,11 +183,14 @@ export class Cron extends Component {
    * The underlying [resources](/docs/components/#nodes) this component creates.
    */
   public get nodes() {
+    const self = this;
     return {
       /**
        * The AWS Lambda Function that's invoked when the cron job runs.
        */
-      job: this.fn.apply((fn) => fn.getFunction()),
+      get job() {
+        return self.fn.apply((fn) => fn.getFunction());
+      },
       /**
        * The EventBridge Rule resource.
        */

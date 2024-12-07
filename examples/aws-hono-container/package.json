@@ -2,19 +2,21 @@
   "name": "aws-hono-container",
   "type": "module",
   "scripts": {
-    "build": "tsc",
-    "dev": "tsx watch src/index.ts"
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc"
   },
   "dependencies": {
-    "@hono/node-server": "^1.13.2",
-    "hono": "^4.6.5",
-    "ioredis": "^5.4.1",
+    "@aws-sdk/client-s3": "^3.701.0",
+    "@aws-sdk/lib-storage": "^3.701.0",
+    "@aws-sdk/s3-request-presigner": "^3.701.0",
+    "@hono/node-server": "^1.13.7",
+    "hono": "^4.6.12",
     "sst": "latest"
   },
   "devDependencies": {
-    "@types/aws-lambda": "8.10.145",
+    "@types/aws-lambda": "8.10.146",
     "@types/node": "^20.11.17",
     "tsx": "^4.7.1",
-    "typescript": "^5.6.3"
+    "typescript": "^5.7.2"
   }
 }

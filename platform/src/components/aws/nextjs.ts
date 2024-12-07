@@ -27,7 +27,7 @@ import { dynamodb, lambda } from "@pulumi/aws";
 import { URL_UNAVAILABLE } from "./linkable.js";
 import { getOpenNextPackage } from "../../util/compare-semver.js";
 
-const DEFAULT_OPEN_NEXT_VERSION = "3.1.6";
+const DEFAULT_OPEN_NEXT_VERSION = "3.2.2";
 const DEFAULT_CACHE_POLICY_ALLOWED_HEADERS = ["x-open-next-cache-key"];
 
 type BaseFunction = {

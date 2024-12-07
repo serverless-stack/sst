@@ -1,0 +1,20 @@
+{
+  "name": "aws-postgres-local",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "pg": "^8.13.1",
+    "sst": "latest"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "8.10.145",
+    "@types/pg": "^8.11.10"
+  }
+}

@@ -32,10 +32,11 @@ type RunOutputs struct {
 }
 
 func NewRun() *Run {
-	weight := int64(4)
-	if flag.SST_BUILD_CONCURRENCY != "" {
-		weight, _ = strconv.ParseInt(flag.SST_BUILD_CONCURRENCY, 10, 64)
+	weight := int64(1)
+	if flag.SST_BUILD_CONCURRENCY_SITE != "" {
+		weight, _ = strconv.ParseInt(flag.SST_BUILD_CONCURRENCY_SITE, 10, 64)
 	}
+
 	return &Run{
 		lock: semaphore.NewWeighted(weight),
 	}

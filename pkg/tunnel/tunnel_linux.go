@@ -7,6 +7,7 @@ import (
 
 func Start(routes ...string) error {
 	name := resolveInterface()
+	destroy()
 	slog.Info("creating interface", "name", name, "os", runtime.GOOS)
 	cmds := [][]string{
 		{"ip", "tuntap", "add", name, "mode", "tun"},

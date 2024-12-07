@@ -9,7 +9,7 @@ const app = new Hono()
         contentType: c.req.header("content-type"),
       },
     });
-    return new Response(`Object created with key: ${key}`);
+    return c.text(`Object created with key: ${key}`);
   })
   .get("/", async (c) => {
     const first = await Resource.MyBucket.list().then(

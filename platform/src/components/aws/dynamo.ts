@@ -213,7 +213,7 @@ export interface DynamoArgs {
    * }
    * ```
    */
-  deletionProtection?: Input<true>;
+  deletionProtection?: Input<boolean>;
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.
@@ -395,10 +395,9 @@ interface DynamoRef {
  *
  * ```ts title="app/page.tsx" {1,8}
  * import { Resource } from "sst";
- * import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
- * import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
+ * import { DynamoDBClient, QueryCommand, ScanCommand } from "@aws-sdk/client-dynamodb";
  *
- * const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+ * const client = new DynamoDBClient();
  *
  * await client.send(new QueryCommand({
  *   TableName: Resource.MyTable.name,

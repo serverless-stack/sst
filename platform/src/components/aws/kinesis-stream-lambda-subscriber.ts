@@ -109,7 +109,9 @@ export class KinesisStreamLambdaSubscriber extends Component {
       /**
        * The Lambda function that'll be notified.
        */
-      function: self.fn.apply((fn) => fn.getFunction()),
+      get function() {
+        return self.fn.apply((fn) => fn.getFunction());
+      },
       /**
        * The Lambda event source mapping.
        */

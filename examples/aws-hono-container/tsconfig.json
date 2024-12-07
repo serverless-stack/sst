@@ -3,7 +3,6 @@
     "target": "ESNext",
     "module": "NodeNext",
     "strict": true,
-    "outDir": "./dist",
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "types": [
@@ -11,6 +10,7 @@
     ],
     "jsx": "react-jsx",
     "jsxImportSource": "hono/jsx",
+    "outDir": "./dist"
   },
   "exclude": ["node_modules"]
 }

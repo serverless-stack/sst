@@ -1,7 +1,6 @@
 package bus
 
 import (
-	"log/slog"
 	"reflect"
 	"sync"
 )
@@ -42,7 +41,6 @@ func SubscribeAll() chan interface{} {
 
 func Publish(event interface{}) {
 	t := reflect.TypeOf(event)
-	slog.Info("publishing", "type", t)
 	bus.mu.RLock()
 	defer bus.mu.RUnlock()
 

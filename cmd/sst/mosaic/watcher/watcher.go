@@ -63,9 +63,9 @@ func Start(ctx context.Context, root string) error {
 			if !ok {
 				return nil
 			}
-			if event.Name == headFile {
-				return nil
-			}
+			// if event.Name == headFile {
+			// 	return nil
+			// }
 			if event.Op&(fsnotify.Write|fsnotify.Create) == 0 {
 				slog.Info("ignoring file event", "path", event.Name, "op", event.Op)
 				continue

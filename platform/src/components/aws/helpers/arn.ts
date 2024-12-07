@@ -56,8 +56,9 @@ export function parseDynamoArn(arn: string) {
 
 export function parseDynamoStreamArn(streamArn: string) {
   // ie. "arn:aws:dynamodb:us-east-1:112233445566:table/MyTable/stream/2024-02-25T23:17:55.264"
-  const tableName = streamArn.split(":")[5]?.split("/")[1];
-  if (!streamArn.startsWith("arn:aws:dynamodb:") || !tableName)
+  const parts = streamArn.split(":");
+  const tableName = parts[5]?.split("/")[1];
+  if (parts[0] !== "arn" || parts[2] !== "dynamodb" || !tableName)
     throw new VisibleError(
       `The provided ARN "${streamArn}" is not a DynamoDB stream ARN.`,
     );
@@ -66,8 +67,9 @@ export function parseDynamoStreamArn(streamArn: string) {
 
 export function parseKinesisStreamArn(streamArn: string) {
   // ie. "arn:aws:kinesis:us-east-1:123456789012:stream/MyStream";
-  const streamName = streamArn.split(":")[5]?.split("/")[1];
-  if (!streamArn.startsWith("arn:aws:kinesis:") || !streamName)
+  const parts = streamArn.split(":");
+  const streamName = parts[5]?.split("/")[1];
+  if (parts[0] !== "arn" || parts[2] !== "kinesis" || !streamName)
     throw new VisibleError(
       `The provided ARN "${streamArn}" is not a Kinesis stream ARN.`,
     );

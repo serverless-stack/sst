@@ -3,13 +3,21 @@ title: Deno on AWS with SST
 description: Create and deploy a Deno app to AWS with SST.
 ---
 
-We are going to build a hit counter using Deno and Redis. We'll the deploy it to AWS in a container using SST.
+We are going to build an app with Deno, add an S3 Bucket for file uploads, and deploy it to AWS in a container with SST.
 
 :::tip[View source]
 You can [view the source](https://github.com/sst/sst/tree/dev/examples/aws-deno) of this example in our repo.
 :::
 
 Before you get started, make sure to [configure your AWS credentials](/docs/iam-credentials#credentials).
+
+---
+
+#### Examples
+
+We also have a few other Deno examples that you can refer to.
+
+- [Build a hit counter with Deno and Redis](/docs/examples/#aws-deno-redis)
 
 ---
 
@@ -27,27 +35,19 @@ deno init aws-deno
 
 Replace your `main.ts` with the following.
 
-```js title="main.ts"
-Deno.serve(async (_req) => {
-  return new Response("Hello World!");
+```ts title="main.ts"
+Deno.serve(async (req) => {
+  const url = new URL(req.url);
+
+  if (url.pathname === "/" && req.method === "GET") {
+    return new Response("Hello World!");
+  }
+
+  return new Response("404!");
 });
 ```
 
 This starts up an HTTP server by default on port `8000`.
-
----
-
-#### Add scripts
-
-Add the following to your `deno.json`.
-
-```json title="deno.json"
-"tasks": {
-  "dev": "deno run --allow-all main.ts"
-},
-```
-
-This adds a `dev` script with a watcher.
 
 ---
 
@@ -63,13 +63,13 @@ This'll create an `sst.config.ts` file in your project root.
 
 ---
 
-## 2. Add a Cluster
+## 2. Add a Service
 
 To deploy our Deno app, let's add an [AWS Fargate](https://aws.amazon.com/fargate/) container with [Amazon ECS](https://aws.amazon.com/ecs/). Update your `sst.config.ts`.
 
 ```ts title="sst.config.ts" {9-11}
 async run() {
-  const vpc = new sst.aws.Vpc("MyVpc", { bastion: true });
+  const vpc = new sst.aws.Vpc("MyVpc");
   const cluster = new sst.aws.Cluster("MyCluster", { vpc });
 
   cluster.addService("MyService", {
@@ -83,7 +83,7 @@ async run() {
 }
 ```
 
-This creates a VPC with a bastion host, an ECS Cluster, and adds a Fargate service to it.
+This creates a VPC with an ECS Cluster, and adds a Fargate service to it.
 
 :::note
 By default, your service in not deployed when running in _dev_.
@@ -93,114 +93,137 @@ The `dev.command` tells SST to instead run our Deno app locally in dev mode.
 
 ---
 
-## 3. Add Redis
-
-Let's add an [Amazon ElastiCache](https://aws.amazon.com/elasticache/) Redis cluster. Add this below the `Vpc` component in your `sst.config.ts`.
-
-```ts title="sst.config.ts"
-const redis = new sst.aws.Redis("MyRedis", { vpc });
-```
-
-This shares the same VPC as our ECS cluster.
-
----
-
-#### Link Redis
-
-Now, link the Redis cluster to the container.
-
-```ts title="sst.config.ts" {3}
-cluster.addService("MyService", {
-  // ...
-  link: [redis],
-});
-```
-
-This will allow us to reference the Redis cluster in our Deno app.
-
----
-
-#### Install a tunnel
-
-Since our Redis cluster is in a VPC, we'll need a tunnel to connect to it from our local machine.
-
-```bash "sudo"
-sudo sst tunnel install
-```
-
-This needs _sudo_ to create a network interface on your machine. You'll only need to do this once on your machine.
-
----
-
 #### Start dev mode
 
-Start your app in dev mode.
+Run the following to start dev mode. This'll start SST and your Deno app.
 
 ```bash
 sst dev
 ```
 
-This will deploy your app, start a tunnel in the **Tunnel** tab, and run your Deno app locally in the **MyServiceDev** tab.
+Once complete, click on **MyService** in the sidebar and open your Deno app in your browser.
 
 ---
 
-## 4. Connect to Redis
+## 3. Add an S3 Bucket
 
-We want the `/` route of our API to increment a counter in our Redis cluster. Let's start by installing the npm packages we'll use.
+Let's add an S3 Bucket for file uploads. Add this to your `sst.config.ts` below the `Vpc` component.
 
-```bash
-deno install npm:ioredis npm:sst
+```ts title="sst.config.ts"
+const bucket = new sst.aws.Bucket("MyBucket");
 ```
 
-Add the relevant imports to your `main.ts`.
+---
 
-```ts title="main.ts" {5}
-import { Resource } from "sst";
-import { Cluster } from "ioredis";
+#### Link the bucket
 
-const redis = new Cluster(
-  [{ host: Resource.MyRedis.host, port: Resource.MyRedis.port }],
-  {
-    dnsLookup: (address, callback) => callback(null, address),
-    redisOptions: {
-      tls: {},
-      username: Resource.MyRedis.username,
-      password: Resource.MyRedis.password,
-    },
-  }
-);
+Now, link the bucket to the container.
+
+```ts title="sst.config.ts" {3}
+cluster.addService("MyService", {
+  // ...
+  link: [bucket],
+});
+```
+
+This will allow us to reference the bucket in our Deno app.
+
+---
+
+## 4. Upload a file
+
+We want a `POST` request made to the `/` route to upload a file to our S3 bucket. Let's add this below our _Hello World_ route in our `main.ts`.
+
+```ts title="main.ts" {6}
+if (url.pathname === "/" && req.method === "POST") {
+  const formData: FormData = await req.formData();
+  const file: File | null = formData?.get("file") as File;
+
+  const params = {
+    Bucket: Resource.MyBucket.name,
+    ContentType: file.type,
+    Key: file.name,
+    Body: file,
+  };
+  const upload = new Upload({
+    params,
+    client: s3,
+  });
+  await upload.done();
+
+  return new Response("File uploaded successfully.");
+}
 ```
 
 :::tip
-We are directly accessing our Redis cluster with `Resource.MyRedis.*`.
+We are directly accessing our S3 bucket with `Resource.MyBucket.name`.
 :::
 
-Let's update the `/` route.
+Add the imports. We'll use the extra ones below.
 
 ```ts title="main.ts"
-Deno.serve(async (_req) => {
-  const counter = await redis.incr("counter");
-  return new Response(`Hit counter: ${counter}`);
-});
+import { Resource } from "sst";
+import {
+  S3Client,
+  GetObjectCommand,
+  ListObjectsV2Command,
+} from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
+const s3 = new S3Client();
+```
+
+And install the npm packages.
+
+```bash
+deno install npm:sst npm:@aws-sdk/client-s3 npm:@aws-sdk/lib-storage npm:@aws-sdk/s3-request-presigner
+```
+
+---
+
+## 5. Download the file
+
+We'll add a `/latest` route that'll download the latest file in our S3 bucket. Let's add this below our upload route in `main.ts`.
+
+```ts title="main.ts"
+if (url.pathname === "/latest" && req.method === "GET") {
+  const objects = await s3.send(
+    new ListObjectsV2Command({
+      Bucket: Resource.MyBucket.name,
+    }),
+  );
+  const latestFile = objects.Contents!.sort(
+    (a, b) =>
+      (b.LastModified?.getTime() ?? 0) - (a.LastModified?.getTime() ?? 0),
+  )[0];
+  const command = new GetObjectCommand({
+    Key: latestFile.Key,
+    Bucket: Resource.MyBucket.name,
+  });
+  return Response.redirect(await getSignedUrl(s3, command));
+}
 ```
 
 ---
 
 #### Test your app
 
-Let's head over to `http://localhost:8000` in your browser and it'll show the current hit counter.
+To upload a file run the following from your project root. You might have to go to the `MyService` tab in the sidebar and accept the Deno permission prompts.
 
-You should see it increment every time you refresh the page.
+```bash
+curl -F file=@deno.json http://localhost:8000/
+```
+
+This should upload the `deno.json`. Now head over to `http://localhost:8000/latest` in your browser and it'll show you what you just uploaded.
 
 ---
 
 ## 5. Deploy your app
 
-To deploy our app we'll first add a `Dockerfile`. This is building our app by running our `build` script from above.
+To deploy our app we'll first add a `Dockerfile`.
 
 ```dockerfile title="Dockerfile"
-# https://docs.deno.com/runtime/tutorials/aws_lightsail/
-
 FROM denoland/deno
 
 EXPOSE 8000
@@ -220,12 +243,6 @@ CMD ["run", "--allow-all",  "main.ts"]
 You need to be running [Docker Desktop](https://www.docker.com/products/docker-desktop/) to deploy your app.
 :::
 
-Let's also add a `.dockerignore` file in the root.
-
-```bash title=".dockerignore"
-.sst
-```
-
 Now to build our Docker image and deploy we run:
 
 ```bash
@@ -243,7 +260,7 @@ You can use any stage name here but it's good to create a new stage for producti
 
 ## Connect the console
 
-As a next step, you can setup the [SST Console](/docs/console/) to _**git push to deploy**_ your app and monitor it for any issues. 
+As a next step, you can setup the [SST Console](/docs/console/) to _**git push to deploy**_ your app and view logs from it.
 
 ![SST Console Autodeploy](../../../../../assets/docs/start/sst-console-autodeploy.png)
 

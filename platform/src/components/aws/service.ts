@@ -9,7 +9,7 @@ import {
   output,
   secret,
 } from "@pulumi/pulumi";
-import { Image, Platform } from "@pulumi/docker-build";
+import { Platform } from "@pulumi/docker-build";
 import { Component, transform } from "../component.js";
 import { toGBs, toMBs } from "../size.js";
 import { toNumber } from "../cpu.js";
@@ -33,6 +33,7 @@ import {
   ecr,
   ecs,
   getCallerIdentityOutput,
+  getPartitionOutput,
   getRegionOutput,
   iam,
   lb,
@@ -44,6 +45,7 @@ import { Vpc as VpcV1 } from "./vpc-v1";
 import { DevCommand } from "../experimental/dev-command.js";
 import { Efs } from "./efs.js";
 import { toSeconds } from "../duration.js";
+import { imageBuilder } from "./helpers/container-builder.js";
 
 export interface ServiceArgs extends ClusterServiceArgs {
   /**
@@ -83,6 +85,7 @@ export class Service extends Component implements Link.Linkable {
   private readonly taskRole: iam.Role;
   private readonly taskDefinition?: Output<ecs.TaskDefinition>;
   private readonly loadBalancer?: lb.LoadBalancer;
+  private readonly autoScalingTarget?: appautoscaling.Target;
   private readonly domain?: Output<string | undefined>;
   private readonly _url?: Output<string>;
   private readonly devUrl?: Output<string>;
@@ -96,10 +99,10 @@ export class Service extends Component implements Link.Linkable {
     super(__pulumiType, name, args, opts);
 
     const self = this;
-
+    const partition = getPartitionOutput({}, opts).partition;
+    const region = getRegionOutput({}, opts).name;
     const dev = normalizeDev();
     const cluster = output(args.cluster);
-    const region = normalizeRegion();
     const architecture = normalizeArchitecture();
     const cpu = normalizeCpu();
     const memory = normalizeMemory();
@@ -107,7 +110,7 @@ export class Service extends Component implements Link.Linkable {
     const scaling = normalizeScaling();
     const containers = normalizeContainers();
     const lbArgs = normalizeLoadBalancer();
-    const { isSstVpc, vpc } = normalizeVpc();
+    const vpc = normalizeVpc();
 
     const taskRole = createTaskRole();
 
@@ -125,10 +128,12 @@ export class Service extends Component implements Link.Linkable {
     const executionRole = createExecutionRole();
     const taskDefinition = createTaskDefinition();
     const certificateArn = createSsl();
-    const { loadBalancer, targets } = createLoadBalancer();
+    const loadBalancer = createLoadBalancer();
+    const targets = createTargets();
+    createListeners();
     const cloudmapService = createCloudmapService();
     const service = createService();
-    createAutoScaling();
+    const autoScalingTarget = createAutoScaling();
     createDnsRecords();
 
     this._service = service;
@@ -136,6 +141,7 @@ export class Service extends Component implements Link.Linkable {
     this.executionRole = executionRole;
     this.taskDefinition = taskDefinition;
     this.loadBalancer = loadBalancer;
+    this.autoScalingTarget = autoScalingTarget;
     this.domain = lbArgs?.domain
       ? lbArgs.domain.apply((domain) => domain?.name)
       : output(undefined);
@@ -171,25 +177,19 @@ export class Service extends Component implements Link.Linkable {
         const vpc = args.vpc;
         return {
           isSstVpc: true,
-          vpc: {
-            id: vpc.id,
-            loadBalancerSubnets: lbArgs?.pub.apply((v) =>
-              v ? vpc.publicSubnets : vpc.privateSubnets,
-            ),
-            serviceSubnets: vpc.publicSubnets,
-            securityGroups: vpc.securityGroups,
-            cloudmapNamespaceId: vpc.nodes.cloudmapNamespace.id,
-            cloudmapNamespaceName: vpc.nodes.cloudmapNamespace.name,
-          },
+          id: vpc.id,
+          loadBalancerSubnets: lbArgs?.pub.apply((v) =>
+            v ? vpc.publicSubnets : vpc.privateSubnets,
+          ),
+          serviceSubnets: vpc.publicSubnets,
+          securityGroups: vpc.securityGroups,
+          cloudmapNamespaceId: vpc.nodes.cloudmapNamespace.id,
+          cloudmapNamespaceName: vpc.nodes.cloudmapNamespace.name,
         };
       }
 
       // "vpc" is object
-      return { vpc: output(args.vpc) };
-    }
-
-    function normalizeRegion() {
-      return getRegionOutput(undefined, { parent: self }).name;
+      return output(args.vpc).apply((vpc) => ({ isSstVpc: false, ...vpc }));
     }
 
     function normalizeArchitecture() {
@@ -245,10 +245,15 @@ export class Service extends Component implements Link.Linkable {
     function normalizeContainers() {
       if (
         args.containers &&
-        (args.image || args.logging || args.environment || args.volumes)
+        (args.image ||
+          args.logging ||
+          args.environment ||
+          args.volumes ||
+          args.health ||
+          args.ssm)
       ) {
         throw new VisibleError(
-          `You cannot provide both "containers" and "image", "logging", "environment" or "volumes".`,
+          `You cannot provide both "containers" and "image", "logging", "environment", "volumes", "health" or "ssm".`,
         );
       }
 
@@ -259,9 +264,11 @@ export class Service extends Component implements Link.Linkable {
           image: args.image,
           logging: args.logging,
           environment: args.environment,
+          ssm: args.ssm,
           volumes: args.volumes,
           command: args.command,
           entrypoint: args.entrypoint,
+          health: args.health,
           dev: args.dev,
         },
       ];
@@ -351,21 +358,53 @@ export class Service extends Component implements Link.Linkable {
         // parse protocols and ports
         const ports = lb.ports.map((v) => {
           const listenParts = v.listen.split("/");
+          const listenPort = parseInt(listenParts[0]);
+          const listenProtocol = listenParts[1];
+          const listenPath = v.path;
+          if (protocolType(listenProtocol) === "network" && listenPath)
+            throw new VisibleError(
+              `Invalid path "${v.path}" for listen protocol "${v.listen}". Only "http" protocols support path-based routing.`,
+            );
+
+          const redirectParts = v.redirect?.split("/");
+          const redirectPort = redirectParts && parseInt(redirectParts[0]);
+          const redirectProtocol = redirectParts && redirectParts[1];
+          if (redirectPort && redirectProtocol) {
+            if (protocolType(listenProtocol) !== protocolType(redirectProtocol))
+              throw new VisibleError(
+                `The listen protocol "${v.listen}" must match the redirect protocol "${v.redirect}".`,
+              );
+            return {
+              type: "redirect" as const,
+              listenPort,
+              listenProtocol,
+              listenPath,
+              redirectPort,
+              redirectProtocol,
+            };
+          }
+
           const forwardParts = v.forward ? v.forward.split("/") : listenParts;
+          const forwardPort = forwardParts && parseInt(forwardParts[0]);
+          const forwardProtocol = forwardParts && forwardParts[1];
+          if (protocolType(listenProtocol) !== protocolType(forwardProtocol))
+            throw new VisibleError(
+              `The listen protocol "${v.listen}" must match the forward protocol "${v.forward}".`,
+            );
           return {
-            listenPort: parseInt(listenParts[0]),
-            listenProtocol: listenParts[1],
-            forwardPort: parseInt(forwardParts[0]),
-            forwardProtocol: forwardParts[1],
+            type: "forward" as const,
+            listenPort,
+            listenProtocol,
+            listenPath,
+            forwardPort,
+            forwardProtocol,
             container: v.container ?? containers[0].name,
           };
         });
 
         // validate protocols are consistent
         const appProtocols = ports.filter(
-          (port) =>
-            ["http", "https"].includes(port.listenProtocol) &&
-            ["http", "https"].includes(port.forwardProtocol),
+          (port) => protocolType(port.listenProtocol) === "application",
         );
         if (appProtocols.length > 0 && appProtocols.length < ports.length)
           throw new VisibleError(
@@ -393,6 +432,7 @@ export class Service extends Component implements Link.Linkable {
           typeof lb.domain === "string" ? { name: lb.domain } : lb.domain;
         return {
           name: domain.name,
+          aliases: domain.aliases ?? [],
           dns: domain.dns === false ? undefined : domain.dns ?? awsDns(),
           cert: domain.cert,
         };
@@ -442,7 +482,7 @@ export class Service extends Component implements Link.Linkable {
     }
 
     function createLoadBalancer() {
-      if (!lbArgs) return {};
+      if (!lbArgs) return;
 
       const securityGroup = new ec2.SecurityGroup(
         ...transform(
@@ -471,7 +511,7 @@ export class Service extends Component implements Link.Linkable {
         ),
       );
 
-      const loadBalancer = new lb.LoadBalancer(
+      return new lb.LoadBalancer(
         ...transform(
           args.transform?.loadBalancer,
           `${name}LoadBalancer`,
@@ -485,78 +525,153 @@ export class Service extends Component implements Link.Linkable {
           { parent: self },
         ),
       );
+    }
 
-      const ret = all([lbArgs.ports, lbArgs.health, certificateArn]).apply(
-        ([ports, health, cert]) => {
-          const listeners: Record<string, lb.Listener> = {};
-          const targets: Record<string, lb.TargetGroup> = {};
+    function createTargets() {
+      if (!loadBalancer || !lbArgs) return;
 
+      return all([lbArgs.ports, lbArgs.health]).apply(([ports, health]) => {
+        const targets: Record<string, lb.TargetGroup> = {};
+
+        ports.forEach((p) => {
+          if (p.type !== "forward") return;
+
+          const container = p.container;
+          const forwardProtocol = p.forwardProtocol.toUpperCase();
+          const forwardPort = p.forwardPort;
+          const targetId = `${container}${forwardProtocol}${forwardPort}`;
+          const target =
+            targets[targetId] ??
+            new lb.TargetGroup(
+              ...transform(
+                args.transform?.target,
+                `${name}Target${targetId}`,
+                {
+                  // TargetGroup names allow for 32 chars, but an 8 letter suffix
+                  // ie. "-1234567" is automatically added.
+                  // - If we don't specify "name" or "namePrefix", we need to ensure
+                  //   the component name is less than 24 chars. Hard to guarantee.
+                  // - If we specify "name", we need to ensure the $app-$stage-$name
+                  //   if less than 32 chars. Hard to guarantee.
+                  // - Hence we will use "namePrefix".
+                  namePrefix: forwardProtocol,
+                  port: forwardPort,
+                  protocol: forwardProtocol,
+                  targetType: "ip",
+                  vpcId: vpc.id,
+                  healthCheck: health[`${p.forwardPort}/${p.forwardProtocol}`],
+                },
+                { parent: self },
+              ),
+            );
+          targets[targetId] = target;
+        });
+        return targets;
+      });
+    }
+
+    function createListeners() {
+      if (!lbArgs || !loadBalancer || !targets) return;
+
+      return all([lbArgs.ports, targets, certificateArn]).apply(
+        ([ports, targets, cert]) => {
+          // Group listeners by protocol and port
+          // Because listeners with the same protocol and port but different path
+          // are just rules of the same listener.
+          const listenersById: Record<string, typeof ports> = {};
           ports.forEach((p) => {
-            const container = p.container;
-            const forwardProtocol = p.forwardProtocol.toUpperCase();
-            const forwardPort = p.forwardPort;
-            const targetId = `${container}${forwardProtocol}${forwardPort}`;
-            const target =
-              targets[targetId] ??
-              new lb.TargetGroup(
-                ...transform(
-                  args.transform?.target,
-                  `${name}Target${targetId}`,
-                  {
-                    // TargetGroup names allow for 32 chars, but an 8 letter suffix
-                    // ie. "-1234567" is automatically added.
-                    // - If we don't specify "name" or "namePrefix", we need to ensure
-                    //   the component name is less than 24 chars. Hard to guarantee.
-                    // - If we specify "name", we need to ensure the $app-$stage-$name
-                    //   if less than 32 chars. Hard to guarantee.
-                    // - Hence we will use "namePrefix".
-                    namePrefix: forwardProtocol,
-                    port: forwardPort,
-                    protocol: forwardProtocol,
-                    targetType: "ip",
-                    vpcId: vpc.id,
-                    healthCheck:
-                      health[`${p.forwardPort}/${p.forwardProtocol}`],
-                  },
-                  { parent: self },
-                ),
-              );
-            targets[targetId] = target;
-
             const listenProtocol = p.listenProtocol.toUpperCase();
             const listenPort = p.listenPort;
             const listenerId = `${listenProtocol}${listenPort}`;
-            const listener =
-              listeners[listenerId] ??
-              new lb.Listener(
-                ...transform(
-                  args.transform?.listener,
-                  `${name}Listener${listenerId}`,
+            listenersById[listenerId] = listenersById[listenerId] ?? [];
+            listenersById[listenerId].push(p);
+          });
+
+          // Create listeners
+          return Object.entries(listenersById).map(([listenerId, ports]) => {
+            const listenProtocol = ports[0].listenProtocol.toUpperCase();
+            const listenPort = ports[0].listenPort;
+            const defaultRule = ports.find((p) => !p.listenPath);
+            const customRules = ports.filter((p) => p.listenPath);
+            const buildActions = (p?: (typeof ports)[number]) => [
+              ...(!p
+                ? [
+                    {
+                      type: "fixed-response",
+                      fixedResponse: {
+                        statusCode: "403",
+                        contentType: "text/plain",
+                        messageBody: "Forbidden",
+                      },
+                    },
+                  ]
+                : []),
+              ...(p?.type === "forward"
+                ? [
+                    {
+                      type: "forward",
+                      targetGroupArn:
+                        targets[
+                          `${p.container}${p.forwardProtocol.toUpperCase()}${
+                            p.forwardPort
+                          }`
+                        ].arn,
+                    },
+                  ]
+                : []),
+              ...(p?.type === "redirect"
+                ? [
+                    {
+                      type: "redirect",
+                      redirect: {
+                        port: p.redirectPort.toString(),
+                        protocol: p.redirectProtocol.toUpperCase(),
+                        statusCode: "HTTP_301",
+                      },
+                    },
+                  ]
+                : []),
+            ];
+            const listener = new lb.Listener(
+              ...transform(
+                args.transform?.listener,
+                `${name}Listener${listenerId}`,
+                {
+                  loadBalancerArn: loadBalancer.arn,
+                  port: listenPort,
+                  protocol: listenProtocol,
+                  certificateArn: ["HTTPS", "TLS"].includes(listenProtocol)
+                    ? cert
+                    : undefined,
+                  defaultActions: buildActions(defaultRule),
+                },
+                { parent: self },
+              ),
+            );
+
+            customRules.forEach(
+              (p) =>
+                new lb.ListenerRule(
+                  `${name}Listener${listenerId}Rule${p.listenPath}`,
                   {
-                    loadBalancerArn: loadBalancer.arn,
-                    port: listenPort,
-                    protocol: listenProtocol,
-                    certificateArn: ["HTTPS", "TLS"].includes(listenProtocol)
-                      ? cert
-                      : undefined,
-                    defaultActions: [
+                    listenerArn: listener.arn,
+                    actions: buildActions(p),
+                    conditions: [
                       {
-                        type: "forward",
-                        targetGroupArn: target.arn,
+                        pathPattern: {
+                          values: [p.listenPath!],
+                        },
                       },
                     ],
                   },
                   { parent: self },
                 ),
-              );
-            listeners[listenerId] = listener;
-          });
+            );
 
-          return { listeners, targets };
+            return listener;
+          });
         },
       );
-
-      return { loadBalancer, targets: ret.targets };
     }
 
     function createSsl() {
@@ -570,6 +685,7 @@ export class Service extends Component implements Link.Linkable {
           `${name}Ssl`,
           {
             domainName: domain.name,
+            alternativeNames: domain.aliases,
             dns: domain.dns!,
           },
           { parent: self },
@@ -620,8 +736,8 @@ export class Service extends Component implements Link.Linkable {
                   Service: "ecs-tasks.amazonaws.com",
                 })
               : iam.assumeRolePolicyForPrincipal({
-                  AWS: interpolate`arn:aws:iam::${
-                    getCallerIdentityOutput().accountId
+                  AWS: interpolate`arn:${partition}:iam::${
+                    getCallerIdentityOutput({}, opts).accountId
                   }:root`,
                 }),
             inlinePolicies: policy.apply(({ statements }) =>
@@ -651,7 +767,26 @@ export class Service extends Component implements Link.Linkable {
               Service: "ecs-tasks.amazonaws.com",
             }),
             managedPolicyArns: [
-              "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+              interpolate`arn:${partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy`,
+            ],
+            inlinePolicies: [
+              {
+                name: "inline",
+                policy: iam.getPolicyDocumentOutput({
+                  statements: [
+                    {
+                      sid: "ReadSsmAndSecrets",
+                      actions: [
+                        "ssm:GetParameters",
+                        "ssm:GetParameter",
+                        "ssm:GetParameterHistory",
+                        "secretsmanager:GetSecretValue",
+                      ],
+                      resources: ["*"],
+                    },
+                  ],
+                }).json,
+              },
             ],
           },
           { parent: self },
@@ -700,7 +835,7 @@ export class Service extends Component implements Link.Linkable {
             }
 
             // Build image
-            const image = new Image(
+            const image = imageBuilder(
               ...transform(
                 args.transform?.image,
                 `${name}Image${container.name}`,
@@ -712,9 +847,9 @@ export class Service extends Component implements Link.Linkable {
                     ...linkEnvs,
                   },
                   platforms: [container.image.platform],
-                  tags: [
-                    interpolate`${bootstrapData.assetEcrUrl}:${container.name}`,
-                  ],
+                  tags: [container.name, ...(container.image.tags ?? [])].map(
+                    (tag) => interpolate`${bootstrapData.assetEcrUrl}:${tag}`,
+                  ),
                   registries: [
                     ecr
                       .getAuthorizationTokenOutput(
@@ -729,6 +864,23 @@ export class Service extends Component implements Link.Linkable {
                         username: authToken.userName,
                       })),
                   ],
+                  cacheFrom: [
+                    {
+                      registry: {
+                        ref: interpolate`${bootstrapData.assetEcrUrl}:${container.name}-cache`,
+                      },
+                    },
+                  ],
+                  cacheTo: [
+                    {
+                      registry: {
+                        ref: interpolate`${bootstrapData.assetEcrUrl}:${container.name}-cache`,
+                        imageManifest: true,
+                        ociMediaTypes: true,
+                        mode: "max",
+                      },
+                    },
+                  ],
                   push: true,
                 },
                 { parent: self },
@@ -739,6 +891,13 @@ export class Service extends Component implements Link.Linkable {
           })(),
           command: container.command,
           entrypoint: container.entrypoint,
+          healthCheck: container.health && {
+            command: container.health.command,
+            startPeriod: toSeconds(container.health.startPeriod ?? "0 seconds"),
+            timeout: toSeconds(container.health.timeout ?? "5 seconds"),
+            interval: toSeconds(container.health.interval ?? "30 seconds"),
+            retries: container.health.retries ?? 3,
+          },
           pseudoTerminal: true,
           portMappings: [{ containerPortRange: "1-65535" }],
           logConfiguration: {
@@ -772,6 +931,9 @@ export class Service extends Component implements Link.Linkable {
             sourceVolume: volume.efs.accessPoint,
             containerPath: volume.path,
           })),
+          secrets: Object.entries(container.ssm ?? {}).map(
+            ([name, valueFrom]) => ({ name, valueFrom }),
+          ),
         })),
       );
 
@@ -859,7 +1021,7 @@ export class Service extends Component implements Link.Linkable {
             networkConfiguration: {
               // If the vpc is an SST vpc, services are automatically deployed to the public
               // subnets. So we need to assign a public IP for the service to be accessible.
-              assignPublicIp: isSstVpc,
+              assignPublicIp: vpc.isSstVpc,
               subnets: vpc.serviceSubnets,
               securityGroups: vpc.securityGroups,
             },
@@ -867,7 +1029,6 @@ export class Service extends Component implements Link.Linkable {
               enable: true,
               rollback: true,
             },
-
             loadBalancers:
               lbArgs &&
               all([lbArgs.ports, targets!]).apply(([ports, targets]) =>
@@ -875,7 +1036,7 @@ export class Service extends Component implements Link.Linkable {
                   targetGroupArn: target.arn,
                   containerName: target.port.apply(
                     (port) =>
-                      ports.find((p) => p.forwardPort === port)!.container,
+                      ports.find((p) => p.forwardPort === port)!.container!,
                   ),
                   containerPort: target.port.apply((port) => port!),
                 })),
@@ -895,50 +1056,61 @@ export class Service extends Component implements Link.Linkable {
 
     function createAutoScaling() {
       const target = new appautoscaling.Target(
-        `${name}AutoScalingTarget`,
-        {
-          serviceNamespace: "ecs",
-          scalableDimension: "ecs:service:DesiredCount",
-          resourceId: interpolate`service/${cluster.name}/${service.name}`,
-          maxCapacity: scaling.max,
-          minCapacity: scaling.min,
-        },
-        { parent: self },
+        ...transform(
+          args.transform?.autoScalingTarget,
+          `${name}AutoScalingTarget`,
+          {
+            serviceNamespace: "ecs",
+            scalableDimension: "ecs:service:DesiredCount",
+            resourceId: interpolate`service/${cluster.name}/${service.name}`,
+            maxCapacity: scaling.max,
+            minCapacity: scaling.min,
+          },
+          { parent: self },
+        ),
       );
 
-      new appautoscaling.Policy(
-        `${name}AutoScalingCpuPolicy`,
-        {
-          serviceNamespace: target.serviceNamespace,
-          scalableDimension: target.scalableDimension,
-          resourceId: target.resourceId,
-          policyType: "TargetTrackingScaling",
-          targetTrackingScalingPolicyConfiguration: {
-            predefinedMetricSpecification: {
-              predefinedMetricType: "ECSServiceAverageCPUUtilization",
+      output(scaling.cpuUtilization).apply((cpuUtilization) => {
+        if (cpuUtilization === false) return;
+        new appautoscaling.Policy(
+          `${name}AutoScalingCpuPolicy`,
+          {
+            serviceNamespace: target.serviceNamespace,
+            scalableDimension: target.scalableDimension,
+            resourceId: target.resourceId,
+            policyType: "TargetTrackingScaling",
+            targetTrackingScalingPolicyConfiguration: {
+              predefinedMetricSpecification: {
+                predefinedMetricType: "ECSServiceAverageCPUUtilization",
+              },
+              targetValue: cpuUtilization,
             },
-            targetValue: scaling.cpuUtilization,
           },
-        },
-        { parent: self },
-      );
+          { parent: self },
+        );
+      });
 
-      new appautoscaling.Policy(
-        `${name}AutoScalingMemoryPolicy`,
-        {
-          serviceNamespace: target.serviceNamespace,
-          scalableDimension: target.scalableDimension,
-          resourceId: target.resourceId,
-          policyType: "TargetTrackingScaling",
-          targetTrackingScalingPolicyConfiguration: {
-            predefinedMetricSpecification: {
-              predefinedMetricType: "ECSServiceAverageMemoryUtilization",
+      output(scaling.memoryUtilization).apply((memoryUtilization) => {
+        if (memoryUtilization === false) return;
+        new appautoscaling.Policy(
+          `${name}AutoScalingMemoryPolicy`,
+          {
+            serviceNamespace: target.serviceNamespace,
+            scalableDimension: target.scalableDimension,
+            resourceId: target.resourceId,
+            policyType: "TargetTrackingScaling",
+            targetTrackingScalingPolicyConfiguration: {
+              predefinedMetricSpecification: {
+                predefinedMetricType: "ECSServiceAverageMemoryUtilization",
+              },
+              targetValue: memoryUtilization,
             },
-            targetValue: scaling.memoryUtilization,
           },
-        },
-        { parent: self },
-      );
+          { parent: self },
+        );
+      });
+
+      return target;
     }
 
     function createDnsRecords() {
@@ -947,15 +1119,19 @@ export class Service extends Component implements Link.Linkable {
       lbArgs.domain.apply((domain) => {
         if (!domain?.dns) return;
 
-        domain.dns.createAlias(
-          name,
-          {
-            name: domain.name,
-            aliasName: loadBalancer!.dnsName,
-            aliasZone: loadBalancer!.zoneId,
-          },
-          { parent: self },
-        );
+        for (const recordName of [domain.name, ...domain.aliases]) {
+          const namePrefix =
+            recordName === domain.name ? name : `${name}${recordName}`;
+          domain.dns.createAlias(
+            namePrefix,
+            {
+              name: recordName,
+              aliasName: loadBalancer!.dnsName,
+              aliasZone: loadBalancer!.zoneId,
+            },
+            { parent: self },
+          );
+        }
       });
     }
 
@@ -1063,6 +1239,16 @@ export class Service extends Component implements Link.Linkable {
         return self.loadBalancer;
       },
       /**
+       * The Amazon Application Auto Scaling target.
+       */
+      get autoScalingTarget() {
+        if (self.dev)
+          throw new VisibleError(
+            "Cannot access `nodes.autoScalingTarget` in dev mode.",
+          );
+        return self.autoScalingTarget!;
+      },
+      /**
        * The Amazon Cloud Map service.
        */
       get cloudmapService() {
@@ -1084,6 +1270,12 @@ export class Service extends Component implements Link.Linkable {
       },
     };
   }
+}
+
+function protocolType(protocol: string) {
+  return ["http", "https"].includes(protocol)
+    ? ("application" as const)
+    : ("network" as const);
 }
 
 const __pulumiType = "sst:aws:Service";

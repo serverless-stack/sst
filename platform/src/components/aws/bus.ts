@@ -1,9 +1,9 @@
 import { ComponentResourceOptions, Output, all, output } from "@pulumi/pulumi";
-import { Component, outputId, Transform, transform } from "../component";
+import { Component, Transform, transform } from "../component";
 import { Link } from "../link";
 import type { Input } from "../input";
 import { FunctionArgs, FunctionArn } from "./function";
-import { hashStringToPrettyString, physicalName, logicalName } from "../naming";
+import { physicalName } from "../naming";
 import { parseEventBusArn } from "./helpers/arn";
 import { BusLambdaSubscriber } from "./bus-lambda-subscriber";
 import { cloudwatch } from "@pulumi/aws";

@@ -13,16 +13,17 @@ export default $config({
 
     const vpc = addVpc();
     const bucket = addBucket();
+    //const queue = addQueue();
     //const efs = addEfs();
     //const email = addEmail();
     //const apiv1 = addApiV1();
     //const apiv2 = addApiV2();
+    //const router = addRouter();
     //const app = addFunction();
     //const service = addService();
     //const postgres = addPostgres();
     //const redis = addRedis();
     //const cron = addCron();
-    //const queue = addQueue();
     //const topic = addTopic();
     //const bus = addBus();
 
@@ -37,6 +38,19 @@ export default $config({
       const bucket = new sst.aws.Bucket("MyBucket");
       ret.bucket = bucket.name;
       return bucket;
+    }
+
+    function addQueue() {
+      const queue = new sst.aws.Queue("MyQueue");
+      queue.subscribe("functions/queue/index.subscriber");
+
+      new sst.aws.Function("MyQueuePublisher", {
+        handler: "functions/queue/index.publisher",
+        link: [queue],
+        url: true,
+      });
+
+      return queue;
     }
 
     function addEfs() {
@@ -105,6 +119,21 @@ export default $config({
       return api;
     }
 
+    function addRouter() {
+      const app = new sst.aws.Function("MyApp", {
+        handler: "functions/router/index.handler",
+        url: true,
+      });
+      const router = new sst.aws.Router("MyRouter", {
+        domain: "router.playground.sst.sh",
+        routes: {
+          "/api/*": app.url,
+        },
+      });
+      const router2 = sst.aws.Router.get("MyRouter2", router.distributionID);
+      return router;
+    }
+
     function addFunction() {
       const app = new sst.aws.Function("MyApp", {
         handler: "functions/handler-example/index.handler",
@@ -126,7 +155,6 @@ export default $config({
         },
         link: [bucket],
       });
-      ret.service = service.url;
       return service;
     }
 
@@ -134,8 +162,14 @@ export default $config({
       const postgres = new sst.aws.Postgres("MyPostgres", {
         vpc,
       });
+      new sst.aws.Function("MyPostgresApp", {
+        handler: "functions/postgres/index.handler",
+        url: true,
+        vpc,
+        link: [postgres],
+      });
       ret.pgHost = postgres.host;
-      ret.pgPort = $interpolate`postgres.port`;
+      ret.pgPort = $interpolate`${postgres.port}`;
       ret.pgUsername = postgres.username;
       ret.pgPassword = postgres.password;
       return postgres;
@@ -162,12 +196,6 @@ export default $config({
       });
       ret.cron = cron.nodes.job.name;
       return cron;
-    }
-
-    function addQueue() {
-      const queue = new sst.aws.Queue("MyQueue");
-      queue.subscribe("functions/queue/index.subscriber");
-      return queue;
     }
 
     function addTopic() {

@@ -3,13 +3,23 @@ title: Drizzle with Amazon RDS and SST
 description: Use Drizzle and SST to manage and deploy your Amazon Postgres RDS database.
 ---
 
-We are going to use Drizzle and SST to manage and deploy an Amazon Postgres RDS database.
+You can use SST to deploy an Amazon Postgres RDS database and set up [Drizzle ORM](https://orm.drizzle.team) and [Drizzle Kit](https://orm.drizzle.team/docs/kit-overview) to manage it.
+
 
 :::tip[View source]
 You can [view the source](https://github.com/sst/sst/tree/dev/examples/aws-drizzle) of this example in our repo.
 :::
 
 Before you get started, make sure to [configure your AWS credentials](/docs/iam-credentials#credentials).
+
+---
+
+#### Examples
+
+We also have a few other Drizzle and Postgres examples that you can refer to.
+
+- [Use Next.js, Postgres, and Drizzle with the T3 Stack](/docs/examples/#t3-stack-in-aws)
+- [Run Postgres in a local Docker container for dev](/docs/examples/#aws-postgres-local)
 
 ---
 
@@ -112,16 +122,12 @@ This will run the given command in dev.
 We'll use a Lambda function as an API to query our database. Add the following to your `sst.config.ts` below the database config.
 
 ```ts title="sst.config.ts" {4}
-const api = new sst.aws.Function("MyApi", {
+new sst.aws.Function("MyApi", {
   vpc,
   url: true,
   link: [rds],
   handler: "src/api.handler",
 });
-
-return {
-  api: api.url,
-};
 ```
 
 We are linking our database to the API.
@@ -152,7 +158,7 @@ It'll take a few minutes to create your database. Once complete, you'll see this
 
 ```bash frame="none"
 ✓  Complete
-   api: https://ouu5vovpxllyn5b6ot2nn6vdsa0hvcuj.lambda-url.us-east-1.on.aws
+   MyApi: https://ouu5vovpxllyn5b6ot2nn6vdsa0hvcuj.lambda-url.us-east-1.on.aws
 ```
 
 You'll see Drizzle Studio started in a tab called **Studio**. And a tunnel in the **Tunnel** tab.

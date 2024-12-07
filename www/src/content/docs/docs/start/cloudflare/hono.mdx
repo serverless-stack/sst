@@ -106,7 +106,7 @@ const app = new Hono()
         contentType: c.req.header("content-type"),
       },
     });
-    return new Response(`Object created with key: ${key}`);
+    return c.text(`Object created with key: ${key}`);
   });
 
 export default app;
@@ -166,8 +166,8 @@ npx sst dev
 This will give you the URL of your API.
 
 ```bash frame="none"
-+  Complete
-   url: https://my-hono-api-jayair-honoscript.sst-15d.workers.dev
+✓  Complete
+   Hono: https://my-hono-api-jayair-honoscript.sst-15d.workers.dev
 ```
 
 ---
@@ -177,7 +177,7 @@ This will give you the URL of your API.
 Let's try uploading a file from your project root. Make sure to use your API URL.
 
 ```bash
-curl --upload-file package.json https://my-hono-api-jayair-honoscript.sst-15d.workers.dev
+curl -H --upload-file package.json https://my-hono-api-jayair-honoscript.sst-15d.workers.dev
 ```
 
 Now head over to `https://my-hono-api-jayair-honoscript.sst-15d.workers.dev` in your browser and it'll load the file you just uploaded.

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/sst/ion/cmd/sst/mosaic/aws"
+	"github.com/sst/ion/cmd/sst/mosaic/aws/appsync"
 	"github.com/sst/ion/internal/util"
 	"github.com/sst/ion/pkg/project"
 	"github.com/sst/ion/pkg/project/provider"
@@ -14,9 +15,11 @@ import (
 type ErrorTransformer = func(err error) (bool, error)
 
 var transformers = []ErrorTransformer{
+	exact(appsync.ErrSubscriptionFailed, "Failed to subscribe to appsync websocket endpoint which powers live lambda. Check to see if you have proper appsync permissions."),
 	exact(project.ErrInvalidStageName, "The stage name is invalid. It can only contain alphanumeric characters and hyphens."),
 	exact(project.ErrInvalidAppName, "The app name is invalid. It can only contain alphanumeric characters and hyphens."),
-	exact(project.ErrV2Config, "You are using sst ion and this looks like an sst v2 config"),
+	exact(project.ErrAppNameChanged, "The app name has changed.\n\nIf you want to rename the app, make sure to run `sst remove` to remove the old app first. Alternatively, remove the \".sst\" folder and try again.\n"),
+	exact(project.ErrV2Config, "You are using sst v3 and this looks like an sst v2 config"),
 	exact(project.ErrStageNotFound, "Stage not found"),
 	exact(project.ErrPassphraseInvalid, "The passphrase for this app / stage is missing or invalid"),
 	exact(aws.ErrIoTDelay, "This aws account has not had iot initialized in it before which sst depends on. It may take a few minutes before it is ready."),

@@ -1,44 +1,74 @@
 ---
 import { Resource } from "sst";
-import { Cluster } from "ioredis";
 import Layout from '../layouts/Layout.astro';
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-const redis = new Cluster(
-  [{ host: Resource.MyRedis.host, port: Resource.MyRedis.port }],
-  {
-    dnsLookup: (address, callback) => callback(null, address),
-    redisOptions: {
-      tls: {},
-      username: Resource.MyRedis.username,
-      password: Resource.MyRedis.password,
-    },
-  }
-);
-
-const counter = await redis.incr("counter");
+const command = new PutObjectCommand({
+  Key: crypto.randomUUID(),
+  Bucket: Resource.MyBucket.name,
+});
+const url = await getSignedUrl(new S3Client({}), command);
 ---
 
-<Layout title="Welcome to Astro.">
-	<main>
-		<h1>Hit counter: {counter}</h1>
-	</main>
+<Layout title="Astro x SST">
+  <main>
+    <form action={url}>
+      <input name="file" type="file" accept="image/png, image/jpeg" />
+      <button type="submit">Upload</button>
+    </form>
+    <script>
+      const form = document.querySelector("form");
+      form!.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const file = form!.file.files?.[0]!;
+
+        const image = await fetch(form!.action, {
+          body: file,
+          method: "PUT",
+          headers: {
+            "Content-Type": file.type,
+            "Content-Disposition": `attachment; filename="${file.name}"`,
+          },
+        });
+
+        window.location.href = image.url.split("?")[0] || "/";
+      });
+    </script>
+  </main>
 </Layout>
 
 <style>
-	main {
-		margin: auto;
-		padding: 1rem;
-		width: 800px;
-		max-width: calc(100% - 2rem);
-		color: white;
-		font-size: 20px;
-		line-height: 1.6;
-	}
-	h1 {
-		font-size: 4rem;
-		font-weight: 700;
-		line-height: 1;
-		text-align: center;
-		margin-bottom: 1em;
-	}
+  main {
+    margin: auto;
+    padding: 1.5rem;
+    max-width: 60ch;
+  }
+  form {
+    color: white;
+    padding: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: #23262d;
+    background-image: none;
+    background-size: 400%;
+    border-radius: 0.6rem;
+    background-position: 100%;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  }
+  button {
+    appearance: none;
+    border: 0;
+    font-weight: 500;
+    border-radius: 5px;
+    font-size: 0.875rem;
+    padding: 0.5rem 0.75rem;
+    background-color: white;
+    color: #111827;
+  }
+  button:active:enabled {
+    background-color: #EEE;
+  }
 </style>

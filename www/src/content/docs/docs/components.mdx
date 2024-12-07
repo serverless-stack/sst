@@ -426,7 +426,7 @@ Read more about [`$resolve`](/docs/reference/global/#resolve).
 
 SST components evolve over time, sometimes introducing breaking changes. To maintain backwards compatibility, we implement a component versioning scheme.
 
-For example, we released a new version the [`Vpc`](component/aws/vpc) that does not create a NAT Gateway by default. To roll this out the previous version of the `Vpc` component was renamed to [`Vpc.v1`](component/aws/vpc-v1).
+For example, we released a new version the [`Vpc`](/docs/component/aws/vpc) that does not create a NAT Gateway by default. To roll this out the previous version of the `Vpc` component was renamed to [`Vpc.v1`](/docs/component/aws/vpc-v1).
 
 Now if you were using the original `Vpc` component, update SST, and deploy; you'll get an error during the deploy saying that there's a new version of this component.
 

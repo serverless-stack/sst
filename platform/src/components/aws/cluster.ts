@@ -5,7 +5,7 @@ import { Dns } from "../dns";
 import { FunctionArgs } from "./function";
 import { Service } from "./service";
 import { RETENTION } from "./logging.js";
-import { cloudwatch, ec2, ecs, iam, lb } from "@pulumi/aws";
+import { appautoscaling, cloudwatch, ec2, ecs, iam, lb } from "@pulumi/aws";
 import { ImageArgs } from "@pulumi/docker-build";
 import { Cluster as ClusterV1 } from "./cluster-v1";
 import { Vpc } from "./vpc";
@@ -370,6 +370,20 @@ export interface ClusterServiceArgs {
            */
           name: Input<string>;
           /**
+           * Alias domains that should be used.
+           *
+           * @example
+           * ```js {4}
+           * {
+           *   domain: {
+           *     name: "app1.example.com",
+           *     aliases: ["app2.example.com"]
+           *   }
+           * }
+           * ```
+           */
+          aliases?: Input<string[]>;
+          /**
            * The ARN of an ACM (AWS Certificate Manager) certificate that proves ownership of the
            * domain. By default, a certificate is created and validated automatically.
            *
@@ -513,6 +527,13 @@ export interface ClusterServiceArgs {
          */
         forward?: Input<Port>;
         /**
+         * Configure path-based routing. Only requests matching the path are forwarded to
+         * the container. Only applicable to "http" protocols.
+         *
+         * @default Requests to all paths are forwarded.
+         */
+        path?: Input<string>;
+        /**
          * The name of the container to forward the traffic to.
          *
          * If there is only one container, this is not needed. The traffic is automatically
@@ -523,6 +544,10 @@ export interface ClusterServiceArgs {
          * @default The container name when there is only one container.
          */
         container?: Input<string>;
+        /**
+         * The port and protocol to redirect the traffic to. Uses the format `{port}/{protocol}`.
+         */
+        redirect?: Input<Port>;
       }[]
     >;
   }>;
@@ -547,7 +572,7 @@ export interface ClusterServiceArgs {
    *   loadBalancer: {
    *     domain: "example.com",
    *     ports: [
-   *       { listen: "80/http" },
+   *       { listen: "80/http", redirect: "443/https" },
    *       { listen: "443/https", forward: "80/http" }
    *     ]
    *   }
@@ -621,8 +646,32 @@ export interface ClusterServiceArgs {
            *   }
            * }
            * ```
+           *
+           * Wildcard domains are supported.
+           *
+           * ```js
+           * {
+           *   domain: {
+           *     name: "*.example.com"
+           *   }
+           * }
+           * ```
            */
           name: Input<string>;
+          /**
+           * Alias domains that should be used.
+           *
+           * @example
+           * ```js {4}
+           * {
+           *   domain: {
+           *     name: "app1.example.com",
+           *     aliases: ["app2.example.com"]
+           *   }
+           * }
+           * ```
+           */
+          aliases?: Input<string[]>;
           /**
            * The ARN of an ACM (AWS Certificate Manager) certificate that proves ownership of the
            * domain. By default, a certificate is created and validated automatically.
@@ -701,7 +750,7 @@ export interface ClusterServiceArgs {
         }
     >;
     /**
-     * Configure the mapping for the ports the load balancer listens to and forwards to
+     * Configure the mapping for the ports the load balancer listens to, forwards, or redirects to
      * the service.
      * This supports two types of protocols:
      *
@@ -748,6 +797,29 @@ export interface ClusterServiceArgs {
      *   ]
      * }
      * ```
+     *
+     * You can also route the same port to multiple containers via path-based routing.
+     *
+     * ```js
+     * {
+     *   ports: [
+     *     { listen: "80/http", container: "app", path: "/api/*" },
+     *     { listen: "80/http", container: "admin", path: "/admin/*" }
+     *   ]
+     * }
+     * ```
+     *
+     * Additionally, you can redirect traffic from one port to another. This is
+     * commonly used to redirect http to https.
+     *
+     * ```js
+     * {
+     *   ports: [
+     *     { listen: "80/http", redirect: "443/https" },
+     *     { listen: "443/https", forward: "80/http" }
+     *   ]
+     * }
+     * ```
      */
     ports: Input<
       {
@@ -762,6 +834,22 @@ export interface ClusterServiceArgs {
          */
         forward?: Input<Port>;
         /**
+         * Configure path-based routing. Only requests matching the path are forwarded to
+         * the container. Only applicable to "http" protocols.
+         *
+         * The path pattern is case-sensitive, supports wildcards, and can be up to 128
+         * characters.
+         * - `*` matches 0 or more characters.
+         * - `?` matches exactly 1 character.
+         *
+         * For example:
+         * - `/api/*`
+         * - `/api/*.png
+         *
+         * @default Requests to all paths are forwarded.
+         */
+        path?: Input<string>;
+        /**
          * The name of the container to forward the traffic to.
          *
          * You need this if there's more than one container.
@@ -770,10 +858,14 @@ export interface ClusterServiceArgs {
          * container.
          */
         container?: Input<string>;
+        /**
+         * The port and protocol to redirect the traffic to. Uses the format `{port}/{protocol}`.
+         */
+        redirect?: Input<Port>;
       }[]
     >;
     /**
-     * Configure the health check for the service.
+     * Configure the health check for the load balancer.
      *
      * Health checks are used to ensure that only healthy containers receive traffic.
      * The load balancer checks each target container at the specified health check path
@@ -791,7 +883,7 @@ export interface ClusterServiceArgs {
      *   ports: [
      *     { listen: "80/http", forward: "8080/http" }
      *   ]
-     *   healthCheck: {
+     *   health: {
      *     "8080/http": {
      *       path: "/health",
      *       interval: "10 seconds",
@@ -1057,7 +1149,7 @@ export interface ClusterServiceArgs {
      * }
      * ```
      */
-    cpuUtilization?: Input<number>;
+    cpuUtilization?: Input<false | number>;
     /**
      * The target memory utilization percentage to scale up or down. It'll scale up
      * when the memory utilization is above the target and scale down when it's below the target.
@@ -1071,7 +1163,7 @@ export interface ClusterServiceArgs {
      * }
      * ```
      */
-    memoryUtilization?: Input<number>;
+    memoryUtilization?: Input<false | number>;
   }>;
   /**
    * Configure the Docker build command for building the image or specify a pre-built image.
@@ -1146,6 +1238,16 @@ export interface ClusterServiceArgs {
          * ```
          */
         args?: Input<Record<string, Input<string>>>;
+        /**
+         * Tags to apply to the Docker image.
+         * @example
+         * ```js
+         * {
+         *   tags: ["v1.0.0", "commit-613c1b2"]
+         * }
+         * ```
+         */
+        tags?: Input<Input<string>[]>;
       }
   >;
   /**
@@ -1186,6 +1288,20 @@ export interface ClusterServiceArgs {
    * ```
    */
   environment?: FunctionArgs["environment"];
+  /**
+   * Key-value pairs of AWS Systems Manager Parameter Store parameter ARNs or AWS Secrets
+   * Manager secret ARNs. The values will be loaded into the container as environment
+   * variables.
+   * @example
+   * ```js
+   * {
+   *   ssm: {
+   *     DATABASE_PASSWORD: "arn:aws:secretsmanager:us-east-1:123456789012:secret:my-secret-123abc"
+   *   }
+   * }
+   * ```
+   */
+  ssm?: Input<Record<string, Input<string>>>;
   /**
    * Configure the service's logs in CloudWatch.
    * @default `{ retention: "1 month" }`
@@ -1267,6 +1383,66 @@ export interface ClusterServiceArgs {
      */
     path: Input<string>;
   }>[];
+  /**
+   * Configure the health check for the container. This configuration maps to the
+   * `HEALTHCHECK` parameter of docker run.
+   * Learn more about [container health checks](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_HealthCheck.html).
+   *
+   * @default No container health check
+   * @example
+   * ```js
+   * {
+   *   health: {
+   *     command: ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"],
+   *     startPeriod: "60 seconds"
+   *     timeout: "5 seconds",
+   *     interval: "30 seconds",
+   *     retries: 3,
+   *   }
+   * }
+   * ```
+   */
+  health?: Input<{
+    /**
+     * A string array representing the command that the container runs to determine if it is
+     * healthy.
+     *
+     * The string array must start with `CMD` to run the command arguments directly, or
+     * `CMD-SHELL` to run the command with the container's default shell.
+     *
+     * @example
+     * ```js
+     * {
+     *   command: ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"]
+     * }
+     * ```
+     */
+    command: Input<string[]>;
+    /**
+     * The grace period to provide containers time to bootstrap before failed health checks
+     * count towards the maximum number of retries. Must be between `0 seconds` and
+     * `300 seconds`.
+     * @default `"0 seconds"`
+     */
+    startPeriod?: Input<DurationMinutes>;
+    /**
+     * The time to wait before considering the check to have hung. Must be between `2 seconds`
+     * and `60 seconds`.
+     * @default `"5 seconds"`
+     */
+    timeout?: Input<DurationMinutes>;
+    /**
+     * The time between running the check. Must be between `5 seconds` and `300 seconds`.
+     * @default `"30 seconds"`
+     */
+    interval?: Input<DurationMinutes>;
+    /**
+     * The number of consecutive failures required to consider the check to have failed. Must
+     * be between `1` and `10`.
+     * @default `3`
+     */
+    retries?: Input<number>;
+  }>;
   /**
    * The containers to run in the service.
    *
@@ -1371,10 +1547,21 @@ export interface ClusterServiceArgs {
       retention?: Input<keyof typeof RETENTION>;
     }>;
     /**
+     * Key-value pairs of AWS Systems Manager Parameter Store parameter ARNs or AWS Secrets
+     * Manager secret ARNs. The values will be loaded into the container as environment
+     * variables. Same as the top-level [`ssm`](#ssm).
+     */
+    ssm?: ClusterServiceArgs["ssm"];
+    /**
      * Mount Amazon EFS file systems into the container. Same as the top-level
      * [`efs`](#efs).
      */
     volumes?: ClusterServiceArgs["volumes"];
+    /**
+     * Configure the health check for the container. Same as the top-level
+     * [`health`](#health).
+     */
+    health?: ClusterServiceArgs["health"];
     /**
      * Configure how this container works in `sst dev`. Same as the top-level
      * [`dev`](#dev).
@@ -1472,6 +1659,10 @@ export interface ClusterServiceArgs {
      * Transform the AWS Load Balancer target group resource.
      */
     target?: Transform<lb.TargetGroupArgs>;
+    /**
+     * Transform the AWS Application Auto Scaling target resource.
+     */
+    autoScalingTarget?: Transform<appautoscaling.TargetArgs>;
     /**
      * Transform the CloudWatch log group resource.
      */
@@ -1637,10 +1828,14 @@ export class Cluster extends Component {
     args: ClusterArgs,
     opts: ComponentResourceOptions = {},
   ) {
+    super(__pulumiType, name, args, opts);
     const _version = 2;
-    super(__pulumiType, name, args, opts, {
-      _version,
-      _message: [
+    const self = this;
+
+    self.registerVersion({
+      new: _version,
+      old: $cli.state.version[name],
+      message: [
         `There is a new version of "Cluster" that has breaking changes.`,
         ``,
         `What changed:`,
@@ -1653,10 +1848,8 @@ export class Cluster extends Component {
         `To continue using v${$cli.state.version[name]}:`,
         `  - Rename "Cluster" to "Cluster.v${$cli.state.version[name]}". Learn more about versioning - https://sst.dev/docs/components/#versioning`,
       ].join("\n"),
-      _forceUpgrade: args.forceUpgrade,
+      forceUpgrade: args.forceUpgrade,
     });
-
-    const parent = this;
 
     const cluster = createCluster();
 
@@ -1666,7 +1859,12 @@ export class Cluster extends Component {
 
     function createCluster() {
       return new ecs.Cluster(
-        ...transform(args.transform?.cluster, `${name}Cluster`, {}, { parent }),
+        ...transform(
+          args.transform?.cluster,
+          `${name}Cluster`,
+          {},
+          { parent: self },
+        ),
       );
     }
   }

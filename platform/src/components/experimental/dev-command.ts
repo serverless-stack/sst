@@ -75,7 +75,7 @@ export interface DevCommandArgs {
  * The `sst dev` CLI starts a multiplexer with panes for separate processes. This component allows you to add a process to it.
  *
  * :::tip
- * This component does do anything on deploy.
+ * This component does not do anything on deploy.
  * :::
  *
  * This component only works in `sst dev`. It does not do anything in `sst deploy`.
@@ -110,8 +110,9 @@ export class DevCommand extends Component {
           .apply(Link.build)
           .apply((links) => links.map((link) => link.name)),
         environment: args.environment,
+        title: args.dev?.title,
         directory: args.dev?.directory,
-        autostart: args.dev?.autostart,
+        autostart: args.dev?.autostart !== false,
         command: args.dev?.command,
         aws: {
           role: args.aws?.role,

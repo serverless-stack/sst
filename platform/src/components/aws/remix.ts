@@ -217,6 +217,13 @@ export interface RemixArgs extends SsrSiteArgs {
    */
   buildCommand?: SsrSiteArgs["buildCommand"];
   /**
+   * The directory where the build output is located. This should match the value of
+   * `buildDirectory` in the Remix plugin section of your Vite config.
+   *
+   * @default `"build"`
+   */
+  buildDirectory?: Input<string>;
+  /**
    * Configure how the Remix app assets are uploaded to S3.
    *
    * By default, this is set to the following. Read more about these options below.
@@ -441,54 +448,39 @@ export class Remix extends Component implements Link.Linkable {
     }
 
     function loadViteConfig() {
-      return sitePath.apply(async (sitePath) => {
-        const file = [
-          "vite.config.ts",
-          "vite.config.js",
-          "vite.config.mts",
-          "vite.config.mjs",
-        ].find((filename) => fs.existsSync(path.join(sitePath, filename)));
-        if (!file) return;
+      return all([sitePath, args.buildDirectory]).apply(
+        async ([sitePath, buildDirectory]) => {
+          const file = [
+            "vite.config.ts",
+            "vite.config.js",
+            "vite.config.mts",
+            "vite.config.mjs",
+          ].find((filename) => fs.existsSync(path.join(sitePath, filename)));
+          if (!file) return;
 
-        let resolvedConfig;
-        try {
-          const vite = await import("vite");
-          const viteConfig = await vite.loadConfigFromFile(
-            { command: "build", mode: "production" },
-            path.join(sitePath, file),
-          );
-          if (!viteConfig) throw new Error();
+          let resolvedConfig;
+          try {
+            const vite = await import("vite");
+            const viteConfig = await vite.loadConfigFromFile(
+              { command: "build", mode: "production" },
+              path.join(sitePath, file),
+            );
+            if (!viteConfig) throw new Error();
 
-          resolvedConfig = (await vite.resolveConfig(
-            // root defaults to process.cwd(), which will be where the sst.config.ts file is located
-            // since we're invoking vite programmatically. In a monorepo, this is likely incorrect, and
-            // should be the defined sitePath.
-            { ...viteConfig.config, root: viteConfig.config.root ?? sitePath },
-            "build",
-            "production",
-          )) as Awaited<ReturnType<typeof vite.resolveConfig>> & {
-            __remixPluginContext: {
-              remixConfig: {
-                serverBuildFile: string;
-                buildDirectory: string;
-              };
+            resolvedConfig = {
+              __remixPluginContext: {
+                remixConfig: {
+                  buildDirectory: buildDirectory ?? "build",
+                },
+              },
             };
-          };
-        } catch (e) {
-          throw new VisibleError(`Failed to load Vite config file "${file}"`);
-        }
+          } catch (e) {
+            throw new VisibleError(`Failed to load Vite config file "${file}"`);
+          }
 
-        if (
-          resolvedConfig.__remixPluginContext.remixConfig.serverBuildFile !==
-          "index.js"
-        ) {
-          throw new VisibleError(
-            `SST does not support a custom "serverBuildFile".`,
-          );
-        }
-
-        return resolvedConfig;
-      });
+          return resolvedConfig;
+        },
+      );
     }
 
     function loadBuildMetadata() {
@@ -502,13 +494,15 @@ export class Remix extends Component implements Link.Linkable {
           let buildPath = path.join(outputPath, "build");
 
           if (viteConfig) {
-            buildPath =
-              viteConfig.__remixPluginContext.remixConfig.buildDirectory;
-            assetsPath = path.relative(
-              viteConfig.root,
-              viteConfig.build.outDir,
+            assetsPath = path.join(
+              viteConfig.__remixPluginContext.remixConfig.buildDirectory,
+              "client",
             );
-            assetsVersionedSubDir = viteConfig.build.assetsDir;
+            assetsVersionedSubDir = "assets";
+            buildPath = path.join(
+              outputPath,
+              viteConfig.__remixPluginContext.remixConfig.buildDirectory,
+            );
           }
 
           return {
@@ -553,21 +547,21 @@ export class Remix extends Component implements Link.Linkable {
             },
             edgeFunctions: edge
               ? {
-                server: {
-                  function: serverConfig,
-                },
-              }
+                  server: {
+                    function: serverConfig,
+                  },
+                }
               : undefined,
             origins: {
               ...(edge
                 ? {}
                 : {
-                  server: {
                     server: {
-                      function: serverConfig,
+                      server: {
+                        function: serverConfig,
+                      },
                     },
-                  },
-                }),
+                  }),
               s3: {
                 s3: {
                   copy: [
@@ -584,16 +578,16 @@ export class Remix extends Component implements Link.Linkable {
             behaviors: [
               edge
                 ? {
-                  cacheType: "server",
-                  cfFunction: "serverCfFunction",
-                  edgeFunction: "server",
-                  origin: "s3",
-                }
+                    cacheType: "server",
+                    cfFunction: "serverCfFunction",
+                    edgeFunction: "server",
+                    origin: "s3",
+                  }
                 : {
-                  cacheType: "server",
-                  cfFunction: "serverCfFunction",
-                  origin: "server",
-                },
+                    cacheType: "server",
+                    cfFunction: "serverCfFunction",
+                    origin: "server",
+                  },
               ...buildMeta.staticRoutes.map(
                 (route) =>
                   ({

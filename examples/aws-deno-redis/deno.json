@@ -1,0 +1,10 @@
+{
+  "tasks": {
+    "dev": "deno run --watch --allow-all main.ts"
+  },
+  "imports": {
+    "@std/assert": "jsr:@std/assert@1",
+    "ioredis": "npm:ioredis@^5.4.1",
+    "sst": "npm:sst@latest"
+  }
+}

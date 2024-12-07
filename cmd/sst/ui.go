@@ -41,6 +41,7 @@ func CmdUI(c *cli.Cli) error {
 			cloudflare.WorkerBuildEvent{},
 			cloudflare.WorkerUpdatedEvent{},
 			cloudflare.WorkerInvokedEvent{},
+			project.CompleteEvent{},
 			aws.FunctionInvokedEvent{},
 			aws.FunctionResponseEvent{},
 			aws.FunctionErrorEvent{},

@@ -323,6 +323,11 @@ export interface CdnArgs {
   };
 }
 
+interface CdnRef {
+  ref: boolean;
+  distributionID: Input<string>;
+}
+
 /**
  * The `Cdn` component is internally used by other components to deploy a CDN to AWS. It uses [Amazon CloudFront](https://aws.amazon.com/cloudfront/) and [Amazon Route 53](https://aws.amazon.com/route53/) to manage custom domains.
  *
@@ -346,11 +351,20 @@ export interface CdnArgs {
  */
 export class Cdn extends Component {
   private distribution: Output<cloudfront.Distribution>;
-  private _domainUrl?: Output<string>;
+  private _domainUrl: Output<string | undefined>;
 
   constructor(name: string, args: CdnArgs, opts?: ComponentResourceOptions) {
     super(pulumiType, name, args, opts);
     const parent = this;
+
+    if (args && "ref" in args) {
+      const ref = reference();
+      this.distribution = output(ref.distribution);
+      this._domainUrl = ref.distribution.aliases.apply((aliases) =>
+        aliases?.length ? `https://${aliases[0]}` : undefined,
+      );
+      return;
+    }
 
     const domain = normalizeDomain();
     const invalidation = normalizeInvalidation();
@@ -365,7 +379,19 @@ export class Cdn extends Component {
     this.distribution = waiter.isDone.apply(() => distribution);
     this._domainUrl = domain?.name
       ? interpolate`https://${domain.name}`
-      : undefined;
+      : output(undefined);
+
+    function reference() {
+      const ref = args as unknown as CdnRef;
+      const distribution = cloudfront.Distribution.get(
+        `${name}Distribution`,
+        ref.distributionID,
+        undefined,
+        { parent },
+      );
+
+      return { distribution };
+    }
 
     function normalizeDomain() {
       if (!args.domain) return;
@@ -586,6 +612,34 @@ export class Cdn extends Component {
        */
       distribution: this.distribution,
     };
+  }
+
+  /**
+   * Reference an existing CDN with the given distribution ID. This is useful when
+   * you create a Router in one stage and want to share it in another. It avoids having to
+   * create a new Router in the other stage.
+   *
+   * :::tip
+   * You can use the `static get` method to share Routers across stages.
+   * :::
+   *
+   * @param name The name of the component.
+   * @param distributionID The id of the existing CDN distribution.
+   * @param opts? Resource options.
+   */
+  public static get(
+    name: string,
+    distributionID: Input<string>,
+    opts?: ComponentResourceOptions,
+  ) {
+    return new Cdn(
+      name,
+      {
+        ref: true,
+        distributionID,
+      } satisfies CdnRef as unknown as CdnArgs,
+      opts,
+    );
   }
 }
 

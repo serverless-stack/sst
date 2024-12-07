@@ -1,6 +1,15 @@
-import { apigateway, iam } from "@pulumi/aws";
+import { getPartitionOutput, apigateway, iam } from "@pulumi/aws";
+import {
+  ComponentResourceOptions,
+  jsonStringify,
+  interpolate,
+} from "@pulumi/pulumi";
+import { $print } from "../../component";
 
-export function setupApiGatewayAccount(namePrefix: string) {
+export function setupApiGatewayAccount(
+  namePrefix: string,
+  opts: ComponentResourceOptions,
+) {
   const account = apigateway.Account.get(
     `${namePrefix}APIGatewayAccount`,
     "APIGatewayAccount",
@@ -9,10 +18,12 @@ export function setupApiGatewayAccount(namePrefix: string) {
   return account.cloudwatchRoleArn.apply((arn) => {
     if (arn) return account;
 
+    const partition = getPartitionOutput(undefined, opts).partition;
+    $print("!@#!@#!@#!@# PARTITION", partition);
     const role = new iam.Role(
       `APIGatewayPushToCloudWatchLogsRole`,
       {
-        assumeRolePolicy: JSON.stringify({
+        assumeRolePolicy: jsonStringify({
           Version: "2012-10-17",
           Statement: [
             {
@@ -25,7 +36,7 @@ export function setupApiGatewayAccount(namePrefix: string) {
           ],
         }),
         managedPolicyArns: [
-          "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs",
+          interpolate`arn:${partition}:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs`,
         ],
       },
       { retainOnDelete: true },

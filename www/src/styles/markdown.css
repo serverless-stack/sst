@@ -86,6 +86,27 @@
   color: var(--sl-color-white);
   text-decoration: underline;
 }
+.custom-aside-video .starlight-aside__title {
+  font-weight: normal;
+  font-family: var(--__sl-font);
+  font-size: var(--sl-text-sm);
+  text-transform: none;
+  letter-spacing: 0;
+  line-height: normal;
+  gap: 0.5rem;
+}
+.custom-aside-video .starlight-aside__title a {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.custom-aside-video .starlight-aside__title a:hover {
+  text-decoration: underline;
+}
+.custom-aside-video .starlight-aside__title a svg {
+  opacity: 0.8;
+}
 
 /**
  * Blockquotes

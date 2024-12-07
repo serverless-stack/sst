@@ -101,11 +101,14 @@ export class SnsTopicLambdaSubscriber extends Component {
    * The underlying [resources](/docs/components/#nodes) this component creates.
    */
   public get nodes() {
+    const self = this;
     return {
       /**
        * The Lambda function that'll be notified.
        */
-      function: this.fn.apply((fn) => fn.getFunction()),
+      get function() {
+        return self.fn.apply((fn) => fn.getFunction());
+      },
       /**
        * The Lambda permission.
        */

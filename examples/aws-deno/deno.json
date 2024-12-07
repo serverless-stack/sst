@@ -1,10 +1,12 @@
 {
   "tasks": {
-    "dev": "deno run --watch --allow-all main.ts"
+    "dev": "deno run --allow-all --watch main.ts"
   },
   "imports": {
+    "@aws-sdk/client-s3": "npm:@aws-sdk/client-s3@^3.705.0",
+    "@aws-sdk/lib-storage": "npm:@aws-sdk/lib-storage@^3.705.0",
+    "@aws-sdk/s3-request-presigner": "npm:@aws-sdk/s3-request-presigner@^3.705.0",
     "@std/assert": "jsr:@std/assert@1",
-    "ioredis": "npm:ioredis@^5.4.1",
     "sst": "npm:sst@latest"
   }
 }

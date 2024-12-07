@@ -337,15 +337,21 @@ func (u *UI) Event(unknown interface{}) {
 			u.println(strings.TrimRightFunc(ansi.Strip(evt.Message), unicode.IsSpace))
 		}
 
+	case *apitype.ProgressEvent:
+		if evt.Done && evt.Type == apitype.PluginDownload {
+			splits := strings.Split(evt.ID, ":")
+			u.printEvent(TEXT_INFO, "Info", "Downloaded provider "+splits[1])
+		}
+
 	case *project.ProviderDownloadEvent:
 		u.printEvent(TEXT_INFO, "Info", "Downloading provider "+evt.Name+" v"+evt.Version)
 		break
 
 	case *project.CompleteEvent:
+		u.complete = evt
 		if evt.Old {
 			break
 		}
-		u.complete = evt
 		u.blank()
 		if len(evt.Errors) == 0 && evt.Finished {
 			u.print(TEXT_SUCCESS_BOLD.Render(IconCheck))

@@ -85,6 +85,7 @@ type ProjectConfig struct {
 
 var ErrInvalidStageName = fmt.Errorf("invalid stage name")
 var ErrInvalidAppName = fmt.Errorf("invalid app name")
+var ErrAppNameChanged = fmt.Errorf("app name changed")
 var ErrV2Config = fmt.Errorf("sstv2 config detected")
 var ErrBuildFailed = fmt.Errorf("")
 var ErrVersionInvalid = fmt.Errorf("invalid version")
@@ -198,6 +199,23 @@ console.log("~j" + JSON.stringify(mod.app({
 				return nil, ErrInvalidAppName
 			}
 
+			// Check if app name has changed by comparing the folder name inside ".pulumi/stacks"
+			// and the app name in the config file.
+			stacksDir := filepath.Join(proj.PathWorkingDir(), ".pulumi", "stacks")
+			files, err := os.ReadDir(stacksDir)
+			if err != nil {
+				if !os.IsNotExist(err) {
+					return nil, err
+				}
+				files = []os.DirEntry{}
+			}
+			if len(files) > 0 {
+				appName := files[0].Name()
+				if appName != proj.app.Name {
+					return nil, ErrAppNameChanged
+				}
+			}
+
 			if proj.app.Home == "" {
 				return nil, util.NewReadableError(nil, `You must specify a "home" provider in the project configuration file.`)
 			}
@@ -256,7 +274,7 @@ func (proj *Project) LoadHome() error {
 		case "cloudflare":
 			match = &provider.CloudflareProvider{}
 		case "aws":
-			match = &provider.AwsProvider{}
+			match = provider.NewAwsProvider()
 		}
 		if match == nil {
 			continue

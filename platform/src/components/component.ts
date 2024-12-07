@@ -49,16 +49,14 @@ export function transform<T extends object>(
 }
 
 export class Component extends ComponentResource {
+  private componentType: string;
+  private componentName: string;
+
   constructor(
     type: string,
     name: string,
     args?: Inputs,
     opts?: ComponentResourceOptions,
-    _versionInfo: {
-      _version: number;
-      _message: string;
-      _forceUpgrade?: `v${number}`;
-    } = { _version: 1, _message: "" },
   ) {
     const transforms = ComponentTransforms.get(type) ?? [];
     for (const transform of transforms) {
@@ -141,8 +139,6 @@ export class Component extends ComponentResource {
               "aws:iam/userPolicy:UserPolicy",
               "aws:cloudfront/cachePolicy:CachePolicy",
               "aws:cloudfront/distribution:Distribution",
-              "aws:cloudwatch/eventRule:EventRule",
-              "aws:cloudwatch/eventTarget:EventTarget",
               "aws:cloudwatch/logGroup:LogGroup",
               "aws:cognito/identityPoolRoleAttachment:IdentityPoolRoleAttachment",
               "aws:cognito/identityProvider:IdentityProvider",
@@ -154,6 +150,7 @@ export class Component extends ComponentResource {
               "aws:lambda/permission:Permission",
               "aws:lambda/provisionedConcurrencyConfig:ProvisionedConcurrencyConfig",
               "aws:lb/listener:Listener",
+              "aws:lb/listenerRule:ListenerRule",
               "aws:rds/proxyDefaultTargetGroup:ProxyDefaultTargetGroup",
               "aws:rds/proxyTarget:ProxyTarget",
               "aws:route53/record:Record",
@@ -171,6 +168,7 @@ export class Component extends ComponentResource {
               "aws:sesv2/emailIdentity:EmailIdentity",
               "aws:sns/topicSubscription:TopicSubscription",
               "aws:sqs/queuePolicy:QueuePolicy",
+              "aws:ssm/parameter:Parameter",
               "cloudflare:index/record:Record",
               "cloudflare:index/workerDomain:WorkerDomain",
               "docker-build:index:Image",
@@ -205,6 +203,11 @@ export class Component extends ComponentResource {
               ],
               field: "identifier",
               cb: () => physicalName(63, args.name).toLowerCase(),
+            },
+            {
+              types: ["aws:cloudwatch/eventTarget:EventTarget"],
+              field: "targetId",
+              cb: () => physicalName(64, args.name),
             },
             {
               types: [
@@ -376,16 +379,24 @@ export class Component extends ComponentResource {
       ...opts,
     });
 
+    this.componentType = type;
+    this.componentName = name;
+  }
+
+  /** @internal */
+  protected registerVersion(input: {
+    new: number;
+    old?: number;
+    message?: string;
+    forceUpgrade?: `v${number}`;
+  }) {
     // Check component version
-    const oldVersion = $cli.state.version[name];
-    const newVersion = _versionInfo._version;
+    const oldVersion = input.old;
+    const newVersion = input.new ?? 1;
     if (oldVersion) {
-      const className = type.replaceAll(":", ".");
+      const className = this.componentType.replaceAll(":", ".");
       // Invalid forceUpgrade value
-      if (
-        _versionInfo._forceUpgrade &&
-        _versionInfo._forceUpgrade !== `v${newVersion}`
-      ) {
+      if (input.forceUpgrade && input.forceUpgrade !== `v${newVersion}`) {
         throw new VisibleError(
           [
             `The value of "forceUpgrade" does not match the version of "${className}" component.`,
@@ -394,8 +405,8 @@ export class Component extends ComponentResource {
         );
       }
       // Version upgraded without forceUpgrade
-      if (oldVersion < newVersion && !_versionInfo._forceUpgrade) {
-        throw new VisibleError(_versionInfo._message);
+      if (oldVersion < newVersion && !input.forceUpgrade) {
+        throw new VisibleError(input.message ?? "");
       }
       // Version downgraded
       if (oldVersion > newVersion) {
@@ -410,7 +421,7 @@ export class Component extends ComponentResource {
 
     // Set version
     if (newVersion > 1) {
-      new Version(name, newVersion, { parent: this });
+      new Version(this.componentName, newVersion, { parent: this });
     }
   }
 }

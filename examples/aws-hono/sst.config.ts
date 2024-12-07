@@ -4,20 +4,16 @@ export default $config({
   app(input) {
     return {
       name: "aws-hono",
-      home: "aws",
       removal: input?.stage === "production" ? "retain" : "remove",
+      home: "aws",
     };
   },
   async run() {
     const bucket = new sst.aws.Bucket("MyBucket");
-    const hono = new sst.aws.Function("Hono", {
+    new sst.aws.Function("Hono", {
       url: true,
       link: [bucket],
-      handler: "index.handler",
+      handler: "src/index.handler",
     });
-
-    return {
-      api: hono.url,
-    };
   },
 });

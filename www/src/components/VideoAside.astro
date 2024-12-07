@@ -1,0 +1,20 @@
+---
+import { Icon } from '@astrojs/starlight/components';
+
+interface Props {
+	title?: string;
+  href: string;
+}
+
+const { title = 'Watch a video', href } = Astro.props;
+---
+
+<aside aria-label={title} class="starlight-aside starlight-aside--tip custom-aside-video">
+  <p class="starlight-aside__title" aria-hidden="true">
+    <Icon name="youtube" class="starlight-aside__icon" />
+		<a target="_blank" rel="noopener noreferrer" href={href}>
+			{title}
+			<Icon name="right-caret" size="1rem" />
+		</a>
+  </p>
+</aside>

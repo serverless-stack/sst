@@ -1,28 +1,22 @@
 import { Resource } from "sst";
-import { Cluster } from "ioredis";
+import Form from "@/components/form";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import styles from "./page.module.css";
-
-const redis = new Cluster(
-  [{ host: Resource.MyRedis.host, port: Resource.MyRedis.port }],
-  {
-    dnsLookup: (address, callback) => callback(null, address),
-    redisOptions: {
-      tls: {},
-      username: Resource.MyRedis.username,
-      password: Resource.MyRedis.password,
-    },
-  }
-);
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const counter = await redis.incr("counter");
+  const command = new PutObjectCommand({
+    Key: crypto.randomUUID(),
+    Bucket: Resource.MyBucket.name,
+  });
+  const url = await getSignedUrl(new S3Client({}), command);
 
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <p>Hit counter: {counter}</p>
+        <Form url={url} />
       </main>
     </div>
   );

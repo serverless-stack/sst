@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,14 +21,15 @@ import (
 )
 
 type footer struct {
-	started   bool
-	mode      ProgressMode
-	complete  *project.CompleteEvent
-	parents   map[string]string
-	summary   bool
-	pending   []*apitype.ResourcePreEvent
-	skipped   int
-	cancelled bool
+	started     bool
+	mode        ProgressMode
+	complete    *project.CompleteEvent
+	parents     map[string]string
+	summary     bool
+	pending     []*apitype.ResourcePreEvent
+	downloading map[string]*apitype.ProgressEvent
+	skipped     int
+	cancelled   bool
 
 	spinner int
 
@@ -144,6 +146,7 @@ func (m *footer) Reset() {
 	m.skipped = 0
 	m.parents = map[string]string{}
 	m.pending = []*apitype.ResourcePreEvent{}
+	m.downloading = map[string]*apitype.ProgressEvent{}
 	m.complete = nil
 	m.summary = false
 	m.cancelled = false
@@ -195,6 +198,10 @@ func (m *footer) Update(msg any) {
 		if msg.Metadata.Op != apitype.OpSame && msg.Metadata.Op != apitype.OpRead {
 			m.pending = append(m.pending, msg)
 		}
+	case *apitype.ProgressEvent:
+		if msg.Type == apitype.PluginDownload {
+			m.downloading[msg.ID] = msg
+		}
 	case *apitype.SummaryEvent:
 		m.summary = true
 	case *apitype.ResOutputsEvent:
@@ -237,6 +244,21 @@ func (m *footer) View(width int) string {
 	}
 	spinner := spinner.MiniDot.Frames[m.spinner%len(spinner.MiniDot.Frames)]
 	result := []string{}
+	keys := make([]string, 0, len(m.downloading))
+	for k := range m.downloading {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		progress := m.downloading[key]
+		if progress.Done {
+			continue
+		}
+		splits := strings.Split(progress.ID, ":")
+		percentage := int(float64(progress.Completed) / float64(progress.Total) * 100)
+		result = append(result, fmt.Sprintf("%s  %-11s %s %d%%", spinner, "Downloading", splits[1], percentage))
+	}
 	for _, r := range m.pending {
 		label := "Creating"
 		if r.Metadata.Op == apitype.OpUpdate {

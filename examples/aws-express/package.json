@@ -10,11 +10,14 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "express": "^4.21.0",
-    "ioredis": "^5.4.1",
-    "sst": "3.1.65"
+    "@aws-sdk/client-s3": "^3.705.0",
+    "@aws-sdk/lib-storage": "^3.705.0",
+    "@aws-sdk/s3-request-presigner": "^3.705.0",
+    "express": "^4.21.1",
+    "multer": "^1.4.5-lts.1",
+    "sst": "latest"
   },
   "devDependencies": {
-    "@types/aws-lambda": "8.10.145"
+    "@types/aws-lambda": "8.10.146"
   }
 }

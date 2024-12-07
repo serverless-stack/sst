@@ -15,7 +15,6 @@ const file = [".js", ".jsx", ".mjs", ".cjs"]
   })!;
 
 let fn: any;
-let timeout: NodeJS.Timeout | undefined;
 let request: any;
 let response: any;
 let context: LambdaContext;
@@ -60,18 +59,18 @@ try {
 }
 
 while (true) {
-  if (timeout) clearTimeout(timeout);
-  timeout = setTimeout(
+  const timeout = setTimeout(
     () => {
       process.exit(0);
     },
-    1000 * 60 * 15,
+    1000 * 60 * 1,
   );
 
   try {
     const result = await fetch(
       AWS_LAMBDA_RUNTIME_API + `/runtime/invocation/next`,
     );
+    clearTimeout(timeout);
     context = {
       awsRequestId: result.headers.get("lambda-runtime-aws-request-id") || "",
       invokedFunctionArn:

@@ -132,6 +132,20 @@ export interface SsrSiteArgs extends BaseSsrSiteArgs {
      */
     memory?: FunctionArgs["memory"];
     /**
+     * The runtime environment for the server function.
+     *
+     * @default `"nodejs20.x"`
+     * @example
+     * ```js
+     * {
+     *   server: {
+     *     runtime: "nodejs22.x"
+     *   }
+     * }
+     * ```
+     */
+    runtime?: Input<"nodejs18.x" | "nodejs20.x" | "nodejs22.x">;
+    /**
      * The [architecture](https://docs.aws.amazon.com/lambda/latest/dg/foundation-arch.html)
      * of the server function.
      *
@@ -198,15 +212,19 @@ export interface SsrSiteArgs extends BaseSsrSiteArgs {
       /**
        * Configure the viewer request function.
        *
-       * The viewer request function can be used to modify incoming requests before they reach
-       * your origin server. For example, you can redirect users, rewrite URLs, or add headers.
+       * The viewer request function can be used to modify incoming requests before they
+       * reach your origin server. For example, you can redirect users, rewrite URLs,
+       * or add headers.
        */
       viewerRequest?: Input<{
         /**
          * The code to inject into the viewer request function.
          *
-         * By default, a viewer request function is created to add the `x-forwarded-host`
-         * header. The given code will be injected at the end of this function.
+         * By default, a viewer request function is created to:
+         * - Disable CloudFront default URL if custom domain is set.
+         * - Add the `x-forwarded-host` header.
+         *
+         * The given code will be injected at the end of this function.
          *
          * ```js
          * async function handler(event) {
@@ -286,7 +304,7 @@ export interface SsrSiteArgs extends BaseSsrSiteArgs {
          *   server: {
          *     edge: {
          *       viewerResponse: {
-         *         injection: `event.response.headers["x-foo"] = "bar";`
+         *         injection: `event.response.headers["x-foo"] = {value: "bar"};`
          *       }
          *     }
          *   }
@@ -522,7 +540,7 @@ export function createServersAndDistribution(
                 ...(await Promise.all(
                   files.map(async (file) => {
                     const source = path.resolve(outputPath, copy.from, file);
-                    const content = await fs.promises.readFile(source);
+                    const content = await fs.promises.readFile(source, "utf-8");
                     const hash = crypto
                       .createHash("sha256")
                       .update(content)
@@ -671,15 +689,19 @@ export function createServersAndDistribution(
           args.transform?.server,
           `${name}${logicalName(fnName)}`,
           {
-            description: `${name} server`,
-            runtime: "nodejs20.x",
-            timeout: "20 seconds",
-            memory: output(args.server?.memory).apply((v) => v ?? "1024 MB"),
+            ...props.function,
+            description: props.function.description ?? `${name} server`,
+            runtime: output(args.server?.runtime).apply(
+              (v) => v ?? props.function.runtime ?? "nodejs20.x",
+            ),
+            timeout: props.function.timeout ?? "20 seconds",
+            memory: output(args.server?.memory).apply(
+              (v) => v ?? props.function.memory ?? "1024 MB",
+            ),
             architecture: output(args.server?.architecture).apply(
-              (v) => v ?? "x86_64",
+              (v) => v ?? props.function.architecture ?? "x86_64",
             ),
             vpc: args.vpc,
-            ...props.function,
             nodejs: {
               format: "esm" as const,
               install: args.server?.install,
@@ -779,6 +801,11 @@ export function createServersAndDistribution(
       const edgeFunction = edgeFunctions[behavior.edgeFunction || ""];
 
       if (behavior.cacheType === "static") {
+        const requestFunction = useCfFunction(
+          "assets",
+          "request",
+          behavior.cfFunction ?? "assetsRequestCfFunction",
+        );
         return {
           targetOriginId: behavior.origin,
           viewerProtocolPolicy: "redirect-to-https",
@@ -787,20 +814,28 @@ export function createServersAndDistribution(
           compress: true,
           // CloudFront's managed CachingOptimized policy
           cachePolicyId: "658327ea-f89d-4fab-a63d-7e88639e58f6",
-          functionAssociations: behavior.cfFunction
-            ? [
-                {
-                  eventType: "viewer-request",
-                  functionArn: useCfFunction(
-                    "assets",
-                    "request",
-                    behavior.cfFunction,
-                  ).arn,
-                },
-              ]
-            : [],
+          functionAssociations: requestFunction.apply((fn) => [
+            ...(fn
+              ? [
+                  {
+                    eventType: "viewer-request",
+                    functionArn: fn.arn,
+                  },
+                ]
+              : []),
+          ]),
         };
       } else if (behavior.cacheType === "server") {
+        const requestFunction = useCfFunction(
+          "server",
+          "request",
+          behavior.cfFunction ?? "serverRequestCfFunction",
+        );
+        const responseFunction = useCfFunction(
+          "server",
+          "response",
+          "serverResponseCfFunction",
+        );
         return {
           targetOriginId: behavior.origin,
           viewerProtocolPolicy: "redirect-to-https",
@@ -818,18 +853,26 @@ export function createServersAndDistribution(
           cachePolicyId: args.cachePolicy ?? useServerBehaviorCachePolicy().id,
           // CloudFront's Managed-AllViewerExceptHostHeader policy
           originRequestPolicyId: "b689b0a8-53d0-40ab-baf2-68738e2966ac",
-          functionAssociations: behavior.cfFunction
-            ? [
-                {
-                  eventType: "viewer-request",
-                  functionArn: useCfFunction(
-                    "server",
-                    "request",
-                    behavior.cfFunction,
-                  ).arn,
-                },
-              ]
-            : [],
+          functionAssociations: all([requestFunction, responseFunction]).apply(
+            ([requestFn, responseFn]) => [
+              ...(requestFn
+                ? [
+                    {
+                      eventType: "viewer-request",
+                      functionArn: requestFn.arn,
+                    },
+                  ]
+                : []),
+              ...(responseFn
+                ? [
+                    {
+                      eventType: "viewer-response",
+                      functionArn: responseFn.arn,
+                    },
+                  ]
+                : []),
+            ],
+          ),
           lambdaFunctionAssociations: edgeFunction
             ? [
                 {
@@ -850,32 +893,49 @@ export function createServersAndDistribution(
       type: "request" | "response",
       fnName: string,
     ) {
-      const { injections } = plan.cloudFrontFunctions![fnName];
-      const config =
-        origin === "server"
-          ? output(args.server).apply((server) =>
-              type === "request"
-                ? server?.edge?.viewerRequest
-                : server?.edge?.viewerResponse,
-            )
-          : output(undefined);
-      cfFunctions[fnName] =
-        cfFunctions[fnName] ??
-        new cloudfront.Function(
-          `${name}CloudfrontFunction${logicalName(fnName)}`,
-          {
-            runtime: "cloudfront-js-2.0",
-            keyValueStoreAssociations: config.apply((v) => v?.kvStores ?? []),
-            code: interpolate`
+      return output(args.server).apply((server) => {
+        const frameworkConfig = plan.cloudFrontFunctions?.[fnName];
+        const customConfig =
+          origin === "server"
+            ? type === "request"
+              ? server?.edge?.viewerRequest
+              : server?.edge?.viewerResponse
+            : undefined;
+        const builtInConfig =
+          type === "request" && args.domain
+            ? `
+if (event.request.headers.host.value.includes('cloudfront.net')) {
+  return {
+    statusCode: 403,
+    statusDescription: 'Forbidden',
+    body: {
+      encoding: "text",
+      data: '<html><head><title>403 Forbidden</title></head><body><center><h1>403 Forbidden</h1></center></body></html>'
+    }
+  };
+}`
+            : undefined;
+        if (!frameworkConfig && !customConfig && !builtInConfig) return;
+
+        cfFunctions[fnName] =
+          cfFunctions[fnName] ??
+          new cloudfront.Function(
+            `${name}CloudfrontFunction${logicalName(fnName)}`,
+            {
+              runtime: "cloudfront-js-2.0",
+              keyValueStoreAssociations: customConfig?.kvStores ?? [],
+              code: interpolate`
 async function handler(event) {
-  ${injections.join("\n")}
-  ${config.apply((v) => v?.injection ?? "")}
-  return event.request;
+  ${builtInConfig ?? ""}
+  ${frameworkConfig?.injections?.join("\n") ?? ""}
+  ${customConfig?.injection ?? ""}
+  return ${type === "request" ? "event.request" : "event.response"};
 }`,
-          },
-          { parent },
-        );
-      return cfFunctions[fnName];
+            },
+            { parent },
+          );
+        return cfFunctions[fnName];
+      });
     }
 
     function useServerBehaviorCachePolicy() {
@@ -1011,6 +1071,7 @@ async function handler(event) {
                   hash.update(
                     fs.readFileSync(
                       path.resolve(outputPath, item.from, filePath),
+                      "utf-8",
                     ),
                   ),
                 );

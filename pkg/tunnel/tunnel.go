@@ -15,7 +15,7 @@ import (
 	"github.com/sst/ion/pkg/process"
 )
 
-var BINARY_PATH = "/opt/sst/sst" + "1"
+var BINARY_PATH = "/opt/sst/tunnel"
 
 func NeedsInstall() bool {
 	if _, err := os.Stat(BINARY_PATH); err == nil {

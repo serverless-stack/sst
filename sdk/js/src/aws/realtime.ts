@@ -125,7 +125,8 @@ export module realtime {
     input: (token: string) => Promise<AuthResult>
   ): IoTCustomAuthorizerHandler {
     return async (evt, context) => {
-      const [, , , region, accountId] = context.invokedFunctionArn.split(":");
+      const [, partition, , region, accountId] =
+        context.invokedFunctionArn.split(":");
       const token = Buffer.from(
         evt.protocolData.mqtt?.password ?? "",
         "base64"
@@ -154,37 +155,39 @@ export module realtime {
               },
               ...(subscribe
                 ? [
-                  {
-                    Action: "iot:Receive",
-                    Effect: "Allow",
-                    Resource: subscribe.map(
-                      (t) => `arn:aws:iot:${region}:${accountId}:topic/${t}`
-                    ),
-                  },
-                ]
+                    {
+                      Action: "iot:Receive",
+                      Effect: "Allow",
+                      Resource: subscribe.map(
+                        (t) =>
+                          `arn:${partition}:iot:${region}:${accountId}:topic/${t}`
+                      ),
+                    },
+                  ]
                 : []),
               ...(subscribe
                 ? [
-                  {
-                    Action: "iot:Subscribe",
-                    Effect: "Allow",
-                    Resource: subscribe.map(
-                      (t) =>
-                        `arn:aws:iot:${region}:${accountId}:topicfilter/${t}`
-                    ),
-                  },
-                ]
+                    {
+                      Action: "iot:Subscribe",
+                      Effect: "Allow",
+                      Resource: subscribe.map(
+                        (t) =>
+                          `arn:${partition}:iot:${region}:${accountId}:topicfilter/${t}`
+                      ),
+                    },
+                  ]
                 : []),
               ...(publish
                 ? [
-                  {
-                    Action: "iot:Publish",
-                    Effect: "Allow",
-                    Resource: publish.map(
-                      (t) => `arn:aws:iot:${region}:${accountId}:topic/${t}`
-                    ),
-                  },
-                ]
+                    {
+                      Action: "iot:Publish",
+                      Effect: "Allow",
+                      Resource: publish.map(
+                        (t) =>
+                          `arn:${partition}:iot:${region}:${accountId}:topic/${t}`
+                      ),
+                    },
+                  ]
                 : []),
             ],
           },

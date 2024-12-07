@@ -10,6 +10,7 @@ import { Input } from "../input";
 import {
   ec2,
   getAvailabilityZonesOutput,
+  getPartitionOutput,
   iam,
   route53,
   servicediscovery,
@@ -23,17 +24,31 @@ export type { VpcArgs as VpcV1Args } from "./vpc-v1";
 
 export interface VpcArgs {
   /**
-   * Number of Availability Zones or AZs for the VPC. By default, it creates a VPC with 2
-   * availability zones since services like RDS and Fargate need at least 2 AZs.
+   * Specify the Availability Zones or AZs for the VPC.
+   *
+   * You can specify a number of AZs or a list of AZs. If you specify a number, it will
+   * look up the availability zones in the region and automatically select that number of
+   * AZs. If you specify a list of AZs, it will use that list of AZs.
+   *
+   * By default, it creates a VPC with 2 availability zones since services like RDS and
+   * Fargate need at least 2 AZs.
    * @default `2`
    * @example
+   * Create a VPC with 3 AZs
    * ```ts
    * {
    *   az: 3
    * }
    * ```
+   *
+   * Create a VPC with specific AZs
+   * ```ts
+   * {
+   *   az: ["us-east-1a", "us-east-1b"]
+   * }
+   * ```
    */
-  az?: Input<number>;
+  az?: Input<number | Input<string>[]>;
   /**
    * Configures NAT. Enabling NAT allows resources in private subnets to connect to the internet.
    *
@@ -94,6 +109,26 @@ export interface VpcArgs {
            * @default `"t4g.nano"`
            */
           instance: Input<string>;
+          /**
+           * The AMI to use for the NAT.
+           *
+           * By default, the latest public [`fck-nat`](https://github.com/AndrewGuenther/fck-nat)
+           * AMI is used. However, if the AMI is not available in the region you are
+           * deploying to or you want to use a custom AMI, you can specify a different AMI.
+           *
+           * @default The latest `fck-nat` AMI
+           * @example
+           * ```ts
+           * {
+           *   nat: {
+           *     ec2: {
+           *       ami: "ami-1234567890abcdef0"
+           *     }
+           *   }
+           * }
+           * ```
+           */
+          ami?: Input<string>;
         }>;
       }
   >;
@@ -118,7 +153,7 @@ export interface VpcArgs {
    *
    * You can learn more about [`sst tunnel`](/docs/reference/cli#tunnel).
    *
-   * @default Bastion is not created
+   * @default `false`
    * @example
    * ```ts
    * {
@@ -126,7 +161,7 @@ export interface VpcArgs {
    * }
    * ```
    */
-  bastion?: Input<true>;
+  bastion?: Input<boolean | {}>;
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.
@@ -176,24 +211,16 @@ export interface VpcArgs {
      * Transform the EC2 bastion instance resource.
      */
     bastionInstance?: Transform<ec2.InstanceArgs>;
+    /**
+     * Transform the EC2 bastion security group resource.
+     */
+    bastionSecurityGroup?: Transform<ec2.SecurityGroupArgs>;
   };
 }
 
 interface VpcRef {
   ref: boolean;
-  vpc: ec2.Vpc;
-  internetGateway: ec2.InternetGateway;
-  securityGroup: ec2.SecurityGroup;
-  privateSubnets: Output<ec2.Subnet[]>;
-  privateRouteTables: Output<ec2.RouteTable[]>;
-  publicSubnets: Output<ec2.Subnet[]>;
-  publicRouteTables: Output<ec2.RouteTable[]>;
-  natGateways: Output<ec2.NatGateway[]>;
-  natInstances: Output<ec2.Instance[]>;
-  elasticIps: Output<ec2.Eip[]>;
-  bastionInstance: Output<ec2.Instance | undefined>;
-  cloudmapNamespace: servicediscovery.PrivateDnsNamespace;
-  privateKeyValue: Output<string | undefined>;
+  vpcId: Input<string>;
 }
 
 /**
@@ -254,7 +281,8 @@ interface VpcRef {
  * number of `az` and add $0.045 per GB processed per month.
  *
  * The above are rough estimates for _us-east-1_, check out the
- * [NAT Gateway pricing](https://aws.amazon.com/vpc/pricing/) for more details.
+ * [NAT Gateway pricing](https://aws.amazon.com/vpc/pricing/) for more details. Standard [data
+ * transfer charges](https://aws.amazon.com/ec2/pricing/on-demand/#Data_Transfer) apply.
  *
  * #### EC2 NAT
  *
@@ -300,21 +328,18 @@ export class Vpc extends Component implements Link.Linkable {
   private privateKeyValue: Output<string | undefined>;
   public static v1 = VpcV1;
 
-  constructor(name: string, args?: VpcArgs, opts?: ComponentResourceOptions) {
+  constructor(
+    name: string,
+    args: VpcArgs = {},
+    opts?: ComponentResourceOptions,
+  ) {
+    super(__pulumiType, name, args, opts);
     const _version = 2;
-    super(__pulumiType, name, args, opts, {
-      _version,
-      _message: [
-        `There is a new version of "Vpc" that has breaking changes.`,
-        ``,
-        `To continue using the previous version, rename "Vpc" to "Vpc.v${$cli.state.version[name]}". Or recreate this component to update - https://sst.dev/docs/components/#versioning`,
-      ].join("\n"),
-    });
-
-    const parent = this;
+    const _refVersion = 2;
+    const self = this;
 
     if (args && "ref" in args) {
-      const ref = args as VpcRef;
+      const ref = reference();
       this.vpc = ref.vpc;
       this.internetGateway = ref.internetGateway;
       this.securityGroup = ref.securityGroup;
@@ -327,13 +352,15 @@ export class Vpc extends Component implements Link.Linkable {
       this.elasticIps = ref.elasticIps;
       this.bastionInstance = ref.bastionInstance;
       this.cloudmapNamespace = ref.cloudmapNamespace;
-      this.privateKeyValue = ref.privateKeyValue;
+      this.privateKeyValue = output(ref.privateKeyValue);
       registerOutputs();
       return;
     }
 
+    registerVersion();
     const zones = normalizeAz();
     const nat = normalizeNat();
+    const partition = getPartitionOutput({}, opts).partition;
 
     const vpc = createVpc();
     const { keyPair, privateKeyValue } = createKeyPair();
@@ -361,13 +388,273 @@ export class Vpc extends Component implements Link.Linkable {
     this.privateKeyValue = output(privateKeyValue);
     registerOutputs();
 
+    function reference() {
+      const ref = args as VpcRef;
+      const vpc = ec2.Vpc.get(`${name}Vpc`, ref.vpcId, undefined, {
+        parent: self,
+      });
+
+      const vpcId = vpc.tags.apply((tags) => {
+        registerVersion(
+          tags?.["sst:component-version"]
+            ? parseInt(tags["sst:component-version"])
+            : undefined,
+        );
+
+        if (tags?.["sst:ref-version"] !== _refVersion.toString()) {
+          throw new VisibleError(
+            [
+              `There have been some minor changes to the "Vpc" component that's being referenced by "${name}".\n`,
+              `To update, you'll need to redeploy the stage where the VPC was created. And then redeploy this stage.`,
+            ].join("\n"),
+          );
+        }
+
+        return output(ref.vpcId);
+      });
+
+      const internetGateway = ec2.InternetGateway.get(
+        `${name}InstanceGateway`,
+        ec2.getInternetGatewayOutput(
+          {
+            filters: [{ name: "attachment.vpc-id", values: [vpcId] }],
+          },
+          { parent: self },
+        ).internetGatewayId,
+        undefined,
+        { parent: self },
+      );
+      const securityGroup = ec2.SecurityGroup.get(
+        `${name}SecurityGroup`,
+        ec2
+          .getSecurityGroupsOutput(
+            {
+              filters: [
+                { name: "group-name", values: ["default"] },
+                { name: "vpc-id", values: [vpcId] },
+              ],
+            },
+            { parent: self },
+          )
+          .ids.apply((ids) => {
+            if (!ids.length) {
+              throw new VisibleError(
+                `Security group not found in VPC ${vpcId}`,
+              );
+            }
+            return ids[0];
+          }),
+        undefined,
+        { parent: self },
+      );
+      const privateSubnets = ec2
+        .getSubnetsOutput(
+          {
+            filters: [
+              { name: "vpc-id", values: [vpcId] },
+              { name: "tag:Name", values: ["*Private*"] },
+            ],
+          },
+          { parent: self },
+        )
+        .ids.apply((ids) =>
+          ids.map((id, i) =>
+            ec2.Subnet.get(`${name}PrivateSubnet${i + 1}`, id, undefined, {
+              parent: self,
+            }),
+          ),
+        );
+      const privateRouteTables = privateSubnets.apply((subnets) =>
+        subnets.map((subnet, i) =>
+          ec2.RouteTable.get(
+            `${name}PrivateRouteTable${i + 1}`,
+            ec2.getRouteTableOutput({ subnetId: subnet.id }, { parent: self })
+              .routeTableId,
+            undefined,
+            { parent: self },
+          ),
+        ),
+      );
+      const publicSubnets = ec2
+        .getSubnetsOutput(
+          {
+            filters: [
+              { name: "vpc-id", values: [vpcId] },
+              { name: "tag:Name", values: ["*Public*"] },
+            ],
+          },
+          { parent: self },
+        )
+        .ids.apply((ids) =>
+          ids.map((id, i) =>
+            ec2.Subnet.get(`${name}PublicSubnet${i + 1}`, id, undefined, {
+              parent: self,
+            }),
+          ),
+        );
+      const publicRouteTables = publicSubnets.apply((subnets) =>
+        subnets.map((subnet, i) =>
+          ec2.RouteTable.get(
+            `${name}PublicRouteTable${i + 1}`,
+            ec2.getRouteTableOutput({ subnetId: subnet.id }, { parent: self })
+              .routeTableId,
+            undefined,
+            { parent: self },
+          ),
+        ),
+      );
+      const natGateways = publicSubnets.apply((subnets) => {
+        const natGatewayIds = subnets.map((subnet, i) =>
+          ec2
+            .getNatGatewaysOutput(
+              {
+                filters: [
+                  { name: "subnet-id", values: [subnet.id] },
+                  { name: "state", values: ["available"] },
+                ],
+              },
+              { parent: self },
+            )
+            .ids.apply((ids) => ids[0]),
+        );
+        return output(natGatewayIds).apply((ids) =>
+          ids
+            .filter((id) => id)
+            .map((id, i) =>
+              ec2.NatGateway.get(`${name}NatGateway${i + 1}`, id, undefined, {
+                parent: self,
+              }),
+            ),
+        );
+      });
+      const elasticIps = natGateways.apply((nats) =>
+        nats.map((nat, i) =>
+          ec2.Eip.get(
+            `${name}ElasticIp${i + 1}`,
+            nat.allocationId as Output<string>,
+            undefined,
+            { parent: self },
+          ),
+        ),
+      );
+      const natInstances = ec2
+        .getInstancesOutput(
+          {
+            filters: [
+              { name: "tag:sst:is-nat", values: ["true"] },
+              { name: "vpc-id", values: [vpcId] },
+            ],
+          },
+          { parent: self },
+        )
+        .ids.apply((ids) =>
+          ids.map((id, i) =>
+            ec2.Instance.get(`${name}NatInstance${i + 1}`, id, undefined, {
+              parent: self,
+            }),
+          ),
+        );
+      const bastionInstance = ec2
+        .getInstancesOutput(
+          {
+            filters: [
+              { name: "tag:sst:is-bastion", values: ["true"] },
+              { name: "vpc-id", values: [vpcId] },
+            ],
+          },
+          { parent: self },
+        )
+        .ids.apply((ids) =>
+          ids.length
+            ? ec2.Instance.get(`${name}BastionInstance`, ids[0], undefined, {
+                parent: self,
+              })
+            : undefined,
+        );
+
+      // Note: can also use servicediscovery.getDnsNamespaceOutput() here, ie.
+      // ```ts
+      // const namespaceId = servicediscovery.getDnsNamespaceOutput({
+      //   name: "sst",
+      //   type: "DNS_PRIVATE",
+      // }).id;
+      // ```
+      // but if user deployed multiple VPCs into the same account. This will error because
+      // there are multiple results. Even though `getDnsNamespaceOutput()` takes tags in args,
+      // the tags are not used for lookup.
+      const zone = output(vpcId).apply((vpcId) =>
+        route53.getZone(
+          {
+            name: "sst",
+            privateZone: true,
+            vpcId,
+          },
+          { parent: self },
+        ),
+      );
+      const namespaceId = zone.linkedServiceDescription.apply((description) => {
+        const match = description.match(/:namespace\/(ns-[a-z1-9]*)/)?.[1];
+        if (!match) {
+          throw new VisibleError(
+            `Cloud Map namespace not found for VPC ${vpcId}`,
+          );
+        }
+        return match;
+      });
+      const cloudmapNamespace = servicediscovery.PrivateDnsNamespace.get(
+        `${name}CloudmapNamespace`,
+        namespaceId,
+        { vpc: vpcId },
+        { parent: self },
+      );
+
+      const privateKeyValue = bastionInstance.apply((v) => {
+        if (!v) return;
+        const param = ssm.Parameter.get(
+          `${name}PrivateKeyValue`,
+          interpolate`/sst/vpc/${vpcId}/private-key-value`,
+          undefined,
+          { parent: self },
+        );
+        return param.value;
+      });
+
+      return {
+        vpc,
+        internetGateway,
+        securityGroup,
+        publicSubnets,
+        publicRouteTables,
+        privateSubnets,
+        privateRouteTables,
+        natGateways,
+        natInstances,
+        elasticIps,
+        bastionInstance,
+        cloudmapNamespace,
+        privateKeyValue,
+      };
+    }
+
+    function registerVersion(overrideVersion?: number) {
+      self.registerVersion({
+        new: _version,
+        old: overrideVersion ?? $cli.state.version[name],
+        message: [
+          `There is a new version of "Vpc" that has breaking changes.`,
+          ``,
+          `To continue using the previous version, rename "Vpc" to "Vpc.v${$cli.state.version[name]}". Or recreate this component to update - https://sst.dev/docs/components/#versioning`,
+        ].join("\n"),
+      });
+    }
+
     function registerOutputs() {
-      parent.registerOutputs({
+      self.registerOutputs({
         _tunnel: all([
-          parent.bastionInstance,
-          parent.privateKeyValue,
-          parent._privateSubnets,
-          parent._publicSubnets,
+          self.bastionInstance,
+          self.privateKeyValue,
+          self._privateSubnets,
+          self._publicSubnets,
         ]).apply(
           ([bastion, privateKeyValue, privateSubnets, publicSubnets]) => {
             if (!bastion) return;
@@ -385,25 +672,28 @@ export class Vpc extends Component implements Link.Linkable {
     }
 
     function normalizeAz() {
-      const zones = getAvailabilityZonesOutput(
-        {
-          state: "available",
-        },
-        { parent },
-      );
-      return all([zones, args?.az ?? 2]).apply(([zones, az]) =>
-        Array(az)
-          .fill(0)
-          .map((_, i) => zones.names[i]),
-      );
+      return output(args.az).apply((az) => {
+        if (Array.isArray(az)) return output(az);
+
+        const zones = getAvailabilityZonesOutput(
+          {
+            state: "available",
+          },
+          { parent: self },
+        );
+        return all([zones, args.az ?? 2]).apply(([zones, az]) =>
+          Array(az)
+            .fill(0)
+            .map((_, i) => zones.names[i]),
+        );
+      });
     }
 
     function normalizeNat() {
-      return output(args?.nat).apply((nat) => {
+      return all([args.nat, args.bastion]).apply(([nat, bastion]) => {
         if (nat === "managed") return { type: "managed" as const };
-        if (nat === "ec2") {
+        if (nat === "ec2")
           return { type: "ec2" as const, ec2: { instance: "t4g.nano" } };
-        }
         if (nat) return { type: "ec2" as const, ec2: nat.ec2 };
         return undefined;
       });
@@ -412,59 +702,72 @@ export class Vpc extends Component implements Link.Linkable {
     function createVpc() {
       return new ec2.Vpc(
         ...transform(
-          args?.transform?.vpc,
+          args.transform?.vpc,
           `${name}Vpc`,
           {
             cidrBlock: "10.0.0.0/16",
             enableDnsSupport: true,
             enableDnsHostnames: true,
             tags: {
+              Name: `${$app.name}-${$app.stage}-${name} VPC`,
               "sst:component-version": _version.toString(),
+              "sst:ref-version": _refVersion.toString(),
             },
           },
-          { parent },
+          { parent: self },
         ),
       );
     }
 
     function createKeyPair() {
-      if (!args?.bastion) return {};
+      const ret = output(args.bastion).apply((bastion) => {
+        if (!bastion) return {};
 
-      const tlsPrivateKey = new PrivateKey(
-        `${name}TlsPrivateKey`,
-        {
-          algorithm: "RSA",
-          rsaBits: 4096,
-        },
-        { parent },
-      );
+        const tlsPrivateKey = new PrivateKey(
+          `${name}TlsPrivateKey`,
+          {
+            algorithm: "RSA",
+            rsaBits: 4096,
+          },
+          { parent: self },
+        );
 
-      new ssm.Parameter(`${name}PrivateKey`, {
-        name: interpolate`/sst/vpc/${vpc.id}/private-key`,
-        type: ssm.ParameterType.SecureString,
-        value: tlsPrivateKey.privateKeyOpenssh,
+        new ssm.Parameter(
+          `${name}PrivateKeyValue`,
+          {
+            name: interpolate`/sst/vpc/${vpc.id}/private-key-value`,
+            description: "Bastion host private key",
+            type: ssm.ParameterType.SecureString,
+            value: tlsPrivateKey.privateKeyOpenssh,
+          },
+          { parent: self },
+        );
+
+        const keyPair = new ec2.KeyPair(
+          `${name}KeyPair`,
+          {
+            publicKey: tlsPrivateKey.publicKeyOpenssh,
+          },
+          { parent: self },
+        );
+
+        return { keyPair, privateKeyValue: tlsPrivateKey.privateKeyOpenssh };
       });
-
-      const keyPair = new ec2.KeyPair(
-        `${name}KeyPair`,
-        {
-          publicKey: tlsPrivateKey.publicKeyOpenssh,
-        },
-        { parent },
-      );
-
-      return { keyPair, privateKeyValue: tlsPrivateKey.privateKeyOpenssh };
+      return {
+        keyPair: output(ret.keyPair),
+        privateKeyValue: output(ret.privateKeyValue),
+      };
     }
 
     function createInternetGateway() {
       return new ec2.InternetGateway(
         ...transform(
-          args?.transform?.internetGateway,
+          args.transform?.internetGateway,
           `${name}InternetGateway`,
           {
             vpcId: vpc.id,
           },
-          { parent },
+          { parent: self },
         ),
       );
     }
@@ -472,7 +775,7 @@ export class Vpc extends Component implements Link.Linkable {
     function createSecurityGroup() {
       return new ec2.DefaultSecurityGroup(
         ...transform(
-          args?.transform?.securityGroup,
+          args.transform?.securityGroup,
           `${name}SecurityGroup`,
           {
             vpcId: vpc.id,
@@ -494,7 +797,7 @@ export class Vpc extends Component implements Link.Linkable {
               },
             ],
           },
-          { parent },
+          { parent: self },
         ),
       );
     }
@@ -506,24 +809,24 @@ export class Vpc extends Component implements Link.Linkable {
         return subnets.map((subnet, i) => {
           const elasticIp = new ec2.Eip(
             ...transform(
-              args?.transform?.elasticIp,
+              args.transform?.elasticIp,
               `${name}ElasticIp${i + 1}`,
               {
                 vpc: true,
               },
-              { parent },
+              { parent: self },
             ),
           );
 
           const natGateway = new ec2.NatGateway(
             ...transform(
-              args?.transform?.natGateway,
+              args.transform?.natGateway,
               `${name}NatGateway${i + 1}`,
               {
                 subnetId: subnet.id,
                 allocationId: elasticIp.id,
               },
-              { parent },
+              { parent: self },
             ),
           );
           return { elasticIp, natGateway };
@@ -561,7 +864,7 @@ export class Vpc extends Component implements Link.Linkable {
               },
             ],
           },
-          { parent },
+          { parent: self },
         );
 
         const role = new iam.Role(
@@ -581,57 +884,61 @@ export class Vpc extends Component implements Link.Linkable {
               ],
             }).json,
             managedPolicyArns: [
-              "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+              interpolate`arn:${partition}:iam::aws:policy/AmazonSSMManagedInstanceCore`,
             ],
           },
-          { parent },
+          { parent: self },
         );
 
         const instanceProfile = new iam.InstanceProfile(
           `${name}NatInstanceProfile`,
           { role: role.name },
-          { parent },
+          { parent: self },
         );
 
-        const ami = ec2.getAmiOutput(
-          {
-            owners: ["568608671756"], // AWS account ID for fck-nat AMI
-            filters: [
-              {
-                name: "name",
-                // The AMI has the SSM agent pre-installed
-                values: ["fck-nat-al2023-*"],
-              },
-              {
-                name: "architecture",
-                values: ["arm64"],
-              },
-            ],
-            mostRecent: true,
-          },
-          { parent },
-        );
-
-        return all([zones, publicSubnets]).apply(([zones, publicSubnets]) =>
-          zones.map((_, i) => {
-            return new ec2.Instance(
-              `${name}NatInstance${i + 1}`,
-              {
-                instanceType: nat.ec2.instance,
-                ami: ami.id,
-                subnetId: publicSubnets[i].id,
-                vpcSecurityGroupIds: [sg.id],
-                iamInstanceProfile: instanceProfile.name,
-                sourceDestCheck: false,
-                keyName: keyPair?.keyName,
-                tags: {
-                  Name: `${name} NAT Instance`,
-                  "sst:lookup-type": "nat",
+        const ami =
+          nat.ec2.ami ??
+          ec2.getAmiOutput(
+            {
+              owners: ["568608671756"], // AWS account ID for fck-nat AMI
+              filters: [
+                {
+                  name: "name",
+                  // The AMI has the SSM agent pre-installed
+                  values: ["fck-nat-al2023-*"],
                 },
-              },
-              { parent },
-            );
-          }),
+                {
+                  name: "architecture",
+                  values: ["arm64"],
+                },
+              ],
+              mostRecent: true,
+            },
+            { parent: self },
+          ).id;
+
+        return all([zones, publicSubnets, keyPair, args.bastion]).apply(
+          ([zones, publicSubnets, keyPair, bastion]) =>
+            zones.map((_, i) => {
+              return new ec2.Instance(
+                `${name}NatInstance${i + 1}`,
+                {
+                  instanceType: nat.ec2.instance,
+                  ami,
+                  subnetId: publicSubnets[i].id,
+                  vpcSecurityGroupIds: [sg.id],
+                  iamInstanceProfile: instanceProfile.name,
+                  sourceDestCheck: false,
+                  keyName: keyPair?.keyName,
+                  tags: {
+                    Name: `${name} NAT Instance`,
+                    "sst:is-nat": "true",
+                    ...(bastion && i === 0 ? { "sst:is-bastion": "true" } : {}),
+                  },
+                },
+                { parent: self },
+              );
+            }),
         );
       });
     }
@@ -641,7 +948,7 @@ export class Vpc extends Component implements Link.Linkable {
         zones.map((zone, i) => {
           const subnet = new ec2.Subnet(
             ...transform(
-              args?.transform?.publicSubnet,
+              args.transform?.publicSubnet,
               `${name}PublicSubnet${i + 1}`,
               {
                 vpcId: vpc.id,
@@ -649,13 +956,13 @@ export class Vpc extends Component implements Link.Linkable {
                 availabilityZone: zone,
                 mapPublicIpOnLaunch: true,
               },
-              { parent },
+              { parent: self },
             ),
           );
 
           const routeTable = new ec2.RouteTable(
             ...transform(
-              args?.transform?.publicRouteTable,
+              args.transform?.publicRouteTable,
               `${name}PublicRouteTable${i + 1}`,
               {
                 vpcId: vpc.id,
@@ -666,7 +973,7 @@ export class Vpc extends Component implements Link.Linkable {
                   },
                 ],
               },
-              { parent },
+              { parent: self },
             ),
           );
 
@@ -676,7 +983,7 @@ export class Vpc extends Component implements Link.Linkable {
               subnetId: subnet.id,
               routeTableId: routeTable.id,
             },
-            { parent },
+            { parent: self },
           );
 
           return { subnet, routeTable };
@@ -694,20 +1001,20 @@ export class Vpc extends Component implements Link.Linkable {
         zones.map((zone, i) => {
           const subnet = new ec2.Subnet(
             ...transform(
-              args?.transform?.privateSubnet,
+              args.transform?.privateSubnet,
               `${name}PrivateSubnet${i + 1}`,
               {
                 vpcId: vpc.id,
                 cidrBlock: `10.0.${8 * i + 4}.0/22`,
                 availabilityZone: zone,
               },
-              { parent },
+              { parent: self },
             ),
           );
 
           const routeTable = new ec2.RouteTable(
             ...transform(
-              args?.transform?.privateRouteTable,
+              args.transform?.privateRouteTable,
               `${name}PrivateRouteTable${i + 1}`,
               {
                 vpcId: vpc.id,
@@ -733,7 +1040,7 @@ export class Vpc extends Component implements Link.Linkable {
                   ],
                 ),
               },
-              { parent },
+              { parent: self },
             ),
           );
 
@@ -743,7 +1050,7 @@ export class Vpc extends Component implements Link.Linkable {
               subnetId: subnet.id,
               routeTableId: routeTable.id,
             },
-            { parent },
+            { parent: self },
           );
 
           return { subnet, routeTable };
@@ -757,99 +1064,104 @@ export class Vpc extends Component implements Link.Linkable {
     }
 
     function createBastion() {
-      if (!args?.bastion) return undefined;
+      return all([args.bastion, natInstances, keyPair]).apply(
+        ([bastion, natInstances, keyPair]) => {
+          if (!bastion) return undefined;
 
-      return natInstances.apply((natInstances) => {
-        if (natInstances.length) return natInstances[0];
+          if (natInstances.length) return natInstances[0];
 
-        const sg = new ec2.SecurityGroup(
-          `${name}BastionSecurityGroup`,
-          {
-            vpcId: vpc.id,
-            ingress: [
+          const sg = new ec2.SecurityGroup(
+            ...transform(
+              args.transform?.bastionSecurityGroup,
+              `${name}BastionSecurityGroup`,
               {
-                protocol: "tcp",
-                fromPort: 22,
-                toPort: 22,
-                cidrBlocks: ["0.0.0.0/0"],
+                vpcId: vpc.id,
+                ingress: [
+                  {
+                    protocol: "tcp",
+                    fromPort: 22,
+                    toPort: 22,
+                    cidrBlocks: ["0.0.0.0/0"],
+                  },
+                ],
+                egress: [
+                  {
+                    protocol: "-1",
+                    fromPort: 0,
+                    toPort: 0,
+                    cidrBlocks: ["0.0.0.0/0"],
+                  },
+                ],
               },
-            ],
-            egress: [
-              {
-                protocol: "-1",
-                fromPort: 0,
-                toPort: 0,
-                cidrBlocks: ["0.0.0.0/0"],
-              },
-            ],
-          },
-          { parent },
-        );
+              { parent: self },
+            ),
+          );
 
-        const role = new iam.Role(
-          `${name}BastionRole`,
-          {
-            assumeRolePolicy: iam.getPolicyDocumentOutput({
-              statements: [
+          const role = new iam.Role(
+            `${name}BastionRole`,
+            {
+              assumeRolePolicy: iam.getPolicyDocumentOutput({
+                statements: [
+                  {
+                    actions: ["sts:AssumeRole"],
+                    principals: [
+                      {
+                        type: "Service",
+                        identifiers: ["ec2.amazonaws.com"],
+                      },
+                    ],
+                  },
+                ],
+              }).json,
+              managedPolicyArns: [
+                interpolate`arn:${partition}:iam::aws:policy/AmazonSSMManagedInstanceCore`,
+              ],
+            },
+            { parent: self },
+          );
+          const instanceProfile = new iam.InstanceProfile(
+            `${name}BastionProfile`,
+            { role: role.name },
+            { parent: self },
+          );
+          const ami = ec2.getAmiOutput(
+            {
+              owners: ["amazon"],
+              filters: [
                 {
-                  actions: ["sts:AssumeRole"],
-                  principals: [
-                    {
-                      type: "Service",
-                      identifiers: ["ec2.amazonaws.com"],
-                    },
-                  ],
+                  name: "name",
+                  // The AMI has the SSM agent pre-installed
+                  values: ["al2023-ami-2023.5.*"],
+                },
+                {
+                  name: "architecture",
+                  values: ["arm64"],
                 },
               ],
-            }).json,
-            managedPolicyArns: [
-              "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
-            ],
-          },
-          { parent },
-        );
-        const instanceProfile = new iam.InstanceProfile(
-          `${name}BastionProfile`,
-          { role: role.name },
-          { parent },
-        );
-        const ami = ec2.getAmiOutput(
-          {
-            owners: ["amazon"],
-            filters: [
-              {
-                name: "name",
-                // The AMI has the SSM agent pre-installed
-                values: ["al2023-ami-2023.5.*"],
-              },
-              {
-                name: "architecture",
-                values: ["arm64"],
-              },
-            ],
-            mostRecent: true,
-          },
-          { parent },
-        );
-        return new ec2.Instance(
-          ...transform(
-            args?.transform?.bastionInstance,
-            `${name}BastionInstance`,
-            {
-              instanceType: "t4g.nano",
-              ami: ami.id,
-              subnetId: publicSubnets.apply((v) => v[0].id),
-              vpcSecurityGroupIds: [sg.id],
-              iamInstanceProfile: instanceProfile.name,
-              keyName: keyPair?.keyName,
-              tags: {
-                "sst:lookup-type": "bastion",
-              },
+              mostRecent: true,
             },
-            { parent },
-          ),
-        );
-      });
+            { parent: self },
+          );
+          return new ec2.Instance(
+            ...transform(
+              args.transform?.bastionInstance,
+              `${name}BastionInstance`,
+              {
+                instanceType: "t4g.nano",
+                ami: ami.id,
+                subnetId: publicSubnets.apply((v) => v[0].id),
+                vpcSecurityGroupIds: [sg.id],
+                iamInstanceProfile: instanceProfile.name,
+                keyName: keyPair?.keyName,
+                tags: {
+                  "sst:is-bastion": "true",
+                },
+              },
+              { parent: self },
+            ),
+          );
+        },
+      );
     }
 
     function createCloudmapNamespace() {
@@ -859,7 +1171,7 @@ export class Vpc extends Component implements Link.Linkable {
           name: "sst",
           vpc: vpc.id,
         },
-        { parent },
+        { parent: self },
       );
     }
   }
@@ -1003,238 +1315,14 @@ export class Vpc extends Component implements Link.Linkable {
     vpcId: Input<string>,
     opts?: ComponentResourceOptions,
   ) {
-    const vpc = ec2.Vpc.get(`${name}Vpc`, vpcId, undefined, opts);
-    const internetGateway = ec2.InternetGateway.get(
-      `${name}InstanceGateway`,
-      ec2.getInternetGatewayOutput(
-        {
-          filters: [{ name: "attachment.vpc-id", values: [vpc.id] }],
-        },
-        opts,
-      ).internetGatewayId,
-      undefined,
+    return new Vpc(
+      name,
+      {
+        ref: true,
+        vpcId,
+      } satisfies VpcRef as VpcArgs,
       opts,
     );
-    const securityGroup = ec2.SecurityGroup.get(
-      `${name}SecurityGroup`,
-      ec2
-        .getSecurityGroupsOutput(
-          {
-            filters: [
-              { name: "group-name", values: ["default"] },
-              { name: "vpc-id", values: [vpc.id] },
-            ],
-          },
-          opts,
-        )
-        .ids.apply((ids) => {
-          if (!ids.length) {
-            throw new VisibleError(`Security group not found in VPC ${vpcId}`);
-          }
-          return ids[0];
-        }),
-      undefined,
-      opts,
-    );
-    const privateSubnets = ec2
-      .getSubnetsOutput(
-        {
-          filters: [
-            { name: "vpc-id", values: [vpc.id] },
-            { name: "tag:Name", values: ["*Private*"] },
-          ],
-        },
-        opts,
-      )
-      .ids.apply((ids) =>
-        ids.map((id, i) =>
-          ec2.Subnet.get(`${name}PrivateSubnet${i + 1}`, id, undefined, opts),
-        ),
-      );
-    const privateRouteTables = privateSubnets.apply((subnets) =>
-      subnets.map((subnet, i) =>
-        ec2.RouteTable.get(
-          `${name}PrivateRouteTable${i + 1}`,
-          ec2.getRouteTableOutput({ subnetId: subnet.id }, opts).routeTableId,
-          undefined,
-          opts,
-        ),
-      ),
-    );
-    const publicSubnets = ec2
-      .getSubnetsOutput(
-        {
-          filters: [
-            { name: "vpc-id", values: [vpc.id] },
-            { name: "tag:Name", values: ["*Public*"] },
-          ],
-        },
-        opts,
-      )
-      .ids.apply((ids) =>
-        ids.map((id, i) =>
-          ec2.Subnet.get(`${name}PublicSubnet${i + 1}`, id, undefined, opts),
-        ),
-      );
-    const publicRouteTables = publicSubnets.apply((subnets) =>
-      subnets.map((subnet, i) =>
-        ec2.RouteTable.get(
-          `${name}PublicRouteTable${i + 1}`,
-          ec2.getRouteTableOutput({ subnetId: subnet.id }, opts).routeTableId,
-          undefined,
-          opts,
-        ),
-      ),
-    );
-    const natGateways = publicSubnets.apply((subnets) => {
-      const natGatewayIds = subnets.map((subnet, i) =>
-        ec2
-          .getNatGatewaysOutput(
-            {
-              filters: [
-                { name: "subnet-id", values: [subnet.id] },
-                { name: "state", values: ["available"] },
-              ],
-            },
-            opts,
-          )
-          .ids.apply((ids) => ids[0]),
-      );
-      return output(natGatewayIds).apply((ids) =>
-        ids
-          .filter((id) => id)
-          .map((id, i) =>
-            ec2.NatGateway.get(
-              `${name}NatGateway${i + 1}`,
-              id,
-              undefined,
-              opts,
-            ),
-          ),
-      );
-    });
-    const elasticIps = natGateways.apply((nats) =>
-      nats.map((nat, i) =>
-        ec2.Eip.get(
-          `${name}ElasticIp${i + 1}`,
-          nat.allocationId as Output<string>,
-          undefined,
-          opts,
-        ),
-      ),
-    );
-    const natInstances = ec2
-      .getInstancesOutput(
-        {
-          filters: [
-            { name: "tag:sst:lookup-type", values: ["nat"] },
-            { name: "vpc-id", values: [vpc.id] },
-          ],
-        },
-        opts,
-      )
-      .ids.apply((ids) =>
-        ids.map((id, i) =>
-          ec2.Instance.get(`${name}NatInstance${i + 1}`, id, undefined, opts),
-        ),
-      );
-    const bastionInstance = natInstances.apply((instances) => {
-      if (instances.length) return output(instances[0]);
-      return ec2
-        .getInstancesOutput(
-          {
-            filters: [
-              { name: "tag:sst:lookup-type", values: ["bastion"] },
-              { name: "vpc-id", values: [vpc.id] },
-            ],
-          },
-          opts,
-        )
-        .ids.apply((ids) =>
-          ids.length
-            ? ec2.Instance.get(
-                `${name}BastionInstance`,
-                ids[0],
-                undefined,
-                opts,
-              )
-            : undefined,
-        );
-    });
-
-    // Note: can also use servicediscovery.getDnsNamespaceOutput() here, ie.
-    // ```ts
-    // const namespaceId = servicediscovery.getDnsNamespaceOutput({
-    //   name: "sst",
-    //   type: "DNS_PRIVATE",
-    // }).id;
-    // ```
-    // but if user deployed multiple VPCs into the same account. This will error because
-    // there are multiple results. Even though `getDnsNamespaceOutput()` takes tags in args,
-    // the tags are not used for lookup.
-    const zone = output(vpcId).apply((vpcId) =>
-      route53.getZone(
-        {
-          name: "sst",
-          privateZone: true,
-          vpcId,
-        },
-        opts,
-      ),
-    );
-    const namespaceId = zone.linkedServiceDescription.apply((description) => {
-      const match = description.match(/:namespace\/(ns-[a-z1-9]*)/)?.[1];
-      if (!match) {
-        throw new VisibleError(
-          `Cloud Map namespace not found for VPC ${vpcId}`,
-        );
-      }
-      return match;
-    });
-    const cloudmapNamespace = servicediscovery.PrivateDnsNamespace.get(
-      `${name}CloudmapNamespace`,
-      namespaceId,
-      { vpc: vpcId },
-      opts,
-    );
-
-    const privateKeyValue = bastionInstance.apply((v) => {
-      if (!v) return;
-      const param = ssm.Parameter.get(
-        `${name}PrivateKey`,
-        interpolate`/sst/vpc/${vpc.id}/private-key`,
-        undefined,
-        opts,
-      );
-      return param.value;
-    });
-
-    // override version
-    return vpc.tags
-      .apply((tags) => {
-        $cli.state.version[name] = tags?.["sst:component-version"]
-          ? parseInt(tags["sst:component-version"])
-          : $cli.state.version[name];
-      })
-      .apply(
-        () =>
-          new Vpc(name, {
-            ref: true,
-            vpc,
-            internetGateway,
-            securityGroup,
-            privateSubnets,
-            privateRouteTables,
-            publicSubnets,
-            publicRouteTables,
-            natGateways,
-            natInstances,
-            elasticIps,
-            bastionInstance,
-            cloudmapNamespace,
-            privateKeyValue: output(privateKeyValue),
-          } satisfies VpcRef as VpcArgs),
-      );
   }
 
   /** @internal */

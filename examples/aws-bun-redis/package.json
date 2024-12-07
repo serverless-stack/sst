@@ -1,0 +1,20 @@
+{
+  "name": "aws-bun-redis",
+  "module": "index.ts",
+  "type": "module",
+  "scripts": {
+    "build": "bun build --target bun index.ts",
+    "dev": "bun run --watch index.ts"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "8.10.145",
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "ioredis": "^5.4.1",
+    "sst": "3.1.65"
+  }
+}
