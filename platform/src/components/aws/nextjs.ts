@@ -482,9 +482,9 @@ export interface NextjsArgs extends SsrSiteArgs {
 export class Nextjs extends Component implements Link.Linkable {
   private cdn?: Output<Cdn>;
   private assets?: Bucket;
-  private revalidationQueue?: Output<Queue>;
-  private revalidationTable?: Output<dynamodb.Table>;
-  private revalidationFunction?: Output<Function>;
+  private revalidationQueue?: Output<Queue | undefined>;
+  private revalidationTable?: Output<dynamodb.Table | undefined>;
+  private revalidationFunction?: Output<Function | undefined>;
   private server?: Output<Function>;
   private devUrl?: Output<string>;
 
@@ -545,8 +545,9 @@ export class Nextjs extends Component implements Link.Linkable {
       pagesManifest,
       prerenderManifest,
     } = loadBuildOutput();
-    const { revalidationQueue, revalidationFunction } = createRevalidationQueue();
-    const { revalidationTable } = createRevalidationTable();
+    const { revalidationQueue, revalidationFunction } =
+      createRevalidationQueue();
+    const revalidationTable = createRevalidationTable();
     createRevalidationTableSeeder();
     const plan = buildPlan();
     removeSourcemaps();
@@ -952,27 +953,28 @@ export class Nextjs extends Component implements Link.Linkable {
     }
 
     function createRevalidationQueue() {
-      return all([outputPath, openNextOutput]).apply(
+      const ret = all([outputPath, openNextOutput]).apply(
         ([outputPath, openNextOutput]) => {
-          if (openNextOutput.additionalProps?.disableIncrementalCache) return;
+          if (openNextOutput.additionalProps?.disableIncrementalCache)
+            return {};
 
           const revalidationFunction =
             openNextOutput.additionalProps?.revalidationFunction;
-          if (!revalidationFunction) return;
+          if (!revalidationFunction) return {};
 
-          const revalidationQueue = new Queue(
+          const queue = new Queue(
             `${name}RevalidationEvents`,
             {
               fifo: true,
               transform: {
-                revalidationQueue: (args) => {
+                queue: (args) => {
                   args.receiveWaitTimeSeconds = 20;
                 },
               },
             },
             { parent },
           );
-          revalidationQueue.subscribe(
+          const subscriber = queue.subscribe(
             {
               description: `${name} ISR revalidator`,
               handler: revalidationFunction.handler,
@@ -988,7 +990,7 @@ export class Nextjs extends Component implements Link.Linkable {
                     "sqs:GetQueueUrl",
                     "sqs:ReceiveMessage",
                   ],
-                  resources: [revalidationQueue.arn],
+                  resources: [queue.arn],
                 },
               ],
               dev: false,
@@ -1003,16 +1005,20 @@ export class Nextjs extends Component implements Link.Linkable {
             },
             { parent },
           );
-          return { revalidationQueue, revalidationFunction };
+          return { queue, function: subscriber.nodes.function };
         },
       );
+      return {
+        revalidationQueue: output(ret.queue),
+        revalidationFunction: output(ret.function),
+      };
     }
 
     function createRevalidationTable() {
       return openNextOutput.apply((openNextOutput) => {
         if (openNextOutput.additionalProps?.disableTagCache) return;
 
-        const revalidationTable =  new dynamodb.Table(
+        return new dynamodb.Table(
           `${name}RevalidationTable`,
           {
             attributes: [
@@ -1037,7 +1043,6 @@ export class Nextjs extends Component implements Link.Linkable {
           },
           { parent },
         );
-        return { revalidationTable };
       });
     }
 
@@ -1411,7 +1416,7 @@ if(event.request.headers["cloudfront-viewer-longitude"]) {
        */
       revalidationTable: this.revalidationTable,
       /**
-       * The Lambda function that triggers the ISR revalidator.
+       * The Lambda function that processes the ISR revalidation.
        */
       revalidationFunction: this.revalidationFunction,
     };
