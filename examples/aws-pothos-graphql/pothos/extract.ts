@@ -1,9 +1,11 @@
 import { lexicographicSortSchema, printSchema } from "graphql";
+import path from "path";
 import { schema } from "./schema";
 
 async function extract() {
   const schemaAsString = printSchema(lexicographicSortSchema(schema));
-  await Bun.write("../graphql/schema.graphql", schemaAsString);
+
+  await Bun.write("./graphql/schema.graphql", schemaAsString);
 
   const proc = Bun.spawn(
     [
@@ -17,7 +19,7 @@ async function extract() {
       "--esm",
     ],
     {
-      cwd: "../graphql",
+      cwd: "./graphql",
     }
   );
 
