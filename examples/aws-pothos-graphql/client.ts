@@ -2,7 +2,7 @@ import { Resource } from "sst";
 import { createClient } from "./graphql/genql";
 
 const client = createClient({
-  url: `${Resource.PothosGraphql.url}/graphql`,
+  url: `${Resource.Api.url}/graphql`,
 });
 
 export async function handler() {
