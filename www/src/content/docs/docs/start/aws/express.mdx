@@ -241,7 +241,7 @@ This should upload the `package.json`. Now head over to `http://localhost:80/lat
 To deploy our app we'll first add a `Dockerfile`.
 
 ```dockerfile title="Dockerfile"
-FROM node:18-bullseye-slim
+FROM node:lts-alpine
 
 WORKDIR /app/
 

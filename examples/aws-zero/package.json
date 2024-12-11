@@ -1,0 +1,11 @@
+{
+  "name": "base-ts",
+  "version": "0.0.0",
+  "dependencies": {
+    "@rocicorp/zero": "^0.7.2024120400",
+    "sst": "^3.3.63"
+  },
+  "trustedDependencies": [
+    "@rocicorp/zero-sqlite3"
+  ]
+}

@@ -5,6 +5,7 @@ export default $config({
     return {
       name: "{{.App}}",
       removal: input?.stage === "production" ? "retain" : "remove",
+      protect: ["production"].includes(input?.stage),
       home: "{{.Home}}",
     };
   },

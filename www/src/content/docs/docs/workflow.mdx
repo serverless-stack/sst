@@ -4,6 +4,7 @@ description: The basic workflow of building apps with SST.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import VideoAside from "../../../components/VideoAside.astro";
 
 The main difference between working on SST versus any other framework is that everything related to your app is all **defined in code**.
 
@@ -295,9 +296,7 @@ sst dev
 
 This deploys your app to your _personal_ stage in _dev mode_. It brings up a multiplexer that deploys your app, runs your functions, creates a tunnel, and starts your frontend and container services.
 
-:::note
-The `sst dev` CLI deploys your app a little differently for local dev.
-:::
+<VideoAside title="Learn more about SST's dev mode" href="https://youtu.be/mefLc137EB0" />
 
 It deploys your app a little differently and is optimized for local development.
 
@@ -305,7 +304,7 @@ It deploys your app a little differently and is optimized for local development.
 2. It **does not deploy** your frontends or container services. Instead, it starts them locally.
 3. It also creates a [_tunnel_](/docs/reference/cli#tunnel) that allows them to connect to any resources that are deployed in a VPC.
 
-:::tip
+:::note
 Only use `sst dev` in your personal stage.
 :::
 

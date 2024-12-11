@@ -63,6 +63,7 @@ func Register(ctx context.Context, p *project.Project, r *rpc.Server) error {
 	r.RegisterName("Resource.Aws.HostedZoneLookup", &HostedZoneLookup{awsResource})
 	r.RegisterName("Resource.Aws.OriginAccessIdentity", &OriginAccessIdentity{awsResource})
 	r.RegisterName("Resource.Aws.OriginAccessControl", &OriginAccessControl{awsResource})
+	r.RegisterName("Resource.Aws.RdsRoleLookup", &RdsRoleLookup{awsResource})
 	r.RegisterName("Resource.Aws.VectorTable", &VectorTable{awsResource})
 	return nil
 }

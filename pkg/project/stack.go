@@ -162,9 +162,14 @@ var CommonErrors = []CommonError{
 var ErrStackRunFailed = fmt.Errorf("stack run had errors")
 var ErrStageNotFound = fmt.Errorf("stage not found")
 var ErrPassphraseInvalid = fmt.Errorf("passphrase invalid")
+var ErrProtectedStage = fmt.Errorf("cannot remove protected stage")
 
 func (p *Project) Run(ctx context.Context, input *StackInput) error {
 	slog.Info("running stack command", "cmd", input.Command)
+
+	if p.app.Protect && input.Command == "remove" {
+		return ErrProtectedStage
+	}
 
 	bus.Publish(&StackCommandEvent{
 		App:     p.app.Name,

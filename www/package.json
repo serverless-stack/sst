@@ -17,10 +17,11 @@
     "generate-errors-json": "go run ../cmd/sst common-errors > common-errors-doc.json"
   },
   "dependencies": {
+    "@astro-community/astro-embed-youtube": "^0.5.3",
     "@astrojs/check": "^0.9.2",
+    "@astrojs/markdown-remark": "^5.3.0",
     "@astrojs/sitemap": "^3.1.6",
     "@astrojs/starlight": "^0.28.3",
-    "@astro-community/astro-embed-youtube": "^0.5.3",
     "@fontsource-variable/roboto-mono": "^5.0.17",
     "@fontsource-variable/rubik": "^5.0.20",
     "@fontsource/ibm-plex-mono": "^5.0.8",
@@ -28,6 +29,7 @@
     "astro-expressive-code": "^0.36.0",
     "astro-sst": "^2.41.5",
     "js-base64": "^3.7.6",
+    "rehype-autolink-headings": "^7.1.0",
     "sharp": "^0.33.3"
   },
   "devDependencies": {

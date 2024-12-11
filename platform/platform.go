@@ -2,11 +2,14 @@ package platform
 
 import (
 	"embed"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
+
+	"github.com/sst/ion/pkg/js"
 )
 
 //go:generate ../scripts/build
@@ -64,4 +67,18 @@ func CopyTemplate(template string, destDir string) {
 		slog.Info("copying template", "path", path)
 		return nil
 	})
+}
+
+func PackageJson() (*js.PackageJson, error) {
+	file, err := files.Open("package.json")
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	var result js.PackageJson
+	err = json.NewDecoder(file).Decode(&result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
 }

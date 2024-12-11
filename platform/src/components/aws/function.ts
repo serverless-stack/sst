@@ -1245,6 +1245,10 @@ export class Function extends Component implements Link.Linkable {
       }),
   );
 
+  private static readonly appsync = lazy(() =>
+    rpc.call("Provider.Aws.Appsync", {}),
+  );
+
   constructor(
     name: string,
     args: FunctionArgs,
@@ -1384,7 +1388,7 @@ export class Function extends Component implements Link.Linkable {
         bootstrapData,
         Function.encryptionKey().base64,
         args.link,
-      ]).apply(([environment, dev, bootstrap, key, link]) => {
+      ]).apply(async ([environment, dev, bootstrap, key, link]) => {
         const result = environment ?? {};
         result.SST_RESOURCE_App = JSON.stringify({
           name: $app.name,
@@ -1400,9 +1404,10 @@ export class Function extends Component implements Link.Linkable {
         result.SST_KEY = key;
         result.SST_KEY_FILE = "resource.enc";
         if (dev) {
+          const appsync = await Function.appsync();
           result.SST_REGION = process.env.SST_AWS_REGION!;
-          result.SST_APPSYNC_HTTP = process.env.SST_APPSYNC_HTTP!;
-          result.SST_APPSYNC_REALTIME = process.env.SST_APPSYNC_REALTIME!;
+          result.SST_APPSYNC_HTTP = appsync.http;
+          result.SST_APPSYNC_REALTIME = appsync.realtime;
           result.SST_FUNCTION_ID = name;
           result.SST_APP = $app.name;
           result.SST_STAGE = $app.stage;

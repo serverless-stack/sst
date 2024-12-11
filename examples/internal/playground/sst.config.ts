@@ -13,6 +13,7 @@ export default $config({
 
     const vpc = addVpc();
     const bucket = addBucket();
+    const auth = addAuth();
     //const queue = addQueue();
     //const efs = addEfs();
     //const email = addEmail();
@@ -38,6 +39,13 @@ export default $config({
       const bucket = new sst.aws.Bucket("MyBucket");
       ret.bucket = bucket.name;
       return bucket;
+    }
+
+    function addAuth() {
+      const auth = new sst.aws.Auth("MyAuth", {
+        authorizer: "functions/auth/index.handler",
+      });
+      return auth;
     }
 
     function addQueue() {

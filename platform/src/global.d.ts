@@ -60,6 +60,11 @@ interface $APP
      * The providers currently being used in the app.
      */
     providers: App["providers"];
+
+    /**
+     * If true, prevents `sst remove` from being executed on this stage
+     */
+    protect: boolean;
   }> {}
 
 declare global {

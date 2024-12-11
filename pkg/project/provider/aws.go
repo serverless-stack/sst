@@ -15,6 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	appsyncSdk "github.com/aws/aws-sdk-go-v2/service/appsync"
+	appsyncTypes "github.com/aws/aws-sdk-go-v2/service/appsync/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
@@ -48,14 +50,11 @@ func (a *AwsProvider) Env() (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	bootstrap, err := a.Bootstrap(a.config.Region)
 	env := map[string]string{}
 	env["SST_AWS_ACCESS_KEY_ID"] = creds.AccessKeyID
 	env["SST_AWS_SECRET_ACCESS_KEY"] = creds.SecretAccessKey
 	env["SST_AWS_SESSION_TOKEN"] = creds.SessionToken
 	env["SST_AWS_REGION"] = a.config.Region
-	env["SST_APPSYNC_HTTP"] = bootstrap.AppsyncHttp
-	env["SST_APPSYNC_REALTIME"] = bootstrap.AppsyncRealtime
 	if a.profile != "" {
 		env["AWS_PROFILE"] = a.profile
 	}
@@ -196,6 +195,74 @@ func (p *AwsProvider) Bootstrap(region string) (*AwsBootstrapData, error) {
 	}
 	p.bootstrapCache[region] = bootstrapData
 	return bootstrapData, nil
+}
+func (app *AwsProvider) ResolveAppSync(ctx context.Context) (string, string, error) {
+	client := appsyncSdk.NewFromConfig(app.config)
+	var nextToken *string
+	for {
+		results, err := client.ListApis(ctx, &appsyncSdk.ListApisInput{
+			NextToken: nextToken,
+		})
+		if err != nil {
+			return "", "", err
+		}
+		for _, result := range results.Apis {
+			if *result.Name == "sst" {
+				match, err := client.GetApi(ctx, &appsyncSdk.GetApiInput{
+					ApiId: result.ApiId,
+				})
+				if err != nil {
+					return "", "", err
+				}
+				return match.Api.Dns["HTTP"], match.Api.Dns["REALTIME"], nil
+			}
+		}
+		if results.NextToken == nil {
+			break
+		}
+		nextToken = results.NextToken
+	}
+	api, err := client.CreateApi(ctx, &appsyncSdk.CreateApiInput{
+		Name: aws.String("sst"),
+		EventConfig: &appsyncTypes.EventConfig{
+			AuthProviders: []appsyncTypes.AuthProvider{
+				{AuthType: appsyncTypes.AuthenticationTypeAwsIam},
+				{AuthType: appsyncTypes.AuthenticationTypeApiKey},
+			},
+			ConnectionAuthModes: []appsyncTypes.AuthMode{
+				{AuthType: appsyncTypes.AuthenticationTypeAwsIam},
+				{AuthType: appsyncTypes.AuthenticationTypeApiKey},
+			},
+			DefaultPublishAuthModes: []appsyncTypes.AuthMode{
+				{AuthType: appsyncTypes.AuthenticationTypeAwsIam},
+				{AuthType: appsyncTypes.AuthenticationTypeApiKey},
+			},
+			DefaultSubscribeAuthModes: []appsyncTypes.AuthMode{
+				{AuthType: appsyncTypes.AuthenticationTypeAwsIam},
+				{AuthType: appsyncTypes.AuthenticationTypeApiKey},
+			},
+		},
+	})
+	if err != nil {
+		return "", "", err
+	}
+	_, err = client.CreateChannelNamespace(ctx, &appsyncSdk.CreateChannelNamespaceInput{
+		Name:  aws.String("sst"),
+		ApiId: api.Api.ApiId,
+		PublishAuthModes: []appsyncTypes.AuthMode{
+			{AuthType: appsyncTypes.AuthenticationTypeAwsIam},
+			{AuthType: appsyncTypes.AuthenticationTypeApiKey},
+		},
+		SubscribeAuthModes: []appsyncTypes.AuthMode{
+			{AuthType: appsyncTypes.AuthenticationTypeAwsIam},
+			{AuthType: appsyncTypes.AuthenticationTypeApiKey},
+		},
+	})
+	if err != nil {
+		return "", "", err
+	}
+	slog.Info("got api", "api", api.Api.Dns)
+	return api.Api.Dns["HTTP"], api.Api.Dns["REALTIME"], nil
 }
 
 type AwsBootstrapData struct {

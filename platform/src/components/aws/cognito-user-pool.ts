@@ -173,6 +173,9 @@ export interface CognitoUserPoolArgs {
   /**
    * Configure the multi-factor authentication (MFA) settings for the User Pool.
    *
+   * If you enable MFA using `on` or `optional`, you need to configure either `sms` or
+   * `softwareToken` as well.
+   *
    * @default MFA is disabled.
    * @example
    *
@@ -559,17 +562,17 @@ export class CognitoUserPool extends Component implements Link.Linkable {
                         triggers.customEmailSender === undefined
                           ? undefined
                           : {
-                              lambdaArn: createTrigger("customEmailSender")!,
-                              lambdaVersion: "V1_0",
-                            },
+                            lambdaArn: createTrigger("customEmailSender")!,
+                            lambdaVersion: "V1_0",
+                          },
                       customMessage: createTrigger("customMessage"),
                       customSmsSender:
                         triggers.customSmsSender === undefined
                           ? undefined
                           : {
-                              lambdaArn: createTrigger("customSmsSender")!,
-                              lambdaVersion: "V1_0",
-                            },
+                            lambdaArn: createTrigger("customSmsSender")!,
+                            lambdaVersion: "V1_0",
+                          },
                       defineAuthChallenge: createTrigger("defineAuthChallenge"),
                       postAuthentication: createTrigger("postAuthentication"),
                       postConfirmation: createTrigger("postConfirmation"),
@@ -579,9 +582,9 @@ export class CognitoUserPool extends Component implements Link.Linkable {
                         triggers.preTokenGeneration === undefined
                           ? undefined
                           : {
-                              lambdaArn: createTrigger("preTokenGeneration")!,
-                              lambdaVersion: triggers.preTokenGenerationVersion,
-                            },
+                            lambdaArn: createTrigger("preTokenGeneration")!,
+                            lambdaVersion: triggers.preTokenGenerationVersion,
+                          },
                       userMigration: createTrigger("userMigration"),
                       verifyAuthChallengeResponse: createTrigger(
                         "verifyAuthChallengeResponse",

@@ -31,6 +31,7 @@ type App struct {
 	Providers map[string]interface{} `json:"providers"`
 	Home      string                 `json:"home"`
 	Version   string                 `json:"version"`
+	Protect   bool                   `json:"protect"`
 	// Deprecated: Backend is now Home
 	Backend string `json:"backend"`
 	// Deprecated: RemovalPolicy is now Removal

@@ -10,12 +10,24 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/sst/ion/pkg/flag"
 	"github.com/sst/ion/pkg/global"
 	"github.com/sst/ion/pkg/npm"
 	"github.com/sst/ion/pkg/process"
+	"github.com/sst/ion/platform"
 	"golang.org/x/sync/errgroup"
 )
+
+type ErrProviderVersionTooLow struct {
+	Name    string
+	Version string
+	Needed  string
+}
+
+func (err *ErrProviderVersionTooLow) Error() string {
+	return "provider version too low"
+}
 
 func (p *Project) NeedsInstall() bool {
 	if len(p.app.Providers) != len(p.lock) {
@@ -193,7 +205,11 @@ func (p *Project) loadProviderLock() error {
 func (p *Project) generateProviderLock() error {
 	var wg errgroup.Group
 	out := ProviderLock{}
-	results := make(chan ProviderLockEntry)
+	results := make(chan ProviderLockEntry, 1000)
+	pkg, err := platform.PackageJson()
+	if err != nil {
+		return err
+	}
 	for name, config := range p.app.Providers {
 		n := name
 		version := config.(map[string]interface{})["version"]
@@ -205,22 +221,32 @@ func (p *Project) generateProviderLock() error {
 			if err != nil {
 				return err
 			}
+			if match, ok := pkg.Dependencies[result.Package]; ok {
+				if version == "latest" {
+					result.Version = match
+				}
+				if semver.MustParse(result.Version).Compare(semver.MustParse(match)) < 0 {
+					results <- *result
+					return &ErrProviderVersionTooLow{
+						Name:    result.Name,
+						Version: result.Version,
+						Needed:  match,
+					}
+				}
+			}
 			results <- *result
 			return nil
 		})
 	}
-	wg.Go(func() error {
-		for range p.app.Providers {
-			r := <-results
-			out = append(out, &r)
-		}
-		close(results)
-		return nil
-	})
-	err := wg.Wait()
+	err = wg.Wait()
 	if err != nil {
 		return err
 	}
+	for range p.app.Providers {
+		r := <-results
+		out = append(out, &r)
+	}
+	close(results)
 	p.lock = out
 	return nil
 }

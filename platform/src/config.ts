@@ -232,6 +232,19 @@ export interface App {
    *
    */
   home: "aws" | "cloudflare" | "local";
+
+  /**
+   * Prevents `sst remove` from being executed on this stage.
+   *
+   * @example
+   * Prevent the "production" stage from being removed.
+   * ```ts
+   * {
+   *   protected: input.stage === "production"
+   * }
+   * ```
+   */
+  protected?: boolean;
 }
 
 export interface AppInput {
@@ -277,14 +290,14 @@ export interface Runner {
    *
    * The `x86_64` machine uses the [`al2/standard/5.0`](https://github.com/aws/aws-codebuild-docker-images/tree/master/al2/x86_64/standard/5.0) build image.
    * While `arm64` uses the [`al2/aarch64/standard/3.0`](https://github.com/aws/aws-codebuild-docker-images/tree/master/al2/aarch64/standard/3.0) image instead.
-   * 
+   *
    * You can also configure what's used in the image:
-   * 
+   *
    * - **Node**
-   * 
+   *
    *   To specify the version of Node you want to use in your build, you can use the
    *   `.node-version`, `.nvmrc`, or use the `engine` field in your `package.json`.
-   * 
+   *
    *   <Tabs>
    *     <TabItem label="package.json">
    *     ```js title="package.json"
@@ -306,18 +319,18 @@ export interface Runner {
    *     ```
    *     </TabItem>
    *   </Tabs>
-   * 
+   *
    * - **Package manager**
-   * 
+   *
    *   To specify the package manager you want to use you can configure it through your
-   *   `package.json`. 
-   * 
+   *   `package.json`.
+   *
    *   ```js title="package.json"
    *   {
    *     packageManager: "pnpm@8.6.3"
    *   }
    *   ```
-   * 
+   *
    * Feel free to get in touch if you want to use your own build image or configure what's used
    * in the build image.
    */
@@ -918,7 +931,7 @@ export interface Config {
        *       subnets: ["subnet-0b6a2b73896dc8c4c", "subnet-021389ebee680c2f0"]
        *     }
        *   }
-       * } 
+       * }
        * ```
        *
        * Or configure files or directories to be cached.
@@ -930,7 +943,7 @@ export interface Config {
        *       paths: ["node_modules", "/path/to/cache"]
        *     }
        *   }
-       * } 
+       * }
        * ```
        *
        * A _runner_ is a [AWS CodeBuild](https://aws.amazon.com/codebuild/) project and an

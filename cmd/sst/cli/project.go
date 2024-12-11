@@ -92,7 +92,7 @@ func (c *Cli) InitProject() (*project.Project, error) {
 		spin.Start()
 		err = p.Install()
 		if err != nil {
-			return nil, util.NewReadableError(err, "Could not install dependencies")
+			return nil, err
 		}
 	}
 

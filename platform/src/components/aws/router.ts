@@ -480,6 +480,10 @@ export interface RouterArgs {
      */
     cdn?: Transform<CdnArgs>;
   };
+  /**
+   * @internal
+   */
+  _skipHint?: boolean;
 }
 
 interface RouterRef {
@@ -594,7 +598,7 @@ export class Router extends Component implements Link.Linkable {
 
     function registerOutputs() {
       parent.registerOutputs({
-        _hint: parent.url,
+        _hint: args._skipHint ? undefined : parent.url,
       });
     }
 

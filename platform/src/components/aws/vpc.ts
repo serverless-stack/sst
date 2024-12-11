@@ -161,7 +161,7 @@ export interface VpcArgs {
    * }
    * ```
    */
-  bastion?: Input<boolean | {}>;
+  bastion?: Input<boolean>;
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.

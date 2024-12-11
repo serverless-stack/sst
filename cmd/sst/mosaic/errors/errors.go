@@ -2,6 +2,7 @@ package errors
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/sst/ion/cmd/sst/mosaic/aws"
@@ -31,6 +32,10 @@ var transformers = []ErrorTransformer{
 	exact(provider.ErrBucketMissing, "The state bucket is missing, it may have been accidentally deleted. Go to https://console.aws.amazon.com/systems-manager/parameters/%252Fsst%252Fbootstrap/description?tab=Table and check if the state bucket mentioned there exists. If it doesn't you can recreate it or delete the `/sst/bootstrap` key to force recreation."),
 	exact(project.ErrBuildFailed, project.ErrBuildFailed.Error()),
 	exact(project.ErrVersionMismatch, project.ErrVersionMismatch.Error()),
+	exact(project.ErrProtectedStage, "Cannot remove protected stage. To remove a protected stage edit your sst.config.ts and remove the `protect` property."),
+	match(func(err *project.ErrProviderVersionTooLow) string {
+		return fmt.Sprintf("You specified version %s of the \"%s\" provider. SST needs %s or higher.", err.Version, err.Name, err.Needed)
+	}),
 	func(err error) (bool, error) {
 		msg := err.Error()
 		if !strings.HasPrefix(msg, "aws:") {
@@ -55,11 +60,12 @@ func Transform(err error) error {
 	return err
 }
 
-func match[T error](transformer func(T) error) ErrorTransformer {
+func match[T error](transformer func(T) string) ErrorTransformer {
 	return func(err error) (bool, error) {
 		var match T
 		if errors.As(err, &match) {
-			return true, transformer(match)
+			str := transformer(match)
+			return true, util.NewReadableError(err, str)
 		}
 		return false, nil
 	}

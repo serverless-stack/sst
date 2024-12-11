@@ -1136,7 +1136,7 @@ export class Service extends Component implements Link.Linkable {
     }
 
     function registerReceiver() {
-      containers.apply((val) => {
+      all([containers]).apply(([val]) => {
         for (const container of val) {
           const title = val.length == 1 ? name : `${name}${container.name}`;
           new DevCommand(`${title}Dev`, {
@@ -1144,12 +1144,12 @@ export class Service extends Component implements Link.Linkable {
             dev: {
               title,
               autostart: true,
-              directory: output(args.image).apply((image) => {
-                if (!image) return "";
-                if (typeof image === "string") return "";
-                if (image.context) return path.dirname(image.context);
+              directory: (() => {
+                if (!container.image) return "";
+                if (typeof container.image === "string") return "";
+                if (container.image.context) return container.image.context;
                 return "";
-              }),
+              })(),
               ...container.dev,
             },
             environment: {
