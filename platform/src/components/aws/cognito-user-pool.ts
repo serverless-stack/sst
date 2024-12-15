@@ -236,6 +236,36 @@ export interface CognitoUserPoolArgs {
    */
   smsAuthenticationMessage?: Input<string>;
   /**
+   * The message template for Email messages sent to users who are being authenticated.
+   *
+   * The template must include the `{####}` placeholder, which will be replaced with the
+   * verification code.
+   *
+   * @default The verification code to your new account is {####}
+   * @example
+   *
+   * ```ts
+   * {
+   *   emailVerificationMessage: "The verification code to your new account is {####}"
+   * }
+   * ```
+   */
+  emailVerificationMessage?: Input<string>;
+  /**
+   * Subject line for Email messages sent to users who are being authenticated.
+   *
+   *
+   * @default Verify your new account
+   * @example
+   *
+   * ```ts
+   * {
+   *   emailVerificationSubject: "Verify your new account"
+   * }
+   * ```
+   */
+  emailVerificationSubject?: Input<string>;
+  /**
    * Enable software token MFA for the User Pool.
    *
    * @default `false`
@@ -534,8 +564,10 @@ export class CognitoUserPool extends Component implements Link.Linkable {
                 verificationMessageTemplate: {
                   defaultEmailOption: "CONFIRM_WITH_CODE",
                   emailMessage:
+                    args.emailVerificationMessage ??
                     "The verification code to your new account is {####}",
-                  emailSubject: "Verify your new account",
+                  emailSubject:
+                    args.emailVerificationSubject ?? "Verify your new account",
                   smsMessage:
                     "The verification code to your new account is {####}",
                 },
