@@ -1411,7 +1411,7 @@ export interface ClusterServiceArgs {
    * {
    *   health: {
    *     command: ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"],
-   *     startPeriod: "60 seconds"
+   *     startPeriod: "60 seconds",
    *     timeout: "5 seconds",
    *     interval: "30 seconds",
    *     retries: 3
