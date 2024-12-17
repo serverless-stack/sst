@@ -384,7 +384,7 @@ export class SolidStart extends Component implements Link.Linkable {
       const nitro = JSON.parse(
         fs.readFileSync(path.join(output, ".output/nitro.json")).toString(),
       );
-      if (!["aws-lambda", "aws-lambda"].includes(nitro.preset)) {
+      if (nitro.preset !== "aws-lambda") {
         throw new VisibleError(
           `SolidStart's app.config.ts must be configured to use the "aws-lambda" preset. It is currently set to "${nitro.preset}".`,
         );
@@ -456,7 +456,7 @@ export class SolidStart extends Component implements Link.Linkable {
             description: "Server handler for Solid",
             handler: "index.handler",
             bundle: path.join(outputPath, ".output", "server"),
-            streaming: nitro?.config?.streaming === true,
+            streaming: nitro?.config?.awsLambda?.streaming === true,
           };
 
           return validatePlan({
