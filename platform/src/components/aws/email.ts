@@ -143,10 +143,6 @@ export interface EmailArgs {
   /**
    * Configure event notifications for this Email component.
    *
-   * :::tip
-   * You don't need to use a Lambda layer to use FFmpeg.
-   * :::
-   *
    * @default No event notifications
    * @example
    *
