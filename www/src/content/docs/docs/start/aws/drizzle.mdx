@@ -92,6 +92,15 @@ async run() {
 
 The `proxy` option configures an RDS Proxy behind the scenes making it ideal for serverless applications.
 
+Make sure to [link](/docs/linking/) your RDS to your Next.js component to access your Postgres database. This eliminates the need to use .env files.
+
+```ts title="sst.config.ts" {3}
+new sst.aws.Nextjs("MyWeb", {
+   vpc,
+   link: [rds]
+ });
+```
+
 :::tip
 The RDS Proxy allows serverless environments to reliably connect to RDS.
 :::
