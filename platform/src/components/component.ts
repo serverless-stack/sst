@@ -66,6 +66,11 @@ export class Component extends ComponentResource {
       transformations: [
         // Ensure logical and physical names are prefixed
         (args) => {
+          // Ensure the component name does not contain spaces
+          if (name.includes(" "))
+            throw new Error(
+              `Component name "${name}" cannot contain spaces in your ${args.type} construct`,
+            );
           // Ensure names are prefixed with parent's name
           if (
             args.type !== type &&
