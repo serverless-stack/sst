@@ -1,0 +1,15 @@
+{
+  "name": "aws-lambda-retry-with-queues",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "devDependencies": {
+    "@types/aws-lambda": "8.10.146"
+  },
+  "dependencies": {
+    "sst": "latest",
+    "@aws-sdk/client-lambda": "^3.714.0",
+    "@aws-sdk/client-sqs": "^3.714.0",
+    "zod": "^3.24.1"
+  }
+}
