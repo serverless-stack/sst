@@ -47,7 +47,7 @@ export module event {
           ? typeof input.metadata === "function"
             ? input.metadata(type, properties)
             : input.metadata(metadata)
-          : {};
+          : metadata;
         properties = validate(properties);
         return {
           type,
