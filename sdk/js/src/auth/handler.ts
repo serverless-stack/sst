@@ -123,13 +123,13 @@ export function AuthHandler<
       privateKey: () =>
         importPKCS8(
           // @ts-expect-error
-          process.env.AUTH_PRIVATE_KEY || Resource.AUTH_PRIVATE_KEY,
+          process.env.AUTH_PRIVATE_KEY || Resource.AUTH_PRIVATE_KEY.value || Resource.AUTH_PRIVATE_KEY,
           "RS512",
         ),
       publicKey: () =>
         importSPKI(
           // @ts-expect-error
-          process.env.AUTH_PUBLIC_KEY || Resource.AUTH_PUBLIC_KEY,
+          process.env.AUTH_PUBLIC_KEY || Resource.AUTH_PUBLIC_KEY.value || Resource.AUTH_PUBLIC_KEY,
           "RS512",
         ),
     },
@@ -137,13 +137,13 @@ export function AuthHandler<
       privateKey: () =>
         importPKCS8(
           // @ts-expect-error
-          process.env.AUTH_PRIVATE_KEY || Resource.AUTH_PRIVATE_KEY,
+          process.env.AUTH_PRIVATE_KEY || Resource.AUTH_PRIVATE_KEY.value || Resource.AUTH_PRIVATE_KEY,
           "RSA-OAEP-512",
         ),
       publicKey: () =>
         importSPKI(
           // @ts-expect-error
-          process.env.AUTH_PUBLIC_KEY || Resource.AUTH_PUBLIC_KEY,
+          process.env.AUTH_PUBLIC_KEY || Resource.AUTH_PUBLIC_KEY.value || Resource.AUTH_PUBLIC_KEY,
           "RSA-OAEP-512",
         ),
     },
