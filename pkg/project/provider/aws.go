@@ -642,6 +642,35 @@ func (a *AwsHome) setPassphrase(app, stage, passphrase string) error {
 	return err
 }
 
+func (a *AwsHome) listStages(app string) ([]string, error) {
+	bootstrap, err := a.provider.Bootstrap(a.provider.config.Region)
+	if err != nil {
+		return nil, err
+	}
+	s3Client := s3.NewFromConfig(a.provider.config)
+
+	data, err := s3Client.ListObjects(context.TODO(), &s3.ListObjectsInput{
+		Bucket: aws.String(bootstrap.State),
+		Prefix: aws.String(path.Join("app", app)),
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	stages := []string{}
+
+	for _, obj := range data.Contents {
+		filename := path.Base(*obj.Key)
+		if strings.HasSuffix(filename, ".json") {
+			stageName := strings.TrimSuffix(filename, ".json")
+			stages = append(stages, stageName)
+		}
+	}
+
+	return stages, nil
+}
+
 func (a *AwsHome) Bootstrap() error {
 	_, err := a.provider.Bootstrap(a.provider.config.Region)
 	if err != nil {

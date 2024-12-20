@@ -3,12 +3,14 @@ package provider
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	_ "unsafe"
 
 	cloudflare "github.com/cloudflare/cloudflare-go"
@@ -173,4 +175,40 @@ func (c *CloudflareHome) getPassphrase(app, stage string) (string, error) {
 		return "", err
 	}
 	return string(read), nil
+}
+
+func (c *CloudflareHome) listStages(app string) ([]string, error) {
+	type r2Object struct {
+		Key string `json:"key"`
+	}
+
+	type r2Response struct {
+		Success  bool       `json:"success"`
+		Errors   []string   `json:"errors"`
+		Messages []string   `json:"messages"`
+		Result   []r2Object `json:"result"`
+	}
+
+	path := "/accounts/" + c.provider.identifier.Identifier + "/r2/buckets/" + c.bootstrap.State + "/objects?prefix=" + filepath.Join("app", app)
+
+	data, err := makeRequestContext(c.provider.api, context.Background(), http.MethodGet, path, nil)
+
+	if err != nil {
+		return nil, err
+	}
+
+	var response r2Response
+	err = json.Unmarshal(data, &response)
+	if err != nil {
+		return nil, err
+	}
+
+	stages := []string{}
+
+	for _, obj := range response.Result {
+		segments := strings.Split(obj.Key, "/")
+		stages = append(stages, segments[len(segments)-1])
+	}
+
+	return stages, nil
 }

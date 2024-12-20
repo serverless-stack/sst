@@ -24,6 +24,7 @@ type Home interface {
 	removeData(key, app, stage string) error
 	setPassphrase(app, stage string, passphrase string) error
 	getPassphrase(app, stage string) (string, error)
+	listStages(app string) ([]string, error)
 }
 
 type DevTransport struct {
@@ -315,6 +316,11 @@ func ForceUnlock(backend Home, version, app, stage string) error {
 		}
 	}
 	return removeData(backend, "lock", app, stage)
+}
+
+func ListStages(backend Home, app string) ([]string, error) {
+	slog.Info("listing stages", "app", app)
+	return backend.listStages(app)
 }
 
 func putData(backend Home, key, app, stage string, encrypt bool, data interface{}) error {

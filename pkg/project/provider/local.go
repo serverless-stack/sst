@@ -3,10 +3,12 @@ package provider
 import (
 	"bytes"
 	"fmt"
-	"github.com/sst/sst/v3/pkg/global"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/sst/sst/v3/pkg/global"
 )
 
 type LocalHome struct {
@@ -80,4 +82,26 @@ func (c *LocalHome) getPassphrase(app, stage string) (string, error) {
 
 func (l *LocalHome) pathForData(key, app, stage string) string {
 	return filepath.Join(global.ConfigDir(), "state", key, app, fmt.Sprintf("%v.json", stage))
+}
+
+func (a *LocalHome) listStages(app string) ([]string, error) {
+	path := filepath.Join(global.ConfigDir(), "state", "app", app)
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var stages []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			filename := entry.Name()
+			if strings.HasSuffix(filename, ".json") {
+				stageName := strings.TrimSuffix(filename, ".json")
+				stages = append(stages, stageName)
+			}
+		}
+	}
+
+	return stages, nil
 }

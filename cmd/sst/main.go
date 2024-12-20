@@ -800,6 +800,7 @@ var root = &cli.Command{
 			},
 			Run: CmdShell,
 		},
+		CmdListStages,
 		{
 			Name: "remove",
 			Description: cli.Description{
