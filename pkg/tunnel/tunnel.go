@@ -47,9 +47,34 @@ func Install() error {
 	}
 	err = os.Chmod(BINARY_PATH, 0755)
 	user := os.Getenv("SUDO_USER")
+  command := BINARY_PATH + " tunnel start *"
+
+	if isNixOS() {
+    slog.Info("NixOS detected")
+    fmt.Println("It looks like you are using NixOS. Please add the following to your NixOS configuration to grant SST tunnel permissions:")
+    fmt.Println("  security.sudo.extraRules = [")
+    fmt.Println("    {")
+    fmt.Println("      users = [ \"" + user + "\" ];")
+    fmt.Println("      commands = [")
+    fmt.Println("        { command = \"" + command + "\"; options = [ \"NOPASSWD\" \"SETENV\" ]; }")
+    fmt.Println("      ];")
+    fmt.Println("    }")
+    fmt.Println("  ];")
+		return nil
+	}
+
+	// Check if /etc/sudoers.d exists, if not, prompt to report a bug
+	if _, err := os.Stat("/etc/sudoers.d"); os.IsNotExist(err) {
+		slog.Error("sudoers folder '/etc/sudoers.d' does not exist.")
+    fmt.Println("It looks like your system does not support standard \"sudo\" configuration. Please open an issue at https://github.com/sst/sst/issues/new with the following information.")
+    fmt.Println("  OS: " + runtime.GOOS)
+    fmt.Println("  User: " + user)
+    fmt.Println("  Command: " + BINARY_PATH + " tunnel start *")
+		return fmt.Errorf("sudoers folder not found; please report this as a bug")
+	}
+
 	sudoersPath := "/etc/sudoers.d/sst-" + user
 	slog.Info("creating sudoers file", "path", sudoersPath)
-	command := BINARY_PATH + " tunnel start *"
 	sudoersEntry := fmt.Sprintf("%s ALL=(ALL) NOPASSWD:SETENV: %s\n", user, command)
 	slog.Info("sudoers entry", "entry", sudoersEntry)
 	err = os.WriteFile(sudoersPath, []byte(sudoersEntry), 0440)
@@ -70,6 +95,22 @@ func Install() error {
 		return util.NewReadableError(err, "Error validating sudoers file")
 	}
 	return nil
+}
+
+func isNixOS() bool {
+	file, err := os.Open("/etc/os-release")
+	if err != nil {
+		return false // Assume non-NixOS if the file cannot be read
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		if strings.Contains(scanner.Text(), "ID=nixos") {
+			return true
+		}
+	}
+	return false
 }
 
 func runCommands(cmds [][]string) error {
