@@ -569,7 +569,7 @@ export interface ClusterServiceArgs {
     /**
      * Configure if the load balancer should be public or private.
      *
-     * When set to `false`, the load balancer enpoint will only be accessible within the
+     * When set to `false`, the load balancer endpoint will only be accessible within the
      * VPC.
      *
      * @default `true`
@@ -1527,7 +1527,7 @@ export interface ClusterServiceArgs {
    * }
    * ```
    *
-   * If you sepcify `containers`, you cannot list the above args at the top-level. For example,
+   * If you specify `containers`, you cannot list the above args at the top-level. For example,
    * you **cannot** pass in `image` at the top level.
    *
    * ```diff lang="ts"
