@@ -109,6 +109,7 @@ func (w *Runtime) Build(ctx context.Context, input *runtime.BuildInput) (*runtim
 		Loader:            loader,
 		KeepNames:         true,
 		Bundle:            true,
+		Define:            build.ESBuild.Define,
 		Splitting:         build.Splitting,
 		Metafile:          true,
 		Write:             true,
