@@ -20,6 +20,7 @@ type App struct {
 
 func NewApp() *App {
 	cfg, err := config.LoadDefaultConfig(context.Background(), func(opts *config.LoadOptions) error {
+		// example of setting region from environment variable
 		opts.Region = os.Getenv("AWS_REGION")
 		return nil
 	})
