@@ -17,6 +17,7 @@ export * from "./efs.js";
 export * from "./email.js";
 export * from "./function.js";
 export * from "./kinesis-stream.js";
+export * from "./mysql.js";
 export * from "./nextjs.js";
 export * from "./postgres.js";
 export * from "./queue.js";
