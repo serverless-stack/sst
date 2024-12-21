@@ -19,7 +19,11 @@
  *  }
  *  client := dynamodb.NewFromConfig(cfg)
  *
- *  tableName := resource.Get("Table", "name")
+ *
+ *  tableName, err := resource.Get("Table", "name")
+ *  if err != nil {
+ *    panic(err)
+ *  }
  * }
  * ```
  *
