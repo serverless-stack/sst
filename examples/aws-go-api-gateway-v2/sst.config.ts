@@ -1,13 +1,15 @@
 /// <reference path="./.sst/platform/config.d.ts" />
 
 /**
- * ## Go ApiGatewayV2
+ * ## AWS ApiGatewayV2 Go
  *
  * Uses [aws-lambda-go-api-proxy](https://github.com/awslabs/aws-lambda-go-api-proxy/tree/master) to allow you to run a Go API with API Gateway V2.
  *
- * :::info
- * You write your Go code as normal and use the `aws-lambda-go-api-proxy` package to handle the API Gateway V2 event.
+ * :::tip
+ * We use the `aws-lambda-go-api-proxy` package to handle the API Gateway V2 event.
  * :::
+ *
+ * So you write your Go function as you normally would and then use the package to handle the API Gateway V2 event.
  *
  * ```go title="main.go"
  * import (
@@ -42,7 +44,8 @@ export default $config({
     };
   },
   async run() {
-    const api = new sst.aws.ApiGatewayV2("GoApi", {});
+    const api = new sst.aws.ApiGatewayV2("GoApi");
+    
     api.route("$default", {
       handler: "src/",
       runtime: "go",
