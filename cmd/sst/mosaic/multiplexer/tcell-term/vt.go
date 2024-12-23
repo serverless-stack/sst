@@ -9,7 +9,6 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
-	"syscall"
 	"unicode"
 
 	"github.com/creack/pty"
@@ -166,14 +165,7 @@ func (vt *VT) Start(cmd *exec.Cmd) error {
 		Cols: uint16(w),
 		Rows: uint16(h),
 	}
-	vt.pty, err = pty.StartWithAttrs(
-		cmd,
-		&winsize,
-		&syscall.SysProcAttr{
-			Setsid:  true,
-			Setctty: true,
-			Ctty:    1,
-		})
+	vt.pty, err = pty.StartWithAttrs(cmd, &winsize, getPtyAttr())
 	if err != nil {
 		return err
 	}
