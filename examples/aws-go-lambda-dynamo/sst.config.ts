@@ -1,11 +1,11 @@
 /// <reference path="./.sst/platform/config.d.ts" />
 
 /**
- * ## AWS Go Lambda Dynamo
+ * ## AWS Go Lambda DynamoDB
  *
  * An example on how to use a Go runtime Lambda with DynamoDB.
  *
- * Configure DynamoDB client
+ * You configure the DynamoDB client.
  *
  * ```go title="src/main.go"
  * import (
@@ -27,9 +27,9 @@
  * }
  * ```
  *
- * Make a request to DynamoDB
+ * And make a request to DynamoDB.
  *
- * ```go
+ * ```go title="src/main.go"
  * _, err = r.client.PutItem(ctx, &dynamodb.PutItemInput{
  *   TableName: tableName.(string),
  *	 Item:      item,
