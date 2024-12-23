@@ -21,6 +21,16 @@ export interface AuthArgs {
    *   authorizer: "src/auth.handler"
    * }
    * ```
+   *
+   * @example
+   * ```js
+   * {
+   *   authorizer: {
+   *     handler: "src/auth.handler",
+   *     link: [table],
+   *   }
+   * }
+   * ```
    */
   authorizer: Input<string | FunctionArgs>;
   /**
