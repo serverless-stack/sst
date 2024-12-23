@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -18,7 +19,7 @@ import (
 var logFile = (func() *os.File {
 	tmpPath := flag.SST_LOG
 	if tmpPath == "" {
-		tmpPath = filepath.Join(os.TempDir(), "sst-"+time.Now().Format("2006-01-02-15-04-05-*")+".log")
+		tmpPath = filepath.Join(os.TempDir(), fmt.Sprintf("sst-%s.log", time.Now().Format("2006-01-02-15-04-05")))
 	}
 	logFile, err := os.Create(tmpPath)
 	if err != nil {
