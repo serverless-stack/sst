@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
-	"syscall"
 
 	"github.com/sst/sst/v3/pkg/process"
 )
@@ -69,10 +68,7 @@ func (m *Monoplexer) AddProcess(name string, command []string, directory string,
 
 	r, w := io.Pipe()
 	cmd := process.Command(command[0], command[1:]...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-		Pgid:    0,
-	}
+	cmd.SysProcAttr = getProcAttr()
 	cmd.Stdout = w
 	cmd.Stderr = w
 	if directory != "" {
