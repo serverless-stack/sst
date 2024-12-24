@@ -68,10 +68,12 @@ func (c *Cli) InitProject() (*project.Project, error) {
 			return nil, util.NewReadableError(err, "Could not copy log file")
 		}
 		logFile.Close()
-		err = os.RemoveAll(filepath.Join(os.TempDir(), logFile.Name()))
-		if err != nil {
-			return nil, err
-		}
+		defer func() {
+			err = os.RemoveAll(filepath.Join(os.TempDir(), logFile.Name()))
+			if err != nil {
+				slog.Error("failed to remove temp log file", "err", err)
+			}
+		}()
 		logFile = nextLogFile
 	}
 	c.configureLog()
