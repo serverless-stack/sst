@@ -6,7 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "dev": "tsc --watch --noEmit",
-    "build": "./scripts/build"
+    "build": "bash ./scripts/build"
   },
   "sideEffects": false,
   "trustedDependencies": [
