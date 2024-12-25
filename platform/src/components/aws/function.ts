@@ -1982,7 +1982,7 @@ export class Function extends Component implements Link.Linkable {
             }
 
             // Add copyFiles into the zip
-            if (!$dev) {
+            if (!dev) {
               for (const entry of copyFiles) {
                 entry.isDir
                   ? archive.directory(entry.from, entry.to, {
