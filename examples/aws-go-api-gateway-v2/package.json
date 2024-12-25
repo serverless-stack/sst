@@ -13,6 +13,6 @@
     "sst": "3.4.27"
   },
   "scripts": {
-    "dev": "bun stt dev"
+    "dev": "bun sst dev"
   }
 }
