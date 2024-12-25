@@ -68,7 +68,7 @@ No CloudFormation, means a couple of things:
 
 And moving away from CDK means:
 
-1. You cannot fall back to CDK constructs if something isn't supported by SST. Instead there is the [AWS Classic](https://www.pulumi.com/registry/packages/aws/) provider from Pulumi that's built on Terraform. There are also 150+ other providers that allow you to build on any cloud. Check out the [Directory](/docs/providers/#directory).
+1. You cannot fall back to CDK constructs if something isn't supported by SST. Instead there is the [AWS](https://www.pulumi.com/registry/packages/aws/) provider from Pulumi that's built on Terraform. There are also 150+ other providers that allow you to build on any cloud. Check out the [Directory](/docs/all-providers#directory).
 
    If you are using a lot of higher level CDK constructs in your v2 app, it's going to be really hard to migrate to v3. The Pulumi/Terraform ecosystem is fairly complete but it's mainly made up of low level resources. You might not have ready replacements for your CDK constructs.
 

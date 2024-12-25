@@ -76,7 +76,6 @@ export interface CronArgs {
    *
    * @example
    *
-   * ```ts
    * For example, let's say you have a task.
    *
    * ```js title="sst.config.ts"
@@ -142,17 +141,31 @@ export interface CronArgs {
 }
 
 /**
- * The `Cron` component lets you add cron jobs to your app.
- * It uses [Amazon Event Bus](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-event-bus.html).
+ * The `Cron` component lets you add cron jobs to your app
+ * using [Amazon Event Bus](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-event-bus.html). The cron job can invoke a `Function` or a container `Task`.
  *
  * @example
- * #### Minimal example
+ * #### Cron job function
  *
- * Pass in a `schedule` and a `job` function that'll be executed.
+ * Pass in a `schedule` and a `function` that'll be executed.
  *
  * ```ts title="sst.config.ts"
  * new sst.aws.Cron("MyCronJob", {
- *   job: "src/cron.handler",
+ *   function: "src/cron.handler",
+ *   schedule: "rate(1 minute)"
+ * });
+ * ```
+ *
+ * #### Cron job container task
+ *
+ * Create a container task and pass in a `schedule` and a `task` that'll be executed.
+ *
+ * ```ts title="sst.config.ts" {5}
+ * const myCluster = new sst.aws.Cluster("MyCluster");
+ * const myTask = myCluster.addTask("MyTask");
+ *
+ * new sst.aws.Cron("MyCronJob", {
+ *   task: myTask,
  *   schedule: "rate(1 minute)"
  * });
  * ```
@@ -162,7 +175,7 @@ export interface CronArgs {
  * ```js title="sst.config.ts"
  * new sst.aws.Cron("MyCronJob", {
  *   schedule: "rate(1 minute)",
- *   job: {
+ *   function: {
  *     handler: "src/cron.handler",
  *     timeout: "60 seconds"
  *   }
@@ -287,19 +300,19 @@ export class Cron extends Component {
           fn
             ? { arn: fn.arn, rule: rule.name }
             : {
-                arn: args.task!.cluster,
-                rule: rule.name,
-                ecsTarget: {
-                  launchType: "FARGATE",
-                  taskDefinitionArn: args.task!.nodes.taskDefinition.arn,
-                  networkConfiguration: {
-                    subnets: args.task!.subnets,
-                    securityGroups: args.task!.securityGroups,
-                    assignPublicIp: args.task!.assignPublicIp,
-                  },
+              arn: args.task!.cluster,
+              rule: rule.name,
+              ecsTarget: {
+                launchType: "FARGATE",
+                taskDefinitionArn: args.task!.nodes.taskDefinition.arn,
+                networkConfiguration: {
+                  subnets: args.task!.subnets,
+                  securityGroups: args.task!.securityGroups,
+                  assignPublicIp: args.task!.assignPublicIp,
                 },
-                roleArn: role!.arn,
               },
+              roleArn: role!.arn,
+            },
           { parent },
         ),
       );

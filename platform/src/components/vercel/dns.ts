@@ -2,7 +2,7 @@
  * The Vercel DNS Adapter is used to create DNS records to manage domains hosted on [Vercel](https://vercel.com/docs/projects/domains/working-with-domains).
  *
  * :::note
- * You need to [add the Vercel provider](/docs/providers/#directory) to use this adapter.
+ * You need to [add the Vercel provider](/docs/all-providers#directory) to use this adapter.
  * :::
  *
  * This adapter is passed in as `domain.dns` when setting a custom domain; where `example.com`

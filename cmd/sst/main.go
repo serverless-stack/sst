@@ -543,7 +543,7 @@ var root = &cli.Command{
 					"}",
 					"```",
 					"",
-					"You can use any provider listed in the [Directory](/docs/providers#directory).",
+					"You can use any provider listed in the [Directory](/docs/all-providers#directory).",
 					"",
 					":::note",
 					"Running `sst add aws` above is the same as manually adding the provider to your config and running `sst install`.",

@@ -1,4 +1,4 @@
-import { ComponentResourceOptions, Output, output } from "@pulumi/pulumi";
+import { all, ComponentResourceOptions, Output, output } from "@pulumi/pulumi";
 import { Component, Prettify } from "../component.js";
 import { Link } from "../link.js";
 import {
@@ -17,6 +17,7 @@ import {
 import { ecs, iam } from "@pulumi/aws";
 import { permission } from "./permission.js";
 import { Vpc } from "./vpc.js";
+import { Function } from "./function.js";
 
 export interface TaskArgs extends ClusterTaskArgs {
   /**
@@ -50,6 +51,7 @@ export class Task extends Component implements Link.Linkable {
   private readonly taskRole: iam.Role;
   private readonly _taskDefinition: Output<ecs.TaskDefinition>;
   private readonly containerNames: Output<Output<string>[]>;
+  private readonly dev: boolean;
 
   constructor(
     name: string,
@@ -59,6 +61,33 @@ export class Task extends Component implements Link.Linkable {
     super(__pulumiType, name, args, opts);
 
     const self = this;
+    const dev = normalizeDev();
+    if (dev) {
+      args.image = "ghcr.io/sst/sst/bridge-task:20241224005724";
+      args.environment = $resolve({
+        environment: args.environment,
+      }).apply(async (input) => {
+        const appsync = await Function.appsync();
+        const env = input.environment ?? {};
+        env.SST_TASK_ID = name;
+        env.SST_REGION = process.env.SST_AWS_REGION!;
+        env.SST_APPSYNC_HTTP = appsync.http;
+        env.SST_APPSYNC_REALTIME = appsync.realtime;
+        env.SST_APP = $app.name;
+        env.SST_STAGE = $app.stage;
+        return env;
+      });
+      args.permissions = $resolve({ permissions: args.permissions }).apply(
+        (input) => {
+          const permissions = input.permissions ?? [];
+          permissions.push({
+            actions: ["appsync:*"],
+            resources: ["*"],
+          });
+          return permissions;
+        },
+      );
+    }
     const architecture = normalizeArchitecture(args);
     const cpu = normalizeCpu(args);
     const memory = normalizeMemory(cpu, args);
@@ -67,6 +96,7 @@ export class Task extends Component implements Link.Linkable {
     const vpc = normalizeVpc();
 
     const taskRole = createTaskRole(name, args, opts, self);
+    this.dev = dev;
     this.taskRole = taskRole;
 
     const executionRole = createExecutionRole(name, args, opts, self);
@@ -89,6 +119,23 @@ export class Task extends Component implements Link.Linkable {
     this.executionRole = executionRole;
     this._taskDefinition = taskDefinition;
     this.containerNames = containers.apply((v) => v.map((v) => output(v.name)));
+    this.registerOutputs({
+      _task: all([args.dev, containers]).apply(([v, containers]) => ({
+        directory: (() => {
+          if (!containers[0].image) return "";
+          if (typeof containers[0].image === "string") return "";
+          if (containers[0].image.context) return containers[0].image.context;
+          return "";
+        })(),
+        ...v,
+      })),
+    });
+
+    function normalizeDev() {
+      if (!$dev) return false;
+      if (args.dev === false) return false;
+      return true;
+    }
 
     function normalizeVpc() {
       // "vpc" is a Vpc component

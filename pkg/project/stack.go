@@ -69,9 +69,16 @@ type Dev struct {
 }
 type Devs map[string]Dev
 
+type Task struct {
+	Name      string `json:"-"`
+	Command   string `json:"command"`
+	Directory string `json:"directory"`
+}
+
 type CompleteEvent struct {
 	Links       common.Links
 	Devs        Devs
+	Tasks       map[string]Task
 	Outputs     map[string]interface{}
 	Hints       map[string]string
 	Versions    map[string]int

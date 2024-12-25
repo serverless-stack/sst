@@ -7,6 +7,10 @@ import { AwsOptions, client } from "./client.js";
  * ```js title="src/app.ts"
  * import { task } from "sst/aws/task";
  * ```
+ *
+ * If you are not using Node.js, you can use the AWS SDK instead. For example, you can call
+ * [`RunTask`](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_RunTask.html) to
+ * run a task.
  */
 export module task {
   function url(region?: string, options?: AwsOptions) {
@@ -61,7 +65,8 @@ export module task {
 
   export interface Options {
     /**
-     * Configure the AWS client.
+     * Configure the options for the [aws4fetch](https://github.com/mhart/aws4fetch)
+     * [`AWSClient`](https://github.com/mhart/aws4fetch?tab=readme-ov-file#new-awsclientoptions) used internally by the SDK.
      */
     aws?: AwsOptions;
   }
@@ -102,23 +107,30 @@ export module task {
   }
 
   /**
-   * Gets the details of a task. Tasks stopped longer than 1 hour are not returned.
+   * Get the details of a given task.
+   *
+   * :::note
+   * If a task had been stopped over an hour ago, it's not returned.
+   * :::
+   *
    * @example
-   * For example, let's say you have started task.
+   *
+   * For example, let's say you had previously started a task.
    *
    * ```js title="src/app.ts"
-   * import { Resource } from "sst";
-   * import { task } from "sst/aws/task";
-   *
    * const runRet = await task.run(Resource.MyTask);
    * const taskArn = runRet.tasks[0].taskArn;
    * ```
    *
-   * You can get the details of the task with the following.
+   * You can use that to get the details of the task.
    *
    * ```js title="src/app.ts"
    * const describeRet = await task.describe(Resource.MyTask, taskArn);
+   * console.log(describeRet.status);
    * ```
+   *
+   * If you are not using Node.js, you can use the AWS SDK and call
+   * [`DescribeTasks`](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_DescribeTasks.html).
    */
   export async function describe(
     resource: Resource,
@@ -161,15 +173,15 @@ export module task {
    *
    * @example
    *
-   * For example, let's say you have a task.
+   * For example, let's say you have defined a task.
    *
    * ```js title="sst.config.ts"
    * cluster.addTask("MyTask");
    * ```
    *
-   * You can run it in your application with the following.
+   * You can then run the task in your application with the SDK.
    *
-   * ```js title="src/app.ts"
+   * ```js title="src/app.ts" {4}
    * import { Resource } from "sst";
    * import { task } from "sst/aws/task";
    *
@@ -177,23 +189,27 @@ export module task {
    * const taskArn = runRet.tasks[0].taskArn;
    * ```
    *
-   * `taskArn` is the ARN of the task. You can pass it to the `describe` function to get
-   * the status of the task; or to the `stop` function to stop the task.
+   * This internally calls an AWS SDK API that returns an array of tasks. But in our case,
+   * there's only one task.
    *
-   * You can also pass in environment variables to the task.
+   * The `taskArn` is the ARN of the task. You can use it to call the `describe` or `stop`
+   * functions.
+   *
+   * You can also pass in any environment variables to the task.
    *
    * ```js title="src/app.ts"
    * await task.run(Resource.MyTask, {
-   *   MY_ENV_VAR: "my-value",
+   *   MY_ENV_VAR: "my-value"
    * });
    * ```
+   *
+   * If you are not using Node.js, you can use the AWS SDK and call
+   * [`RunTask`](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_RunTask.html).
    */
   export async function run(
     resource: Resource,
     environment?: Record<string, string>,
-    options?: {
-      aws?: AwsOptions;
-    }
+    options?: Options
   ): Promise<RunResponse> {
     const c = await client();
     const u = url(c.region, options?.aws);
@@ -250,12 +266,9 @@ export module task {
    *
    * @example
    *
-   * For example, let's say you have started a task.
+   * For example, let's say you had previously started a task.
    *
    * ```js title="src/app.ts"
-   * import { Resource } from "sst";
-   * import { task } from "sst/aws/task";
-   *
    * const runRet = await task.run(Resource.MyTask);
    * const taskArn = runRet.tasks[0].taskArn;
    * ```
@@ -264,10 +277,20 @@ export module task {
    *
    * ```js title="src/app.ts"
    * const stopRet = await task.stop(Resource.MyTask, taskArn);
-   *
-   * // check if the task is stopped
-   * console.log(stopRet.task?.lastStatus);
    * ```
+   *
+   * Stopping a task is asnychronous. When you call `stop`, AWS marks a task to be stopped,
+   * but it may take a few minutes for the task to actually stop. 
+   *
+   * :::note
+   * Stopping a task in asyncrhonous.
+   * :::
+   *
+   * In most cases you probably don't need to check if it has been stopped. But if necessary,
+   * you can use the `describe` function to get a task's status.
+   *
+   * If you are not using Node.js, you can use the AWS SDK and call
+   * [`StopTask`](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_StopTask.html).
    */
   export async function stop(
     resource: Resource,

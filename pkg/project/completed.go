@@ -83,6 +83,7 @@ func getCompletedEvent(ctx context.Context, stack auto.Stack) (*CompleteEvent, e
 		Tunnels:     map[string]Tunnel{},
 		Hints:       map[string]string{},
 		Outputs:     map[string]interface{}{},
+		Tasks:       map[string]Task{},
 		Errors:      []Error{},
 		Finished:    false,
 		Resources:   []apitype.ResourceV3{},
@@ -115,6 +116,14 @@ func getCompletedEvent(ctx context.Context, stack auto.Stack) (*CompleteEvent, e
 			json.Unmarshal(data, &entry)
 			entry.Name = resource.URN.Name()
 			complete.Devs[entry.Name] = entry
+		}
+
+		if match, ok := outputs["_task"].(map[string]interface{}); ok {
+			data, _ := json.Marshal(match)
+			var entry Task
+			json.Unmarshal(data, &entry)
+			entry.Name = resource.URN.Name()
+			complete.Tasks[entry.Name] = entry
 		}
 
 		if match, ok := outputs["_tunnel"].(map[string]interface{}); ok {

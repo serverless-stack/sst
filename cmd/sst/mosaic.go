@@ -213,6 +213,7 @@ func CmdMosaic(c *cli.Cli) error {
 		)
 		multi.AddProcess("deploy", []string{currentExecutable, "ui", "--filter=sst"}, "⑆", "SST", "", false, true, append(multiEnv, "SST_LOG="+p.PathLog("ui-deploy"))...)
 		multi.AddProcess("function", []string{currentExecutable, "ui", "--filter=function"}, "λ", "Functions", "", false, true, append(multiEnv, "SST_LOG="+p.PathLog("ui-function"))...)
+		// multi.AddProcess("task", []string{currentExecutable, "ui", "--filter=task"}, "λ", "Tasks", "", false, true, append(multiEnv, "SST_LOG="+p.PathLog("ui-task"))...)
 		wg.Go(func() error {
 			defer c.Cancel()
 			multi.Start()
@@ -253,6 +254,9 @@ func CmdMosaic(c *cli.Cli) error {
 							multi.AddProcess("tunnel", []string{currentExecutable, "tunnel", "--stage", p.App().Stage}, "⇌", "Tunnel", "", true, true, append(os.Environ(),
 								"SST_LOG="+p.PathLog("tunnel_"+name),
 							)...)
+						}
+						if len(evt.Tasks) > 0 {
+							multi.AddProcess("task", []string{currentExecutable, "ui", "--filter=task"}, "⧉", "Tasks", "", false, true, append(multiEnv, "SST_LOG="+p.PathLog("ui-task"))...)
 						}
 						break
 					}

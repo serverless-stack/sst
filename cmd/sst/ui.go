@@ -28,9 +28,6 @@ func CmdUI(c *cli.Cli) error {
 		ui.WithDev,
 	}
 	if filter == "function" || filter == "" {
-		if err != nil {
-			return err
-		}
 		if filter != "" {
 			fmt.Println(ui.TEXT_HIGHLIGHT_BOLD.Render("Function Logs"))
 			fmt.Println()
@@ -47,6 +44,20 @@ func CmdUI(c *cli.Cli) error {
 			aws.FunctionErrorEvent{},
 			aws.FunctionLogEvent{},
 			aws.FunctionBuildEvent{},
+		)
+	}
+	if filter == "task" || filter == "" {
+		if filter != "" {
+			fmt.Println(ui.TEXT_HIGHLIGHT_BOLD.Render("Task Logs"))
+			fmt.Println()
+			fmt.Println(ui.TEXT_DIM.Render("Waiting for tasks..."))
+			fmt.Println()
+		}
+		types = append(types,
+			aws.TaskProvisionEvent{},
+			aws.TaskStartEvent{},
+			aws.TaskLogEvent{},
+			aws.TaskCompleteEvent{},
 		)
 	}
 	if filter == "sst" || filter == "" {

@@ -169,7 +169,7 @@ export interface App {
    * }
    * ```
    *
-   * Check out the full list in the [Directory](/docs/providers#directory).
+   * Check out the full list in the [Directory](/docs/all-providers#directory).
    *
    * :::tip
    * You'll need to run `sst install` after you update the `providers` in your config.
