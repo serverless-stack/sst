@@ -220,6 +220,12 @@ export class Auth extends Component implements Link.Linkable {
     );
   }
 
+  public get tableName() {
+    return (
+      this._table.name
+    );
+  }
+
   /**
    * The underlying [resources](/docs/components/#nodes) this component creates.
    */
@@ -245,6 +251,7 @@ export class Auth extends Component implements Link.Linkable {
     return {
       properties: {
         url: this.url,
+        tableName: this.tableName
       },
       include: [
         env({
