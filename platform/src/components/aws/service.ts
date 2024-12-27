@@ -536,12 +536,10 @@ export class Service extends Component implements Link.Linkable {
                           : {}),
                         ...(p.listenQueryString
                           ? {
-                            queryStrings: [
-                              {
-                                key: p.listenQueryString?.split("=")[0],
-                                value: p.listenQueryString?.split("=")[1],
-                              },
-                            ]
+                            queryStrings: p.listenQueryString.split("&").map(pair => {
+                              const [key, value] = pair.split("=");
+                              return { key, value };
+                            })
                           }
                           : {}),
                       },
