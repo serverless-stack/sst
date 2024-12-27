@@ -221,9 +221,15 @@ export class Service extends Component implements Link.Linkable {
           const listenPort = parseInt(listenParts[0]);
           const listenProtocol = listenParts[1];
           const listenPath = v.path;
+          const listenQueryString = v.queryString;
           if (protocolType(listenProtocol) === "network" && listenPath)
             throw new VisibleError(
               `Invalid path "${v.path}" for listen protocol "${v.listen}". Only "http" protocols support path-based routing.`,
+            );
+
+          if (protocolType(listenProtocol) === "network" && listenQueryString)
+            throw new VisibleError(
+              `Invalid query string "${v.queryString}" for listen protocol "${v.listen}". Only "http" protocols support query string-based routing.`,
             );
 
           const redirectParts = v.redirect?.split("/");
@@ -239,6 +245,7 @@ export class Service extends Component implements Link.Linkable {
               listenPort,
               listenProtocol,
               listenPath,
+              listenQueryString,
               redirectPort,
               redirectProtocol,
             };
@@ -256,6 +263,7 @@ export class Service extends Component implements Link.Linkable {
             listenPort,
             listenProtocol,
             listenPath,
+            listenQueryString,
             forwardPort,
             forwardProtocol,
             container: v.container ?? containers[0].name,
@@ -452,8 +460,8 @@ export class Service extends Component implements Link.Linkable {
           return Object.entries(listenersById).map(([listenerId, ports]) => {
             const listenProtocol = ports[0].listenProtocol.toUpperCase();
             const listenPort = ports[0].listenPort;
-            const defaultRule = ports.find((p) => !p.listenPath);
-            const customRules = ports.filter((p) => p.listenPath);
+            const defaultRule = ports.find((p) => !p.listenPath && !p.listenQueryString);
+            const customRules = ports.filter((p) => p.listenPath || p.listenQueryString);
             const buildActions = (p?: (typeof ports)[number]) => [
               ...(!p
                 ? [
@@ -513,15 +521,29 @@ export class Service extends Component implements Link.Linkable {
             customRules.forEach(
               (p) =>
                 new lb.ListenerRule(
-                  `${name}Listener${listenerId}Rule${p.listenPath}`,
+                  `${name}Listener${listenerId}Rule${p.listenPath ?? ""}${p.listenQueryString ?? ""}`,
                   {
                     listenerArn: listener.arn,
                     actions: buildActions(p),
                     conditions: [
                       {
-                        pathPattern: {
-                          values: [p.listenPath!],
-                        },
+                        ...(p.listenPath
+                          ? {
+                            pathPattern: {
+                              values: [p.listenPath!],
+                            },
+                          }
+                          : {}),
+                        ...(p.listenQueryString
+                          ? {
+                            queryStrings: [
+                              {
+                                key: p.listenQueryString?.split("=")[0],
+                                value: p.listenQueryString?.split("=")[1],
+                              },
+                            ]
+                          }
+                          : {}),
                       },
                     ],
                   },

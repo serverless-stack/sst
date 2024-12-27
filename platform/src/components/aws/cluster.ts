@@ -1037,6 +1037,20 @@ export interface ClusterServiceArgs extends ClusterBaseArgs {
          */
         path?: Input<string>;
         /**
+         * Configure query string based routing. Only requests matching the query string are
+         * forwarded to the container. Only applicable to "http" protocols.
+         *
+         * The query string pattern supports exact matches and wildcards.
+         *
+         * For example:
+         * - `version=v1`
+         * - `env=*`
+         * - `env=prod&version=v1`
+         *
+         * @default Requests with any query string are forwarded.
+         */
+        queryString?: Input<string>;
+        /**
          * The name of the container to forward the traffic to.
          *
          * If there is only one container, this is not needed. The traffic is automatically
@@ -1352,6 +1366,20 @@ export interface ClusterServiceArgs extends ClusterBaseArgs {
          * @default Requests to all paths are forwarded.
          */
         path?: Input<string>;
+        /**
+         * Configure query string based routing. Only requests matching the query string are
+         * forwarded to the container. Only applicable to "http" protocols.
+         *
+         * The query string pattern supports exact matches and wildcards.
+         *
+         * For example:
+         * - `version=v1`
+         * - `env=*`
+         * - `env=prod&version=v1`
+         *
+         * @default Requests with any query string are forwarded.
+         */
+        queryString?: Input<string>;
         /**
          * The name of the container to forward the traffic to.
          *
