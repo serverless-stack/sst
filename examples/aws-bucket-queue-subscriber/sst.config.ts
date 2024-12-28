@@ -18,8 +18,14 @@ export default $config({
     queue.subscribe("subscriber.handler");
 
     const bucket = new sst.aws.Bucket("MyBucket");
-    bucket.subscribeQueue(queue.arn, {
-      events: ["s3:ObjectCreated:*"],
+    bucket.notify({
+      notifications: [
+        {
+          name: "MySubscriber",
+          queue,
+          events: ["s3:ObjectCreated:*"],
+        },
+      ],
     });
 
     return {

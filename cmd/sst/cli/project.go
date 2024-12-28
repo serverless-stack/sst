@@ -10,9 +10,9 @@ import (
 
 	"github.com/briandowns/spinner"
 	"github.com/joho/godotenv"
-	"github.com/sst/ion/internal/util"
-	"github.com/sst/ion/pkg/flag"
-	"github.com/sst/ion/pkg/project"
+	"github.com/sst/sst/v3/internal/util"
+	"github.com/sst/sst/v3/pkg/flag"
+	"github.com/sst/sst/v3/pkg/project"
 )
 
 var logFile = (func() *os.File {
@@ -57,7 +57,6 @@ func (c *Cli) InitProject() (*project.Project, error) {
 		}
 		sstLog := p.PathLog("sst")
 		logPath := p.PathLog("")
-		os.RemoveAll(logPath)
 		os.MkdirAll(logPath, 0755)
 		nextLogFile, err := os.Create(sstLog)
 		if err != nil {
@@ -92,7 +91,7 @@ func (c *Cli) InitProject() (*project.Project, error) {
 		spin.Start()
 		err = p.Install()
 		if err != nil {
-			return nil, util.NewReadableError(err, "Could not install dependencies")
+			return nil, err
 		}
 	}
 

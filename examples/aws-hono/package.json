@@ -16,6 +16,6 @@
     "@aws-sdk/client-s3": "^3.701.0",
     "@aws-sdk/s3-request-presigner": "^3.701.0",
     "hono": "^4.6.12",
-    "sst": "3.3.35"
+    "sst": "latest"
   }
 }

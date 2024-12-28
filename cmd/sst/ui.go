@@ -5,15 +5,15 @@ import (
 	"log/slog"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
-	"github.com/sst/ion/cmd/sst/cli"
-	"github.com/sst/ion/cmd/sst/mosaic/aws"
-	"github.com/sst/ion/cmd/sst/mosaic/cloudflare"
-	"github.com/sst/ion/cmd/sst/mosaic/deployer"
-	"github.com/sst/ion/cmd/sst/mosaic/dev"
-	"github.com/sst/ion/cmd/sst/mosaic/ui"
-	"github.com/sst/ion/cmd/sst/mosaic/ui/common"
-	"github.com/sst/ion/pkg/project"
-	"github.com/sst/ion/pkg/server"
+	"github.com/sst/sst/v3/cmd/sst/cli"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/aws"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/cloudflare"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/deployer"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/dev"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/ui"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/ui/common"
+	"github.com/sst/sst/v3/pkg/project"
+	"github.com/sst/sst/v3/pkg/server"
 )
 
 func CmdUI(c *cli.Cli) error {
@@ -28,9 +28,6 @@ func CmdUI(c *cli.Cli) error {
 		ui.WithDev,
 	}
 	if filter == "function" || filter == "" {
-		if err != nil {
-			return err
-		}
 		if filter != "" {
 			fmt.Println(ui.TEXT_HIGHLIGHT_BOLD.Render("Function Logs"))
 			fmt.Println()
@@ -41,11 +38,26 @@ func CmdUI(c *cli.Cli) error {
 			cloudflare.WorkerBuildEvent{},
 			cloudflare.WorkerUpdatedEvent{},
 			cloudflare.WorkerInvokedEvent{},
+			project.CompleteEvent{},
 			aws.FunctionInvokedEvent{},
 			aws.FunctionResponseEvent{},
 			aws.FunctionErrorEvent{},
 			aws.FunctionLogEvent{},
 			aws.FunctionBuildEvent{},
+		)
+	}
+	if filter == "task" || filter == "" {
+		if filter != "" {
+			fmt.Println(ui.TEXT_HIGHLIGHT_BOLD.Render("Task Logs"))
+			fmt.Println()
+			fmt.Println(ui.TEXT_DIM.Render("Waiting for tasks..."))
+			fmt.Println()
+		}
+		types = append(types,
+			aws.TaskProvisionEvent{},
+			aws.TaskStartEvent{},
+			aws.TaskLogEvent{},
+			aws.TaskCompleteEvent{},
 		)
 	}
 	if filter == "sst" || filter == "" {

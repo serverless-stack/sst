@@ -1,12 +1,13 @@
 import {
   ComponentResourceOptions,
   Input,
+  Output,
   all,
   interpolate,
   output,
 } from "@pulumi/pulumi";
 import { Component, Transform, transform } from "../component";
-import { FunctionArgs } from "./function";
+import { FunctionArgs, FunctionArn } from "./function";
 import { ApiGatewayWebSocketRouteArgs } from "./apigateway-websocket";
 import { apigatewayv2, lambda } from "@pulumi/aws";
 import { FunctionBuilder, functionBuilder } from "./helpers/function-builder";
@@ -36,7 +37,7 @@ export interface Args extends ApiGatewayWebSocketRouteArgs {
   /**
    * The function that’ll be invoked.
    */
-  handler: Input<string | FunctionArgs>;
+  handler: Input<string | FunctionArgs | FunctionArn>;
   /**
    * @internal
    */
@@ -56,7 +57,7 @@ export interface Args extends ApiGatewayWebSocketRouteArgs {
 export class ApiGatewayWebSocketRoute extends Component {
   private readonly fn: FunctionBuilder;
   private readonly permission: lambda.Permission;
-  private readonly apiRoute: apigatewayv2.Route;
+  private readonly apiRoute: Output<apigatewayv2.Route>;
   private readonly integration: apigatewayv2.Integration;
 
   constructor(name: string, args: Args, opts?: ComponentResourceOptions) {
@@ -120,21 +121,39 @@ export class ApiGatewayWebSocketRoute extends Component {
     }
 
     function createApiRoute() {
-      return new apigatewayv2.Route(
-        ...transform(
-          args.transform?.route,
-          `${name}Route`,
-          {
-            apiId: api.id,
-            routeKey: route,
-            target: interpolate`integrations/${integration.id}`,
-            authorizationType: all([args.route, args.auth]).apply(
-              ([route, auth]) =>
-                route === "$connect" && auth?.iam ? "AWS_IAM" : "NONE",
+      const authArgs = all([args.route, args.auth]).apply(([route, auth]) => {
+        if (route !== "$connect") return { authorizationType: "NONE" };
+        if (!auth) return { authorizationType: "NONE" };
+        if (auth.iam) return { authorizationType: "AWS_IAM" };
+        if (auth.lambda)
+          return {
+            authorizationType: "CUSTOM",
+            authorizerId: auth.lambda,
+          };
+        if (auth.jwt)
+          return {
+            authorizationType: "JWT",
+            authorizationScopes: auth.jwt.scopes,
+            authorizerId: auth.jwt.authorizer,
+          };
+        return { authorizationType: "NONE" };
+      });
+
+      return authArgs.apply(
+        (authArgs) =>
+          new apigatewayv2.Route(
+            ...transform(
+              args.transform?.route,
+              `${name}Route`,
+              {
+                apiId: api.id,
+                routeKey: route,
+                target: interpolate`integrations/${integration.id}`,
+                ...authArgs,
+              },
+              { parent: self },
             ),
-          },
-          { parent: self },
-        ),
+          ),
       );
     }
   }

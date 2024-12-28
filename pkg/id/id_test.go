@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sst/ion/pkg/id"
+	"github.com/sst/sst/v3/pkg/id"
 )
 
 func run(t *testing.T, genFunc func() string, compareFunc func(string, string) bool, order string) {

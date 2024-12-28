@@ -16,11 +16,11 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
-	"github.com/sst/ion/cmd/sst/mosaic/aws"
-	"github.com/sst/ion/cmd/sst/mosaic/cloudflare"
-	"github.com/sst/ion/cmd/sst/mosaic/deployer"
-	"github.com/sst/ion/cmd/sst/mosaic/ui/common"
-	"github.com/sst/ion/pkg/project"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/aws"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/cloudflare"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/deployer"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/ui/common"
+	"github.com/sst/sst/v3/pkg/project"
 
 	"golang.org/x/crypto/ssh/terminal"
 )
@@ -152,6 +152,23 @@ func (u *UI) Event(unknown interface{}) {
 
 	case *common.StdoutEvent:
 		u.println(evt.Line)
+
+	case *aws.TaskProvisionEvent:
+		u.printEvent(u.getColor(""), TEXT_NORMAL_BOLD.Render(fmt.Sprintf("%-11s", "Provision")), evt.Name)
+
+	case *aws.TaskStartEvent:
+		u.workerTime[evt.WorkerID] = time.Now()
+		u.printEvent(u.getColor(evt.WorkerID), fmt.Sprintf("%-11s", "Start"), evt.Command)
+
+	case *aws.TaskLogEvent:
+		duration := time.Since(u.workerTime[evt.WorkerID]).Round(time.Millisecond)
+		formattedDuration := fmt.Sprintf("%.9s", fmt.Sprintf("+%v", duration))
+		u.printEvent(u.getColor(evt.WorkerID), formattedDuration, evt.Line)
+
+	case *aws.TaskCompleteEvent:
+		duration := time.Since(u.workerTime[evt.WorkerID]).Round(time.Millisecond)
+		formattedDuration := fmt.Sprintf("took %.9s", fmt.Sprintf("+%v", duration))
+		u.printEvent(u.getColor(evt.WorkerID), "Done", formattedDuration)
 
 	case *aws.FunctionInvokedEvent:
 		u.workerTime[evt.WorkerID] = time.Now()
@@ -343,15 +360,11 @@ func (u *UI) Event(unknown interface{}) {
 			u.printEvent(TEXT_INFO, "Info", "Downloaded provider "+splits[1])
 		}
 
-	case *project.ProviderDownloadEvent:
-		u.printEvent(TEXT_INFO, "Info", "Downloading provider "+evt.Name+" v"+evt.Version)
-		break
-
 	case *project.CompleteEvent:
+		u.complete = evt
 		if evt.Old {
 			break
 		}
-		u.complete = evt
 		u.blank()
 		if len(evt.Errors) == 0 && evt.Finished {
 			u.print(TEXT_SUCCESS_BOLD.Render(IconCheck))

@@ -1,0 +1,15 @@
+{
+  "name": "sst-v3-go-file-upload",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/aws-lambda": "8.10.146",
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "sst": "3.4.27"
+  }
+}

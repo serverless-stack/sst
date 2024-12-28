@@ -1,0 +1,171 @@
+---
+template: splash
+title: Tasks in v3
+description: We are adding a new component that allows you to run asynchronous tasks.
+author: jay
+draft: true
+lastUpdated: 2024-12-26
+pagefind: false
+---
+
+import { Image } from 'astro:assets';
+import { YouTube } from '@astro-community/astro-embed-youtube';
+import cliImage from '../../../assets/blog/task-cli.png';
+import consoleImage from '../../../assets/blog/task-console.png';
+
+We are adding [`Task`](/docs/component/aws/cluster#tasks), a new component that allows you to run asynchronous tasks in your apps. It's powered by Amazon ECS and AWS Fargate.
+
+<YouTube id="7sYdSbmi-ik" posterQuality="high" />
+
+## Background
+
+Most applications have a need to run some background tasks. Typically these take a long time to run so they are triggered asynchronously. Or they are invoked through a cron job. Unfortunately you can't run them in a Lambda function because they might take longer than 15 minutes.
+
+And since these are triggered asynchronously, they can be harder to test locally. You can mock their invocation but it'd be much better to test them through the usual flow of your application.
+
+To fix this, we are adding the new [`Task`](/docs/component/aws/cluster#tasks) component.
+
+---
+
+## `Task`
+
+1. It uses AWS Fargate that can **run as long** as you need and is **cheaper than Lambda**.
+2. Can be invoked directly from a **cron job**.
+3. Comes with a **JS SDK**, but can also be invoked with the AWS SDK.
+4. Has its **own dev mode**, so it can be invoked remotely but it'll run locally.
+
+You can [**check out an example**](/docs/examples/#aws-task) if you want a quick start.
+
+---
+
+## Getting started
+
+Tasks are built on AWS Fargate and are tied to an Amazon ECS cluster. And so `Task` is created as a part of the `Cluster` component.
+
+#### Create a task
+
+```ts title="sst.config.ts"
+const cluster = new sst.aws.Cluster("MyCluster", { vpc });
+const task = cluster.addTask("MyTask");
+```
+
+By default, this looks for a `Dockerfile` in the root directory. You can configure this.
+
+```ts title="sst.config.ts"
+cluster.addTask("MyTask", {
+  image: {
+    context: "./app",
+    dockerfile: "Dockerfile"
+  }
+});
+```
+
+---
+
+#### Run the task
+
+Once created, you can run the task through:
+
+1. **Task SDK**
+
+   With the [Task JS SDK](/docs/component/aws/task#sdk), you can run your tasks, stop your tasks, and get the status of your tasks.
+
+   You can call this from your functions, frontends, or container services. For example, you can link the task to a function.
+   
+   ```ts title="sst.config.ts" {3}
+   new sst.aws.Function("MyFunction", {
+     handler: "src/lambda.handler",
+     link: [task]
+   });
+   ```
+   
+   Then from your function start the task.
+   
+   ```ts title="src/lambda.ts" {4}
+   import { Resource } from "sst";
+   import { task } from "sst/aws/task";
+   
+   const runRet = await task.run(Resource.MyTask);
+   const taskArn = runRet.tasks[0].taskArn;
+   ```
+   
+   **Other languages**
+   
+   The JS SDK is calling the AWS ECS SDK behind the scenes. So if you are using a different language, you can directly call the AWS SDK. Here's [how to run a task](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_RunTask.html).
+
+2. **Cron jobs**
+
+   You can also connect your task to a [`Cron`](/docs/component/aws/cron) job.
+
+   ```ts title="sst.config.ts" {2}
+   new sst.aws.Cron("MyCronJob", {
+     task,
+     schedule: "rate(1 day)"
+   });
+   ```
+
+   This works by connecting the task to the cron job through EventBridge.
+
+---
+
+## Dev mode
+
+You can test your tasks locally in `sst dev` in a similar way to how you test your functions [_Live_](/docs/live/).
+
+<Image src={cliImage} alt="SST Dev CLI Tasks tab" />
+
+Any tasks that are invoked remotely are proxied to your local machine that runs the `dev.command` you have. These also show up under the **Tasks** tab in the multiplexer sidebar.
+
+```ts title="sst.config.ts" {3}
+new sst.aws.Task("MyTask", {
+  dev: {
+    command: "node src/tasks.js"
+  }
+});
+```
+
+If your `Vpc` has `bastion` enabled, then your tasks have access to resources in your VPC as well.
+
+---
+
+## Console logs
+
+The [Console](/docs/console/) supports viewing logs for your tasks when they are in production.
+
+<Image src={consoleImage} alt="SST Console Task logs" />
+
+---
+
+## Cost
+
+You are only charged for the time it takes to run the task. With the default memory and vCPU it costs roughly **$0.02 per hour**.
+
+When running in `sst dev`, you are charged for the time it takes to run the task locally as well.
+
+---
+
+## Next steps
+
+Learn more in our docs.
+
+- [Adding a task](/docs/component/aws/cluster/#tasks)
+- [Dev mode](/docs/component/aws/cluster/#dev-1)
+- [JS SDK](/docs/component/aws/task/#sdk)
+- [Cost](/docs/component/aws/cluster/#cost)
+
+And check out these examples.
+
+- [Invoking a task with a function](/docs/examples/#aws-task)
+- [Invoking a task with a cron job](/docs/examples/#aws-task-cron)
+
+---
+
+#### Comparison to v2
+
+If you are coming from SST v2, there are a couple of differences between `Task` and [`Job`](https://v2.sst.dev/constructs/Job).
+
+1. `Task` is based on AWS Fargate. `Job` used a combination of AWS CodeBuild and Lambda.
+2. Since `Task` is natively based on Fargate, you can use the AWS SDK to interact with it, even in runtimes the SST SDK doesn't support.
+3. In dev mode, `Task` uses Fargate only, whereas `Job` used Lambda.
+4. While CodeBuild is billed per minute, Fargate is a lot cheaper than CodeBuild. Roughly **$0.02 per hour** vs **$0.3 per hour** on X86 machines.
+

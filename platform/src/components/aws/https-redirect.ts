@@ -76,8 +76,14 @@ export class HttpsRedirect extends Component {
           },
         },
         comment: all([args.targetDomain, args.sourceDomains]).apply(
-          ([targetDomain, sourceDomains]) =>
-            `Redirect to ${targetDomain} from ${sourceDomains.join(", ")}`,
+          ([targetDomain, sourceDomains]) => {
+            const comment = `Redirect to ${targetDomain} from ${sourceDomains.join(
+              ", ",
+            )}`;
+            return comment.length > 128
+              ? comment.slice(0, 125) + "..."
+              : comment;
+          },
         ),
         priceClass: "PriceClass_All",
         viewerCertificate: {

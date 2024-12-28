@@ -18,8 +18,14 @@ export default $config({
     topic.subscribe("MySubscriber", "subscriber.handler");
 
     const bucket = new sst.aws.Bucket("MyBucket");
-    bucket.subscribeTopic(topic.arn, {
-      events: ["s3:ObjectCreated:*"],
+    bucket.notify({
+      notifications: [
+        {
+          name: "MySubscriber",
+          topic,
+          events: ["s3:ObjectCreated:*"],
+        },
+      ],
     });
 
     return {

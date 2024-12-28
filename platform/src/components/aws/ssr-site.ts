@@ -134,12 +134,12 @@ export interface SsrSiteArgs extends BaseSsrSiteArgs {
     /**
      * The runtime environment for the server function.
      *
-     * @default `"nodejs22.x"`
+     * @default `"nodejs20.x"`
      * @example
      * ```js
      * {
      *   server: {
-     *     runtime: "nodejs20.x"
+     *     runtime: "nodejs22.x"
      *   }
      * }
      * ```
@@ -443,7 +443,7 @@ export function createDevServer(
       `${name}DevServer`,
       {
         description: `${name} dev server`,
-        runtime: "nodejs22.x",
+        runtime: "nodejs20.x",
         timeout: "20 seconds",
         memory: "128 MB",
         bundle: path.join($cli.paths.platform, "functions", "empty-function"),
@@ -590,7 +590,7 @@ export function createServersAndDistribution(
           const fn = new Function(
             `${name}Edge${logicalName(fnName)}`,
             {
-              runtime: "nodejs22.x",
+              runtime: "nodejs20.x",
               timeout: "20 seconds",
               memory: "1024 MB",
               ...props,
@@ -692,7 +692,7 @@ export function createServersAndDistribution(
             ...props.function,
             description: props.function.description ?? `${name} server`,
             runtime: output(args.server?.runtime).apply(
-              (v) => v ?? props.function.runtime ?? "nodejs22.x",
+              (v) => v ?? props.function.runtime ?? "nodejs20.x",
             ),
             timeout: props.function.timeout ?? "20 seconds",
             memory: output(args.server?.memory).apply(
@@ -1140,7 +1140,7 @@ async function handler(event) {
           job: {
             description: `${name} warmer`,
             bundle: path.join($cli.paths.platform, "dist", "ssr-warmer"),
-            runtime: "nodejs22.x",
+            runtime: "nodejs20.x",
             handler: "index.handler",
             timeout: "900 seconds",
             memory: "128 MB",

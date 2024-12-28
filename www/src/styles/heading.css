@@ -1,0 +1,33 @@
+/**
+ * Linkable headings
+ *
+ * Exclude links that are custom created, like the blog post list links.
+ */
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) > a:not([class]) {
+  text-decoration: none;
+  cursor: none;
+  color: var(--color-text);
+
+  & code {
+    color: var(--color-text);
+  }
+
+  &:hover {
+    cursor: pointer;
+    text-decoration: none;
+    color: var(--color-text);
+  }
+
+  &:hover::after {
+    content: '#';
+    transform: scale(0.9);
+    transform-origin: left bottom;
+    display: inline-block;
+    margin-left: 0.25em;
+    color: var(--color-text-dimmed);
+    width: auto;
+    height: auto;
+    background-color: transparent;
+    font-weight: normal;
+  }
+}

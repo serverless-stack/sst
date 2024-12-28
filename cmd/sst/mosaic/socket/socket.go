@@ -9,10 +9,10 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/gorilla/websocket"
-	"github.com/sst/ion/cmd/sst/mosaic/aws"
-	"github.com/sst/ion/pkg/bus"
-	"github.com/sst/ion/pkg/project"
-	"github.com/sst/ion/pkg/server"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/aws"
+	"github.com/sst/sst/v3/pkg/bus"
+	"github.com/sst/sst/v3/pkg/project"
+	"github.com/sst/sst/v3/pkg/server"
 )
 
 var upgrader = websocket.Upgrader{

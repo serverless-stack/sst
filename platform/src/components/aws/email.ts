@@ -143,10 +143,6 @@ export interface EmailArgs {
   /**
    * Configure event notifications for this Email component.
    *
-   * :::tip
-   * You don't need to use a Lambda layer to use FFmpeg.
-   * :::
-   *
    * @default No event notifications
    * @example
    *
@@ -477,6 +473,12 @@ export class Email extends Component implements Link.Linkable {
         permission({
           actions: ["ses:*"],
           resources: [this.identity.arn, this.configurationSet.arn],
+        }),
+        // When the SES account is in sandbox mode, it seems you have to include verified
+        // receipients inside `resources`. Needs further investigation.
+        permission({
+          actions: ["ses:SendEmail", "ses:SendRawEmail"],
+          resources: ["*"],
         }),
       ],
     };

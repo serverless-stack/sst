@@ -5,7 +5,8 @@ import type { Context as LambdaContext } from "aws-lambda";
 
 // get first arg
 const handler = process.argv[2];
-const AWS_LAMBDA_RUNTIME_API = `http://` + process.env.AWS_LAMBDA_RUNTIME_API!;
+const AWS_LAMBDA_RUNTIME_API =
+  `http://` + process.env.AWS_LAMBDA_RUNTIME_API! + "/2018-06-01";
 const parsed = path.parse(handler);
 
 const file = [".js", ".jsx", ".mjs", ".cjs"]
@@ -15,7 +16,6 @@ const file = [".js", ".jsx", ".mjs", ".cjs"]
   })!;
 
 let fn: any;
-let timeout: NodeJS.Timeout | undefined;
 let request: any;
 let response: any;
 let context: LambdaContext;
@@ -60,8 +60,7 @@ try {
 }
 
 while (true) {
-  if (timeout) clearTimeout(timeout);
-  timeout = setTimeout(
+  const timeout = setTimeout(
     () => {
       process.exit(0);
     },
@@ -72,6 +71,7 @@ while (true) {
     const result = await fetch(
       AWS_LAMBDA_RUNTIME_API + `/runtime/invocation/next`,
     );
+    clearTimeout(timeout);
     context = {
       awsRequestId: result.headers.get("lambda-runtime-aws-request-id") || "",
       invokedFunctionArn:

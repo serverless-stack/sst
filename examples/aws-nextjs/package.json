@@ -14,7 +14,7 @@
     "next": "14.2.15",
     "react": "^18",
     "react-dom": "^18",
-    "sst": "latest"
+    "sst": "3.3.47"
   },
   "devDependencies": {
     "@types/node": "^20",

@@ -61,7 +61,10 @@ It'll also ask you to update your `app.config.ts` with something like this.
 ```diff lang="ts" title="app.config.ts"
 export default defineConfig({
 +  server: {
-+    preset: "aws-lambda-streaming",
++    preset: "aws-lambda",
++    awsLambda: {
++      streaming: true,
++    },
 +  },
 });
 ```

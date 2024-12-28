@@ -3,6 +3,8 @@ import starlight from "@astrojs/starlight";
 import sitemap from "@astrojs/sitemap";
 import config from "./config";
 import sst from "astro-sst";
+import { rehypeHeadingIds } from "@astrojs/markdown-remark";
+import rehypeAutolinkHeadings from "rehype-autolink-headings";
 
 const sidebar = [
   { label: "Intro", slug: "docs" },
@@ -10,6 +12,7 @@ const sidebar = [
   { label: "Enterprise", slug: "docs/enterprise" },
   {
     label: "Get Started",
+    collapsed: true,
     items: [
       { label: "Bun", slug: "docs/start/aws/bun" },
       { label: "Nuxt", slug: "docs/start/aws/nuxt" },
@@ -51,6 +54,7 @@ const sidebar = [
   },
   {
     label: "How to",
+    collapsed: true,
     items: [
       { label: "AWS Accounts", slug: "docs/aws-accounts" },
       { label: "IAM Credentials", slug: "docs/iam-credentials" },
@@ -64,51 +68,118 @@ const sidebar = [
     ],
   },
   {
-    label: "AWS",
+    label: "Components",
     items: [
-      "docs/component/aws/efs",
-      "docs/component/aws/vpc",
-      "docs/component/aws/cron",
-      "docs/component/aws/nuxt",
-      "docs/component/aws/astro",
-      "docs/component/aws/redis",
-      "docs/component/aws/email",
-      "docs/component/aws/remix",
-      "docs/component/aws/nextjs",
-      "docs/component/aws/queue",
-      "docs/component/aws/vector",
-      "docs/component/aws/router",
-      "docs/component/aws/analog",
-      "docs/component/aws/bucket",
-      "docs/component/aws/cluster",
-      "docs/component/aws/dynamo",
-      "docs/component/aws/realtime",
-      "docs/component/aws/sns-topic",
-      "docs/component/aws/function",
-      "docs/component/aws/postgres",
-      "docs/component/aws/app-sync",
-      "docs/component/aws/svelte-kit",
-      "docs/component/aws/static-site",
-      "docs/component/aws/solid-start",
-      "docs/component/aws/kinesis-stream",
-      "docs/component/aws/apigatewayv1",
-      "docs/component/aws/apigatewayv2",
-      "docs/component/aws/cognito-user-pool",
-      "docs/component/aws/cognito-identity-pool",
-      "docs/component/aws/apigateway-websocket",
-    ],
-  },
-  {
-    label: "Cloudflare",
-    items: [
-      "docs/component/cloudflare/kv",
-      "docs/component/cloudflare/d1",
-      "docs/component/cloudflare/worker",
-      "docs/component/cloudflare/bucket",
+      {
+        label: "AWS",
+        collapsed: true,
+        items: [
+          "docs/component/aws/efs",
+          "docs/component/aws/vpc",
+          "docs/component/aws/cron",
+          "docs/component/aws/auth",
+          "docs/component/aws/nuxt",
+          "docs/component/aws/astro",
+          "docs/component/aws/redis",
+          "docs/component/aws/email",
+          "docs/component/aws/remix",
+          "docs/component/aws/nextjs",
+          "docs/component/aws/queue",
+          "docs/component/aws/vector",
+          "docs/component/aws/router",
+          "docs/component/aws/analog",
+          "docs/component/aws/bucket",
+          "docs/component/aws/cluster",
+          "docs/component/aws/dynamo",
+          "docs/component/aws/realtime",
+          "docs/component/aws/sns-topic",
+          "docs/component/aws/function",
+          "docs/component/aws/postgres",
+          "docs/component/aws/app-sync",
+          "docs/component/aws/svelte-kit",
+          "docs/component/aws/static-site",
+          "docs/component/aws/solid-start",
+          "docs/component/aws/kinesis-stream",
+          "docs/component/aws/apigatewayv1",
+          "docs/component/aws/apigatewayv2",
+          "docs/component/aws/cognito-user-pool",
+          "docs/component/aws/cognito-identity-pool",
+          "docs/component/aws/apigateway-websocket",
+          {
+            label: "Internal",
+            collapsed: true,
+            items: [
+              "docs/component/aws/cdn",
+              "docs/component/aws/task",
+              "docs/component/aws/service",
+              "docs/component/aws/app-sync-resolver",
+              "docs/component/aws/app-sync-function",
+              "docs/component/aws/bucket-notification",
+              "docs/component/aws/app-sync-data-source",
+              "docs/component/aws/cognito-user-pool-client",
+              "docs/component/aws/apigatewayv2-url-route",
+              "docs/component/aws/apigatewayv1-authorizer",
+              "docs/component/aws/apigatewayv2-authorizer",
+              "docs/component/aws/queue-lambda-subscriber",
+              "docs/component/aws/sns-topic-queue-subscriber",
+              "docs/component/aws/dynamo-lambda-subscriber",
+              "docs/component/aws/realtime-lambda-subscriber",
+              "docs/component/aws/sns-topic-lambda-subscriber",
+              "docs/component/aws/apigatewayv1-lambda-route",
+              "docs/component/aws/apigatewayv2-lambda-route",
+              "docs/component/aws/apigateway-websocket-route",
+              "docs/component/aws/apigatewayv1-integration-route",
+              "docs/component/aws/kinesis-stream-lambda-subscriber",
+            ],
+          },
+          {
+            label: "Deprecated",
+            collapsed: true,
+            items: [
+              { label: "Vpc.v1", slug: "docs/component/aws/vpc-v1" },
+              { label: "Cluster.v1", slug: "docs/component/aws/cluster-v1" },
+              { label: "Postgres.v1", slug: "docs/component/aws/postgres-v1" },
+            ],
+          },
+        ],
+      },
+      {
+        label: "Cloudflare",
+        collapsed: true,
+        items: [
+          "docs/component/cloudflare/kv",
+          "docs/component/cloudflare/d1",
+          "docs/component/cloudflare/worker",
+          "docs/component/cloudflare/bucket",
+        ],
+      },
+      {
+        label: "Internal",
+        collapsed: true,
+        items: [
+          {
+            label: "Dns",
+            items: [
+              { label: "AWS", slug: "docs/component/aws/dns" },
+              { label: "Vercel", slug: "docs/component/vercel/dns" },
+              { label: "Cloudflare", slug: "docs/component/cloudflare/dns" },
+            ],
+          },
+          {
+            label: "Linkable",
+            items: [
+              { label: "binding", slug: "docs/component/cloudflare/binding" },
+              { label: "permission", slug: "docs/component/aws/permission" },
+            ],
+          },
+        ],
+      },
+      "docs/all-providers",
     ],
   },
   {
     label: "Reference",
+    collapsed: true,
     items: [
       "docs/reference/cli",
       "docs/reference/sdk",
@@ -117,56 +188,6 @@ const sidebar = [
       "docs/component/secret",
       "docs/component/linkable",
       "docs/component/experimental/dev-command",
-    ],
-  },
-  {
-    label: "Internal",
-    collapsed: true,
-    items: [
-      {
-        label: "Dns",
-        items: [
-          { label: "AWS", slug: "docs/component/aws/dns" },
-          { label: "Vercel", slug: "docs/component/vercel/dns" },
-          { label: "Cloudflare", slug: "docs/component/cloudflare/dns" },
-        ],
-      },
-      "docs/component/aws/cdn",
-      "docs/component/aws/service",
-      {
-        label: "Linkable",
-        items: [
-          { label: "binding", slug: "docs/component/cloudflare/binding" },
-          { label: "permission", slug: "docs/component/aws/permission" },
-        ],
-      },
-      "docs/component/aws/app-sync-resolver",
-      "docs/component/aws/app-sync-function",
-      "docs/component/aws/app-sync-data-source",
-      "docs/component/aws/cognito-user-pool-client",
-      "docs/component/aws/apigatewayv2-url-route",
-      "docs/component/aws/apigatewayv1-authorizer",
-      "docs/component/aws/apigatewayv2-authorizer",
-      "docs/component/aws/queue-lambda-subscriber",
-      "docs/component/aws/bucket-lambda-subscriber",
-      "docs/component/aws/sns-topic-queue-subscriber",
-      "docs/component/aws/dynamo-lambda-subscriber",
-      "docs/component/aws/realtime-lambda-subscriber",
-      "docs/component/aws/sns-topic-lambda-subscriber",
-      "docs/component/aws/apigatewayv1-lambda-route",
-      "docs/component/aws/apigatewayv2-lambda-route",
-      "docs/component/aws/apigateway-websocket-route",
-      "docs/component/aws/apigatewayv1-integration-route",
-      "docs/component/aws/kinesis-stream-lambda-subscriber",
-    ],
-  },
-  {
-    label: "Deprecated",
-    collapsed: true,
-    items: [
-      { label: "Vpc.v1", slug: "docs/component/aws/vpc-v1" },
-      { label: "Cluster.v1", slug: "docs/component/aws/cluster-v1" },
-      { label: "Postgres.v1", slug: "docs/component/aws/postgres-v1" },
     ],
   },
   { label: "Examples", slug: "docs/examples" },
@@ -223,6 +244,7 @@ export default defineConfig({
         "./src/styles/lander.css",
         "./src/styles/markdown.css",
         "./src/styles/tsdoc.css",
+        "./src/styles/heading.css",
       ],
       social: {
         "x.com": config.twitter,
@@ -246,7 +268,7 @@ export default defineConfig({
           attrs: {
             src: "https://widget.kapa.ai/kapa-widget.bundle.js",
             "data-website-id": "6853540a-5c1e-4de3-9e2f-b893b6b825a8",
-            "data-project-name": "Ion",
+            "data-project-name": "SST",
             "data-project-color": "#E27152",
             "data-modal-header-bg-color": "white",
             "data-button-hide": "true",
@@ -283,7 +305,7 @@ export default defineConfig({
           tag: "link",
           attrs: {
             rel: "icon",
-            href: "/favicon-dark.svg",
+            href: "/favicon.svg",
             media: "(prefers-color-scheme: dark)",
           },
         },
@@ -291,4 +313,15 @@ export default defineConfig({
       sidebar,
     }),
   ],
+  markdown: {
+    rehypePlugins: [
+      rehypeHeadingIds,
+      [
+        rehypeAutolinkHeadings,
+        {
+          behavior: "wrap",
+        },
+      ],
+    ],
+  },
 });

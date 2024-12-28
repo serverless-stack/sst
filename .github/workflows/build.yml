@@ -42,7 +42,7 @@ jobs:
       - run: bun i --frozen-lockfile
       - run: git reset --hard
       - run: cd platform && bun tsc --noEmit
-
+      - run: ./platform/scripts/build
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser

@@ -8,12 +8,12 @@ import (
 	"os/user"
 	"strings"
 
-	"github.com/sst/ion/cmd/sst/cli"
-	"github.com/sst/ion/cmd/sst/mosaic/ui"
-	"github.com/sst/ion/internal/util"
-	"github.com/sst/ion/pkg/process"
-	"github.com/sst/ion/pkg/project"
-	"github.com/sst/ion/pkg/tunnel"
+	"github.com/sst/sst/v3/cmd/sst/cli"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/ui"
+	"github.com/sst/sst/v3/internal/util"
+	"github.com/sst/sst/v3/pkg/process"
+	"github.com/sst/sst/v3/pkg/project"
+	"github.com/sst/sst/v3/pkg/tunnel"
 )
 
 var CmdTunnel = &cli.Command{
@@ -61,6 +61,7 @@ var CmdTunnel = &cli.Command{
 		if tunnel.NeedsInstall() {
 			return util.NewReadableError(nil, "The sst tunnel needs to be installed or upgraded. Run `sudo sst tunnel install`")
 		}
+		slog.Info("starting tunnel")
 		proj, err := c.InitProject()
 		if err != nil {
 			return err
@@ -92,6 +93,7 @@ var CmdTunnel = &cli.Command{
 			"SST_SKIP_LOCAL=true",
 			"SST_SKIP_DEPENDENCY_CHECK=true",
 			"SSH_PRIVATE_KEY="+tun.PrivateKey,
+			"SST_LOG="+strings.ReplaceAll(os.Getenv("SST_LOG"), ".log", "_sudo.log"),
 		)
 		tunnelCmd.Stdout = os.Stdout
 		slog.Info("starting tunnel", "cmd", tunnelCmd.Args)
@@ -122,7 +124,7 @@ var CmdTunnel = &cli.Command{
 					"Install the tunnel.",
 					"",
 					"To be able to create a tunnel, SST needs to create a network interface on your local",
-					"machine. This needs _sudo_ access.",
+
 					"",
 					"```bash \"sudo\"",
 					"sudo sst tunnel install",

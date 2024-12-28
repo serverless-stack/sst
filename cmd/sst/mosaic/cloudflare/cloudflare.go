@@ -10,13 +10,13 @@ import (
 
 	"github.com/cloudflare/cloudflare-go"
 	"github.com/gorilla/websocket"
-	"github.com/sst/ion/cmd/sst/mosaic/watcher"
-	"github.com/sst/ion/internal/util"
-	"github.com/sst/ion/pkg/bus"
-	"github.com/sst/ion/pkg/project"
-	"github.com/sst/ion/pkg/project/provider"
-	"github.com/sst/ion/pkg/runtime"
-	"github.com/sst/ion/pkg/runtime/worker"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/watcher"
+	"github.com/sst/sst/v3/internal/util"
+	"github.com/sst/sst/v3/pkg/bus"
+	"github.com/sst/sst/v3/pkg/project"
+	"github.com/sst/sst/v3/pkg/project/provider"
+	"github.com/sst/sst/v3/pkg/runtime"
+	"github.com/sst/sst/v3/pkg/runtime/worker"
 )
 
 type WorkerBuildEvent struct {

@@ -5,7 +5,7 @@ import (
 	"net/rpc"
 	"time"
 
-	"github.com/sst/ion/pkg/project"
+	"github.com/sst/sst/v3/pkg/project"
 )
 
 type Scrap struct {

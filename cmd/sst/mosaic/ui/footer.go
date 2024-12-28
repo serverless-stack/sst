@@ -15,8 +15,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
-	"github.com/sst/ion/cmd/sst/mosaic/deployer"
-	"github.com/sst/ion/pkg/project"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/deployer"
+	"github.com/sst/sst/v3/pkg/project"
 	"golang.org/x/crypto/ssh/terminal"
 )
 

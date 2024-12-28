@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sst/ion/cmd/sst/cli"
-	"github.com/sst/ion/cmd/sst/mosaic/ui"
-	"github.com/sst/ion/pkg/project"
+	"github.com/sst/sst/v3/cmd/sst/cli"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/ui"
+	"github.com/sst/sst/v3/pkg/project"
 )
 
 var CmdDiagnostic = &cli.Command{
@@ -84,10 +84,15 @@ var CmdDiagnostic = &cli.Command{
 		if err != nil {
 			return err
 		}
-		statePath, err := p.PullState()
+		workdir, err := p.NewWorkdir()
 		if err != nil {
 			return err
 		}
+		statePath, err := workdir.Pull()
+		if err != nil {
+			return err
+		}
+		defer workdir.Cleanup()
 		err = addFile(statePath, "state.json")
 		if err != nil {
 			return err

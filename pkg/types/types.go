@@ -3,11 +3,11 @@ package types
 import (
 	"log/slog"
 
-	"github.com/sst/ion/pkg/project/common"
-	"github.com/sst/ion/pkg/project/path"
-	"github.com/sst/ion/pkg/types/python"
-	"github.com/sst/ion/pkg/types/rails"
-	"github.com/sst/ion/pkg/types/typescript"
+	"github.com/sst/sst/v3/pkg/project/common"
+	"github.com/sst/sst/v3/pkg/project/path"
+	"github.com/sst/sst/v3/pkg/types/python"
+	"github.com/sst/sst/v3/pkg/types/rails"
+	"github.com/sst/sst/v3/pkg/types/typescript"
 )
 
 type Generator = func(root string, complete common.Links) error

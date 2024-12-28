@@ -1,8 +1,9 @@
 import { all, ComponentResourceOptions, Output, output } from "@pulumi/pulumi";
 import { Component, Transform, transform } from "../component.js";
 import { Input } from "../input.js";
-import { efs } from "@pulumi/aws";
+import { ec2, efs } from "@pulumi/aws";
 import { Vpc } from "./vpc.js";
+import { VisibleError } from "../error.js";
 
 export interface EfsArgs {
   /**
@@ -73,6 +74,10 @@ export interface EfsArgs {
     | Vpc
     | Input<{
         /**
+         * The ID of the VPC.
+         */
+        id: Input<string>;
+        /**
          * A list of subnet IDs in the VPC to create the EFS mount targets in.
          */
         subnets: Input<Input<string>[]>;
@@ -90,6 +95,10 @@ export interface EfsArgs {
      * Transform the EFS access point.
      */
     accessPoint?: Transform<efs.AccessPointArgs>;
+    /**
+     * Transform the security group for the EFS mount targets.
+     */
+    securityGroup?: Transform<ec2.SecurityGroupArgs>;
   };
 }
 
@@ -175,6 +184,7 @@ export class Efs extends Component {
     const performance = output(args.performance ?? "general-purpose");
 
     const fileSystem = createFileSystem();
+    const securityGroup = createSecurityGroup();
     const mountTargets = createMountTargets();
     const accessPoint = createAccessPoint();
 
@@ -191,12 +201,30 @@ export class Efs extends Component {
       // "vpc" is a Vpc component
       if (args.vpc instanceof Vpc) {
         return output({
+          id: args.vpc.id,
           subnets: args.vpc.privateSubnets,
+          cidrBlock: args.vpc.nodes.vpc.cidrBlock,
         });
       }
 
       // "vpc" is object
-      return output(args.vpc);
+      return output(args.vpc).apply((vpc) => {
+        // Because `vpc.id` is newly required since v3.3.66, some people might not have
+        // it, and they should get a type error. We want to throw a descriptive error.
+        if (!vpc.id)
+          throw new VisibleError(
+            `Missing "vpc.id" for the "${name}" EFS component. The VPC id is required to create the security group for the EFS mount targets.`,
+          );
+
+        const vpcRef = ec2.Vpc.get(`${name}Vpc`, vpc.id, undefined, {
+          parent,
+        });
+        return {
+          id: vpc.id,
+          subnets: vpc.subnets,
+          cidrBlock: vpcRef.cidrBlock,
+        };
+      });
     }
 
     function createFileSystem() {
@@ -216,6 +244,37 @@ export class Efs extends Component {
       );
     }
 
+    function createSecurityGroup() {
+      return new ec2.SecurityGroup(
+        ...transform(
+          args.transform?.securityGroup,
+          `${name}SecurityGroup`,
+          {
+            description: "Managed by SST",
+            vpcId: vpc.id,
+            egress: [
+              {
+                fromPort: 0,
+                toPort: 0,
+                protocol: "-1",
+                cidrBlocks: ["0.0.0.0/0"],
+              },
+            ],
+            ingress: [
+              {
+                fromPort: 0,
+                toPort: 0,
+                protocol: "-1",
+                // Restricts inbound traffic to only within the VPC
+                cidrBlocks: [vpc.cidrBlock],
+              },
+            ],
+          },
+          { parent },
+        ),
+      );
+    }
+
     function createMountTargets() {
       return vpc.subnets.apply((subnets) =>
         subnets.map(
@@ -225,6 +284,7 @@ export class Efs extends Component {
               {
                 fileSystemId: fileSystem.id,
                 subnetId: subnet,
+                securityGroups: [securityGroup.id],
               },
               { parent },
             ),

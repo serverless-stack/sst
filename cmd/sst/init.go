@@ -13,10 +13,11 @@ import (
 	"github.com/briandowns/spinner"
 	"github.com/fatih/color"
 	"github.com/manifoldco/promptui"
-	"github.com/sst/ion/cmd/sst/cli"
-	"github.com/sst/ion/internal/util"
-	"github.com/sst/ion/pkg/process"
-	"github.com/sst/ion/pkg/project"
+	"github.com/sst/sst/v3/cmd/sst/cli"
+	"github.com/sst/sst/v3/internal/util"
+	"github.com/sst/sst/v3/pkg/npm"
+	"github.com/sst/sst/v3/pkg/process"
+	"github.com/sst/sst/v3/pkg/project"
 )
 
 func CmdInit(cli *cli.Cli) error {
@@ -216,24 +217,35 @@ func CmdInit(cli *cli.Cli) error {
 		return err
 	}
 
-	if _, err := os.Stat("package-lock.json"); err == nil {
-		cmd = process.Command("npm", "install")
-	}
-	if _, err := os.Stat("yarn.lock"); err == nil {
-		cmd = process.Command("yarn", "install")
-	}
-	if _, err := os.Stat("pnpm-lock.yaml"); err == nil {
-		cmd = process.Command("pnpm", "install")
-	}
-	if _, err := os.Stat("bun.lockb"); err == nil {
-		cmd = process.Command("bun", "install")
-	}
-	if cmd != nil {
+	cwd, err := os.Getwd()
+	mgr := npm.DetectPackageManager(cwd)
+	if mgr != "" {
+		cmd = process.Command(mgr, "install")
 		spin.Suffix = "  Installing dependencies..."
 		spin.Start()
 		slog.Info("installing deps", "args", cmd.Args)
 		cmd.Run()
 		spin.Stop()
+	}
+
+	if template == "nextjs" {
+		hasEslint := slices.ContainsFunc(hints, func(s string) bool {
+			return strings.Contains(strings.ToLower(s), "eslint")
+		})
+
+		if hasEslint {
+			configFile := "sst.config.ts"
+			content, err := os.ReadFile(configFile)
+			if err != nil {
+				return err
+			}
+
+			newContent := "// eslint-disable-next-line @typescript-eslint/triple-slash-reference\n" + string(content)
+			err = os.WriteFile(configFile, []byte(newContent), 0644)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	spin.Stop()

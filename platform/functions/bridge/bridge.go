@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -15,8 +14,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/sst/ion/cmd/sst/mosaic/aws/appsync"
-	"github.com/sst/ion/cmd/sst/mosaic/aws/bridge"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/aws/appsync"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/aws/bridge"
 )
 
 var version = "0.0.1"
@@ -85,6 +84,7 @@ func run() error {
 	logStreamName := os.Getenv("AWS_LAMBDA_LOG_STREAM_NAME")
 	workerID := logStreamName[len(logStreamName)-32:]
 	prefix := fmt.Sprintf("/sst/%s/%s", SST_APP, SST_STAGE)
+	fmt.Println("prefix", prefix)
 	config, err := config.LoadDefaultConfig(ctx, config.WithRegion(SST_REGION))
 	if err != nil {
 		return err
@@ -94,15 +94,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer conn.Publish(ctx, prefix+"/exit", bridge.ExitEvent{
-		WorkerID:   workerID,
-		FunctionID: SST_FUNCTION_ID,
-	})
-	defer slog.Info("exiting")
+	client := bridge.NewClient(ctx, conn, workerID, prefix+"/"+workerID)
 
-	init := bridge.InitEvent{
+	init := bridge.InitBody{
 		FunctionID:  SST_FUNCTION_ID,
-		WorkerID:    workerID,
 		Environment: []string{},
 	}
 	for _, e := range os.Environ() {
@@ -112,86 +107,63 @@ func run() error {
 		}
 		init.Environment = append(init.Environment, e)
 	}
-	ping, _ := conn.Subscribe(ctx, prefix+"/"+workerID+"/ping")
-	next := make(chan *http.Response)
-	step := make(chan string, 1)
-	go func() {
-		client := &http.Client{
-			Transport: &http.Transport{
-				DisableKeepAlives: false,
-			},
-			Timeout: 0,
-		}
-		for {
-			resp, err := client.Get("http://" + LAMBDA_RUNTIME_API + "/2018-06-01/runtime/invocation/next")
-			fmt.Println("status", resp.Status)
-			if err != nil {
-				cancel()
-				return
-			}
-			requestID := resp.Header.Get("lambda-runtime-aws-request-id")
-			conn.Publish(ctx, prefix+"/ping", bridge.PingEvent{WorkerID: workerID})
+	writer := client.NewWriter(bridge.MessageInit, prefix+"/in")
+	json.NewEncoder(writer).Encode(init)
+	writer.Close()
 
-			go func() {
-				select {
-				case <-ping:
-					return
-				case <-time.After(time.Second * 3):
-					fmt.Println("timeout", requestID)
-					client.Post("http://"+LAMBDA_RUNTIME_API+"/2018-06-01/runtime/invocation/"+requestID+"/response", "application/json", strings.NewReader(`{"body":"sst dev is not running"}`))
-					step <- "done"
-					return
-				}
-			}()
-
-			body, _ := io.ReadAll(resp.Body)
-		loop:
-			for {
-				select {
-				case val := <-step:
-					switch val {
-					case "next":
-						clonedResp := *resp
-						clonedResp.Body = io.NopCloser(bytes.NewReader(body))
-						next <- &clonedResp
-					case "done":
-						break loop
-					}
-				}
-			}
-		}
-	}()
-
-	return bridge.Listen(ctx, conn, prefix, workerID, func(f func(*http.Response), req *http.Request) {
-		if req.URL.Path == "/init" {
-			encoded, _ := json.Marshal(init)
-			f(&http.Response{
-				StatusCode: 200,
-				Body:       io.NopCloser(bytes.NewReader(encoded)),
-				Header: http.Header{
-					"Content-Type": []string{"application/json"},
-				},
-			})
-			return
-		}
-		if strings.HasSuffix(req.URL.Path, "/next") {
-			step <- "next"
-			f(<-next)
-			return
-		}
-		req.URL.Host = LAMBDA_RUNTIME_API
-		req.URL.Scheme = "http"
-		fmt.Println("proxying", req.URL.Path)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		fmt.Println("sent response", req.URL.Path, resp.StatusCode)
-		f(resp)
-		if strings.HasSuffix(req.URL.Path, "/response") || strings.HasSuffix(req.URL.Path, "/error") {
-			fmt.Println("marking done")
-			step <- "done"
-		}
+	notRunning, _ := json.Marshal(map[string]string{
+		"statusCode": "500",
+		"body":       "sst dev is not running (worker: " + workerID + ")",
 	})
+
+	for {
+		resp, err := http.Get("http://" + LAMBDA_RUNTIME_API + "/2018-06-01/runtime/invocation/next")
+		fmt.Println("status", resp.Status)
+		if err != nil {
+			cancel()
+			return err
+		}
+		requestID := resp.Header.Get("lambda-runtime-aws-request-id")
+		writer := client.NewWriter(bridge.MessageNext, prefix+"/in")
+		resp.Write(writer)
+		writer.Close()
+		timeout := time.Second * 3
+
+	loop:
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case msg := <-client.Read():
+				fmt.Println("got message", msg.Type)
+				if msg.Type == bridge.MessageResponse && msg.ID == requestID {
+					http.Post("http://"+LAMBDA_RUNTIME_API+"/2018-06-01/runtime/invocation/"+requestID+"/response", "application/json", msg.Body)
+					break loop
+				}
+				if msg.Type == bridge.MessageError && msg.ID == requestID {
+					http.Post("http://"+LAMBDA_RUNTIME_API+"/2018-06-01/runtime/invocation/"+requestID+"/error", "application/json", msg.Body)
+					break loop
+				}
+				if msg.Type == bridge.MessageInitError {
+					http.Post("http://"+LAMBDA_RUNTIME_API+"/2018-06-01/runtime/invocation/"+requestID+"/error", "application/json", msg.Body)
+					break loop
+				}
+				if msg.Type == bridge.MessageReboot {
+					writer := client.NewWriter(bridge.MessageInit, prefix+"/in")
+					json.NewEncoder(writer).Encode(init)
+					writer.Close()
+					continue
+				}
+				if msg.Type == bridge.MessagePing {
+					timeout = time.Minute * 15
+					continue
+				}
+			case <-time.After(timeout):
+				fmt.Println("timeout", requestID)
+				http.Post("http://"+LAMBDA_RUNTIME_API+"/2018-06-01/runtime/invocation/"+requestID+"/response", "application/json", bytes.NewReader(notRunning))
+				break loop
+			}
+		}
+	}
+
 }

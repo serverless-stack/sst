@@ -136,24 +136,32 @@ export interface App {
    */
   name: string;
   /**
-   * Configure how your resources are handled on `sst remove`:
+   * Configure how your resources are handled when they have to be removed.
    *
-   * - `remove`: Remove all your resources on remove.
-   * - `retain`: Retains S3 buckets and DynamoDB tables, and remove all other resources.
-   * - `retain-all`: Retains all your resources on remove.
+   * - `remove`: Removes the underlying resource.
+   * - `retain`: Retains resources like S3 buckets and DynamoDB tables. Removes everything else.
+   * - `retain-all`: Retains all resources.
    *
    * :::tip
-   * If you change your removal policy, you'll need to deploy your app once for it to take effect.
+   * If you change your removal policy, you'll need to deploy your app once for it to take
+   * effect.
    * :::
    *
-   * @default `"retain"`
-   * @example
-   * Retain resources if it's the _production_ stage, otherwise remove all resources.
+   * For example, retain resources if it's the _production_ stage, otherwise remove all
+   * resources.
+   *
    * ```ts
    * {
    *   removal: input.stage === "production" ? "retain" : "remove"
    * }
    * ```
+   *
+   * This applies to not just the `sst remove` command but also cases where you remove a
+   * resource from the `sst.config.ts` and run `sst dev` or `sst deploy`.
+   *
+   * To control how a stage is handled on `sst remove`, check out the `protected` prop.
+   *
+   * @default `"retain"`
    */
   removal?: "remove" | "retain" | "retain-all";
   /**
@@ -169,7 +177,7 @@ export interface App {
    * }
    * ```
    *
-   * Check out the full list in the [Directory](/docs/providers#directory).
+   * Check out the full list in the [Directory](/docs/all-providers#directory).
    *
    * :::tip
    * You'll need to run `sst install` after you update the `providers` in your config.
@@ -242,6 +250,29 @@ export interface App {
    *
    */
   devAdditionalWatchPaths?: string[];
+
+   * If set to `true`, the `sst remove` CLI will not run and will error out.
+   *
+   * This is useful for preventing cases where you run `sst remove --stage <stage>` for the
+   * wrong stage.
+   *
+   * :::tip
+   * Protect your production stages from being accidentally removed.
+   * :::
+   *
+   * For example, prevent the _production_ stage from being removed.
+   *
+   * ```ts
+   * {
+   *   protected: input.stage === "production"
+   * }
+   * ```
+   *
+   * However, this only applies to `sst remove` for stages. If you accidentally remove a
+   * resource from the `sst.config.ts` and run `sst deploy` or `sst dev`, it'll still get
+   * removed. To avoid this, check out the `removal` prop.
+   */
+  protected?: boolean;
 }
 
 export interface AppInput {
@@ -287,14 +318,14 @@ export interface Runner {
    *
    * The `x86_64` machine uses the [`al2/standard/5.0`](https://github.com/aws/aws-codebuild-docker-images/tree/master/al2/x86_64/standard/5.0) build image.
    * While `arm64` uses the [`al2/aarch64/standard/3.0`](https://github.com/aws/aws-codebuild-docker-images/tree/master/al2/aarch64/standard/3.0) image instead.
-   * 
+   *
    * You can also configure what's used in the image:
-   * 
+   *
    * - **Node**
-   * 
+   *
    *   To specify the version of Node you want to use in your build, you can use the
    *   `.node-version`, `.nvmrc`, or use the `engine` field in your `package.json`.
-   * 
+   *
    *   <Tabs>
    *     <TabItem label="package.json">
    *     ```js title="package.json"
@@ -316,18 +347,18 @@ export interface Runner {
    *     ```
    *     </TabItem>
    *   </Tabs>
-   * 
+   *
    * - **Package manager**
-   * 
+   *
    *   To specify the package manager you want to use you can configure it through your
-   *   `package.json`. 
-   * 
+   *   `package.json`.
+   *
    *   ```js title="package.json"
    *   {
    *     packageManager: "pnpm@8.6.3"
    *   }
    *   ```
-   * 
+   *
    * Feel free to get in touch if you want to use your own build image or configure what's used
    * in the build image.
    */
@@ -928,7 +959,7 @@ export interface Config {
        *       subnets: ["subnet-0b6a2b73896dc8c4c", "subnet-021389ebee680c2f0"]
        *     }
        *   }
-       * } 
+       * }
        * ```
        *
        * Or configure files or directories to be cached.
@@ -940,7 +971,7 @@ export interface Config {
        *       paths: ["node_modules", "/path/to/cache"]
        *     }
        *   }
-       * } 
+       * }
        * ```
        *
        * A _runner_ is a [AWS CodeBuild](https://aws.amazon.com/codebuild/) project and an

@@ -1,13 +1,16 @@
 import { ComponentResourceOptions, output, Output } from "@pulumi/pulumi";
 import { Component, Transform, transform } from "../component";
-import { Function, FunctionArgs, FunctionArn } from "./function";
+import { FunctionArgs, FunctionArn } from "./function";
 import { Input } from "../input.js";
-import { cloudwatch, lambda } from "@pulumi/aws";
+import { cloudwatch, iam, lambda } from "@pulumi/aws";
 import { functionBuilder, FunctionBuilder } from "./helpers/function-builder";
+import { Task } from "./task";
+import { VisibleError } from "../error";
 
 export interface CronArgs {
   /**
    * The function that'll be executed when the cron job runs.
+   * @deprecated Use `function` instead.
    *
    * @example
    *
@@ -36,7 +39,61 @@ export interface CronArgs {
    * }
    * ```
    */
-  job: Input<string | FunctionArgs | FunctionArn>;
+  job?: Input<string | FunctionArgs | FunctionArn>;
+  /**
+   * The function that'll be executed when the cron job runs.
+   *
+   * @example
+   *
+   * ```ts
+   * {
+   *   function: "src/cron.handler"
+   * }
+   * ```
+   *
+   * You can pass in the full function props.
+   *
+   * ```ts
+   * {
+   *   function: {
+   *     handler: "src/cron.handler",
+   *     timeout: "60 seconds"
+   *   }
+   * }
+   * ```
+   *
+   * You can also pass in a function ARN.
+   *
+   * ```ts
+   * {
+   *   function: "arn:aws:lambda:us-east-1:000000000000:function:my-sst-app-jayair-MyFunction",
+   * }
+   * ```
+   */
+  function?: Input<string | FunctionArgs | FunctionArn>;
+  /**
+   * The task that'll be executed when the cron job runs.
+   *
+   * @example
+   *
+   * For example, let's say you have a task.
+   *
+   * ```js title="sst.config.ts"
+   * const myCluster = new sst.aws.Cluster("MyCluster");
+   * const myTask = myCluster.addTask("MyTask");
+   * ```
+   *
+   * You can then pass in the task to the cron job.
+   *
+   * ```js title="sst.config.ts"
+   * new sst.aws.Cron("MyCronJob", {
+   *   task: myTask,
+   *   schedule: "rate(1 minute)"
+   * });
+   * ```
+   *
+   */
+  task?: Task;
   /**
    * The schedule for the cron job.
    *
@@ -84,18 +141,32 @@ export interface CronArgs {
 }
 
 /**
- * The `Cron` component lets you add cron jobs to your app.
- * It uses [Amazon Event Bus](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-event-bus.html).
+ * The `Cron` component lets you add cron jobs to your app
+ * using [Amazon Event Bus](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-event-bus.html). The cron job can invoke a `Function` or a container `Task`.
  *
  * @example
- * #### Minimal example
+ * #### Cron job function
  *
- * Pass in a `schedule` and a `job` function that'll be executed.
+ * Pass in a `schedule` and a `function` that'll be executed.
  *
  * ```ts title="sst.config.ts"
  * new sst.aws.Cron("MyCronJob", {
- *   job: "src/cron.handler",
+ *   function: "src/cron.handler",
  *   schedule: "rate(1 minute)"
+ * });
+ * ```
+ *
+ * #### Cron job container task
+ *
+ * Create a container task and pass in a `schedule` and a `task` that'll be executed.
+ *
+ * ```ts title="sst.config.ts" {5}
+ * const myCluster = new sst.aws.Cluster("MyCluster");
+ * const myTask = myCluster.addTask("MyTask");
+ *
+ * new sst.aws.Cron("MyCronJob", {
+ *   task: myTask,
+ *   schedule: "rate(1 day)"
  * });
  * ```
  *
@@ -104,7 +175,7 @@ export interface CronArgs {
  * ```js title="sst.config.ts"
  * new sst.aws.Cron("MyCronJob", {
  *   schedule: "rate(1 minute)",
- *   job: {
+ *   function: {
  *     handler: "src/cron.handler",
  *     timeout: "60 seconds"
  *   }
@@ -112,7 +183,8 @@ export interface CronArgs {
  * ```
  */
 export class Cron extends Component {
-  private fn: FunctionBuilder;
+  private name: string;
+  private fn?: FunctionBuilder;
   private rule: cloudwatch.EventRule;
   private target: cloudwatch.EventTarget;
 
@@ -121,21 +193,33 @@ export class Cron extends Component {
 
     const parent = this;
 
-    const fn = createFunction();
+    const fnArgs = normalizeFunction();
+    normalizeTargets();
     const rule = createRule();
+    const fn = createFunction();
+    const role = createRole();
     const target = createTarget();
-    createPermission();
 
+    this.name = name;
     this.fn = fn;
     this.rule = rule;
     this.target = target;
 
-    function createFunction() {
-      return output(args.job).apply((job) =>
-        functionBuilder(`${name}Handler`, job, {}, undefined, {
-          parent,
-        }),
-      );
+    function normalizeFunction() {
+      if (args.job && args.function)
+        throw new VisibleError(
+          `You cannot provide both "job" and "function" in the "${name}" Cron component. The "job" property has been deprecated. Use "function" instead.`,
+        );
+
+      const input = args.function ?? args.job;
+      return input ? output(input) : undefined;
+    }
+
+    function normalizeTargets() {
+      if (fnArgs && args.task)
+        throw new VisibleError(
+          `You cannot provide both a function and a task in the "${name}" Cron component.`,
+        );
     }
 
     function createRule() {
@@ -151,22 +235,16 @@ export class Cron extends Component {
       );
     }
 
-    function createTarget() {
-      return new cloudwatch.EventTarget(
-        ...transform(
-          args.transform?.target,
-          `${name}Target`,
-          {
-            arn: fn.arn,
-            rule: rule.name,
-          },
-          { parent },
-        ),
-      );
-    }
+    function createFunction() {
+      if (!fnArgs) return;
 
-    function createPermission() {
-      return new lambda.Permission(
+      const fn = fnArgs.apply((fnArgs) =>
+        functionBuilder(`${name}Handler`, fnArgs, {}, undefined, {
+          parent,
+        }),
+      );
+
+      new lambda.Permission(
         `${name}Permission`,
         {
           action: "lambda:InvokeFunction",
@@ -175,6 +253,68 @@ export class Cron extends Component {
           sourceArn: rule.arn,
         },
         { parent },
+      );
+
+      return fn;
+    }
+
+    function createRole() {
+      if (!args.task) return;
+
+      return new iam.Role(
+        `${name}TargetRole`,
+        {
+          assumeRolePolicy: iam.assumeRolePolicyForPrincipal({
+            Service: "events.amazonaws.com",
+          }),
+          inlinePolicies: [
+            {
+              name: "inline",
+              policy: iam.getPolicyDocumentOutput({
+                statements: [
+                  {
+                    actions: ["ecs:RunTask"],
+                    resources: [args.task.nodes.taskDefinition.arn],
+                  },
+                  {
+                    actions: ["iam:PassRole"],
+                    resources: [
+                      args.task.nodes.executionRole.arn,
+                      args.task.nodes.taskRole.arn,
+                    ],
+                  },
+                ],
+              }).json,
+            },
+          ],
+        },
+        { parent },
+      );
+    }
+
+    function createTarget() {
+      return new cloudwatch.EventTarget(
+        ...transform(
+          args.transform?.target,
+          `${name}Target`,
+          fn
+            ? { arn: fn.arn, rule: rule.name }
+            : {
+              arn: args.task!.cluster,
+              rule: rule.name,
+              ecsTarget: {
+                launchType: "FARGATE",
+                taskDefinitionArn: args.task!.nodes.taskDefinition.arn,
+                networkConfiguration: {
+                  subnets: args.task!.subnets,
+                  securityGroups: args.task!.securityGroups,
+                  assignPublicIp: args.task!.assignPublicIp,
+                },
+              },
+              roleArn: role!.arn,
+            },
+          { parent },
+        ),
       );
     }
   }
@@ -186,9 +326,24 @@ export class Cron extends Component {
     const self = this;
     return {
       /**
-       * The AWS Lambda Function that's invoked when the cron job runs.
+       * The AWS Lambda Function that'll be invoked when the cron job runs.
+       * @deprecated Use `nodes.function` instead.
        */
       get job() {
+        if (!self.fn)
+          throw new VisibleError(
+            `No function created for the "${self.name}" cron job.`,
+          );
+        return self.fn.apply((fn) => fn.getFunction());
+      },
+      /**
+       * The AWS Lambda Function that'll be invoked when the cron job runs.
+       */
+      get function() {
+        if (!self.fn)
+          throw new VisibleError(
+            `No function created for the "${self.name}" cron job.`,
+          );
         return self.fn.apply((fn) => fn.getFunction());
       },
       /**

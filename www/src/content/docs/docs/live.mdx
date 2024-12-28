@@ -179,3 +179,15 @@ You need to start a new terminal **in VS Code** after enabling Auto Attach.
 :::
 
 Now open a new terminal in VS Code, run `sst dev`, set a breakpoint in a function, and invoke the function.
+
+---
+
+## Changelog
+
+Live is a feature that was created by SST when it first launched back in 2021. It's gone through a few different iterations since then.
+
+| SST Version | Change |
+| --- | --- |
+| **v0.5.0** | Then called _Live Lambda_, used a API Gateway WebSocket API and a DynamoDB table. |
+| **v2.0.0** | Switched to using AWS IoT, this was roughly 2-3x faster. |
+| **v3.3.1** | Switched to using AWS AppSync Events, which is even faster and handles larger payloads better. |

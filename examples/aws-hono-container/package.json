@@ -11,7 +11,7 @@
     "@aws-sdk/s3-request-presigner": "^3.701.0",
     "@hono/node-server": "^1.13.7",
     "hono": "^4.6.12",
-    "sst": "3.3.35"
+    "sst": "latest"
   },
   "devDependencies": {
     "@types/aws-lambda": "8.10.146",

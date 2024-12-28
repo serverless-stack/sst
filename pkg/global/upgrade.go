@@ -14,7 +14,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/sst/ion/pkg/npm"
+	"github.com/sst/sst/v3/pkg/npm"
 )
 
 func Upgrade(existingVersion string, nextVersion string) (string, error) {
@@ -66,7 +66,7 @@ func Upgrade(existingVersion string, nextVersion string) (string, error) {
 	if nextVersion == existingVersion {
 		return nextVersion, nil
 	}
-	url := "https://github.com/sst/sst/releases/download/" + nextVersion + "/sst-" + filename
+	url := "https://github.com/sst/sst/v3/releases/download/" + nextVersion + "/sst-" + filename
 	slog.Info("downloading", "url", url)
 	resp, err := http.Get(url)
 	if err != nil {
@@ -122,7 +122,9 @@ func UpgradeNode(existingVersion string, nextVersion string) (map[string]string,
 	if err != nil {
 		return result, err
 	}
-	re := regexp.MustCompile(`"sst": "[^"]+"`)
+
+	// Ensure we only replace an existing "sst" entry in dependencies/devDependencies of package.json
+	re := regexp.MustCompile(`(("dependencies"|"devDependencies")\s*:\s*{[^}]*"sst"\s*:\s*)"[^"]*"`)
 	for _, file := range files {
 		if strings.HasPrefix(file, ".sst") {
 			continue
@@ -138,7 +140,7 @@ func UpgradeNode(existingVersion string, nextVersion string) (map[string]string,
 		if len(matches) == 0 {
 			continue
 		}
-		data = re.ReplaceAll(data, []byte(`"sst": "`+nextVersion+`"`))
+		data = re.ReplaceAll(data, []byte(`${1}"`+nextVersion+`"`))
 		err = os.WriteFile(file, data, 0666)
 		if err != nil {
 			return result, err

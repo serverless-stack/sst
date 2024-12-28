@@ -3,6 +3,8 @@ title: State
 description: Tracking the infrastructure created by your app.
 ---
 
+import VideoAside from "../../../components/VideoAside.astro";
+
 When you deploy your app, SST creates a state file locally to keep track of the state of the infrastructure in your app.
 
 So when you make a change, it'll allow SST to do a diff with the state and only deploy what's changed.
@@ -100,9 +102,7 @@ Now when you run the SST CLI, it'll bootstrap your account again.
 
 The state file is a JSON representation of all the low level resources created by your app. It is a cached version of the state of resources in the cloud provider.
 
-:::tip
-The state file is a cached version of the resources that've been created by your app.
-:::
+<VideoAside title="Watch a video about how state works" href="https://youtu.be/eb1ydrqEFUw" />
 
 So when you do a deploy the following happens.
 

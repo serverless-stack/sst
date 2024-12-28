@@ -10,11 +10,16 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.712.0",
+    "@aws-sdk/client-ecs": "^3.713.0",
     "@aws-sdk/client-eventbridge": "^3.679.0",
     "@aws-sdk/client-sesv2": "^3.515.0",
     "@aws-sdk/client-sns": "^3.679.0",
     "@aws-sdk/client-sqs": "^3.682.0",
+    "@openauthjs/openauth": "^0.0.19",
     "ioredis": "^5.4.1",
-    "sst": "latest"
+    "pg": "^8.13.1",
+    "sst": "latest",
+    "valibot": "1.0.0-beta.9"
   }
 }

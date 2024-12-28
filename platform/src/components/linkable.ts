@@ -1,6 +1,7 @@
 import { output } from "@pulumi/pulumi";
 import { Link } from "./link";
 import { Component } from "./component";
+import { Input } from "./input";
 
 export interface Definition<
   Properties extends Record<string, any> = Record<string, any>,
@@ -173,7 +174,8 @@ export interface Definition<
  */
 export class Linkable<T extends Record<string, any>>
   extends Component
-  implements Link.Linkable {
+  implements Link.Linkable
+{
   private _name: string;
   private _definition: Definition<T>;
 
@@ -268,13 +270,13 @@ export class Linkable<T extends Record<string, any>>
    * in our app.
    */
   public static wrap<Resource>(
-    cls: { new(...args: any[]): Resource },
+    cls: { new (...args: any[]): Resource },
     cb: (resource: Resource) => Definition,
   ) {
     // @ts-expect-error
     this.wrappedResources.add(cls.__pulumiType);
 
-    cls.prototype.getSSTLink = function() {
+    cls.prototype.getSSTLink = function () {
       return cb(this);
     };
   }
@@ -316,4 +318,11 @@ export class Resource extends Component implements Link.Linkable {
       properties: this._properties,
     };
   }
+}
+
+export function env(env: Record<string, Input<string>>) {
+  return {
+    type: "environment" as const,
+    env,
+  };
 }

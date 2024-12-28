@@ -380,16 +380,16 @@ export class SolidStart extends Component implements Link.Linkable {
 
     const { access, bucket } = createBucket(parent, name, partition, args);
     const outputPath = buildApp(parent, name, args, sitePath);
-    const preset = outputPath.apply((output) => {
+    const nitro = outputPath.apply((output) => {
       const nitro = JSON.parse(
         fs.readFileSync(path.join(output, ".output/nitro.json")).toString(),
       );
-      if (!["aws-lambda-streaming", "aws-lambda"].includes(nitro.preset)) {
+      if (nitro.preset !== "aws-lambda") {
         throw new VisibleError(
-          `SolidStart's app.config.ts must be configured to use the "aws-lambda-streaming" or "aws-lambda" preset. It is currently set to "${nitro.preset}".`,
+          `SolidStart's app.config.ts must be configured to use the "aws-lambda" preset. It is currently set to "${nitro.preset}".`,
         );
       }
-      return nitro.preset;
+      return nitro;
     });
     const buildMeta = loadBuildMetadata();
     const plan = buildPlan();
@@ -450,13 +450,13 @@ export class SolidStart extends Component implements Link.Linkable {
     }
 
     function buildPlan() {
-      return all([outputPath, buildMeta, preset]).apply(
-        ([outputPath, buildMeta, preset]) => {
+      return all([outputPath, buildMeta, nitro]).apply(
+        ([outputPath, buildMeta, nitro]) => {
           const serverConfig = {
             description: "Server handler for Solid",
             handler: "index.handler",
             bundle: path.join(outputPath, ".output", "server"),
-            streaming: preset === "aws-lambda-streaming",
+            streaming: nitro?.config?.awsLambda?.streaming === true,
           };
 
           return validatePlan({

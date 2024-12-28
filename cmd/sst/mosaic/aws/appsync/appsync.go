@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -16,8 +17,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/gorilla/websocket"
-	"github.com/sst/ion/pkg/id"
+	"github.com/sst/sst/v3/pkg/id"
 )
+
+var log = slog.Default().WithGroup("appsync")
 
 type Connection struct {
 	conn             *websocket.Conn
@@ -49,59 +52,75 @@ func Dial(
 		realtimeEndpoint: realtimeEndpoint,
 		subscriptions:    map[string]SubscriptionChannel{},
 	}
-	auth, err := result.getAuth(ctx, map[string]interface{}{})
+
+	err := result.connect(ctx)
 	if err != nil {
 		return nil, err
 	}
+
+	go func() {
+		<-ctx.Done()
+		if result.conn != nil {
+			result.conn.Close()
+		}
+		for _, out := range result.subscriptions {
+			close(out)
+		}
+	}()
+	return result, nil
+}
+
+func (c *Connection) connect(ctx context.Context) error {
+	auth, err := c.getAuth(ctx, map[string]interface{}{})
+	if err != nil {
+		return err
+	}
 	authJson, err := json.Marshal(auth)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	auth64 := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(authJson)
 	dialer := websocket.Dialer{
 		Subprotocols: []string{"aws-appsync-event-ws", "header-" + auth64},
 	}
-	conn, _, err := dialer.DialContext(ctx, "wss://"+result.realtimeEndpoint+"/event/realtime", nil)
+	conn, _, err := dialer.DialContext(ctx, "wss://"+c.realtimeEndpoint+"/event/realtime", nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	result.conn = conn
-
+	c.conn = conn
 	go func() {
 		for {
 			msg := map[string]interface{}{}
 			err := conn.ReadJSON(&msg)
 			if err != nil {
+				for {
+					log.Info("trying to reconnect", "err", err)
+					err := c.connect(ctx)
+					if err == nil {
+						break
+					}
+					time.Sleep(time.Second * 3)
+				}
 				return
 			}
-
 			if msg["type"] == "ka" {
 			}
-
 			if msg["type"] == "subscribe_success" {
 				id := msg["id"].(string)
-				if out, ok := result.subscriptions[id]; ok {
+				if out, ok := c.subscriptions[id]; ok {
 					out <- "ok"
 				}
 			}
-
 			if t := msg["type"]; t == "data" {
 				id := msg["id"].(string)
-				if out, ok := result.subscriptions[id]; ok {
+				if out, ok := c.subscriptions[id]; ok {
 					out <- msg["event"].(string)
 				}
 			}
 		}
 	}()
 
-	go func() {
-		<-ctx.Done()
-		conn.Close()
-		for _, out := range result.subscriptions {
-			close(out)
-		}
-	}()
-	return result, nil
+	return nil
 }
 
 var ErrSubscriptionFailed = fmt.Errorf("subscription failed")

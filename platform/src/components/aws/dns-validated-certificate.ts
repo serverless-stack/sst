@@ -65,6 +65,20 @@ export class DnsValidatedCertificate extends Component {
             return true;
           });
 
+          // create CAA record if domain not hosted on Route53
+          const caaRecord =
+            dns.provider === "aws"
+              ? undefined
+              : dns.createRecord(
+                  name,
+                  {
+                    type: "CAA",
+                    name: domainName,
+                    value: "0 issue amazonaws.com",
+                  },
+                  { parent },
+                );
+
           // create records
           return options.map((option) =>
             dns.createRecord(
@@ -74,7 +88,7 @@ export class DnsValidatedCertificate extends Component {
                 name: option.resourceRecordName,
                 value: option.resourceRecordValue,
               },
-              { parent },
+              { parent, dependsOn: caaRecord ? [caaRecord] : [] },
             ),
           );
         },

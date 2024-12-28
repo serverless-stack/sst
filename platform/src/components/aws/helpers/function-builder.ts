@@ -18,7 +18,10 @@ export type FunctionBuilder = Output<{
 export function functionBuilder(
   name: string,
   definition: Input<string | FunctionArn | FunctionArgs>,
-  defaultArgs: Pick<FunctionArgs, "description" | "link" | "permissions">,
+  defaultArgs: Pick<
+    FunctionArgs,
+    "description" | "link" | "environment" | "permissions" | "_skipHint"
+  >,
   argsTransform?: Transform<FunctionArgs>,
   opts?: ComponentResourceOptions,
 ): FunctionBuilder {
@@ -71,6 +74,13 @@ export function functionBuilder(
                 ...(link ?? []),
               ],
             ),
+            environment: all([
+              defaultArgs?.environment,
+              definition.environment,
+            ]).apply(([defaultEnvironment, environment]) => ({
+              ...(defaultEnvironment ?? {}),
+              ...(environment ?? {}),
+            })),
             permissions: all([
               defaultArgs?.permissions,
               definition.permissions,

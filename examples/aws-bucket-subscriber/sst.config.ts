@@ -15,8 +15,14 @@ export default $config({
   },
   async run() {
     const bucket = new sst.aws.Bucket("MyBucket");
-    bucket.subscribe("subscriber.handler", {
-      events: ["s3:ObjectCreated:*"],
+    bucket.notify({
+      notifications: [
+        {
+          name: "MySubscriber",
+          function: "subscriber.handler",
+          events: ["s3:ObjectCreated:*"],
+        },
+      ],
     });
 
     return {

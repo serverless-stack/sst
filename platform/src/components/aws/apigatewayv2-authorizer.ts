@@ -29,6 +29,10 @@ export interface AuthorizerArgs extends ApiGatewayV2AuthorizerArgs {
      */
     executionArn: Input<string>;
   }>;
+  /**
+   * The type of the API Gateway.
+   */
+  type: "http" | "websocket";
 }
 
 /**
@@ -87,6 +91,11 @@ export class ApiGatewayV2Authorizer extends Component {
     }
 
     function createAuthorizer() {
+      const defaultIdentitySource =
+        args.type === "http"
+          ? "$request.header.Authorization"
+          : "route.request.header.Authorization";
+
       return new apigatewayv2.Authorizer(
         ...transform(
           args.transform?.authorizer,
@@ -97,26 +106,28 @@ export class ApiGatewayV2Authorizer extends Component {
               ? {
                   authorizerType: "REQUEST",
                   identitySources: lamb.apply(
-                    (lamb) =>
-                      lamb.identitySources ?? ["$request.header.Authorization"],
+                    (lamb) => lamb.identitySources ?? [defaultIdentitySource],
                   ),
                   authorizerUri: fn!.nodes.function.invokeArn,
-                  authorizerResultTtlInSeconds: lamb.apply((lamb) =>
-                    toSeconds(lamb.ttl ?? "0 seconds"),
-                  ),
-                  enableSimpleResponses: lamb.apply(
-                    (lamb) => (lamb.response ?? "simple") === "simple",
-                  ),
-                  authorizerPayloadFormatVersion: lamb.apply(
-                    (lamb) => lamb.payload ?? "2.0",
-                  ),
+                  ...(args.type === "http"
+                    ? {
+                        authorizerResultTtlInSeconds: lamb.apply((lamb) =>
+                          toSeconds(lamb.ttl ?? "0 seconds"),
+                        ),
+                        authorizerPayloadFormatVersion: lamb.apply(
+                          (lamb) => lamb.payload ?? "2.0",
+                        ),
+                        enableSimpleResponses: lamb.apply(
+                          (lamb) => (lamb.response ?? "simple") === "simple",
+                        ),
+                      }
+                    : {}),
                 }
               : {
                   authorizerType: "JWT",
                   identitySources: [
                     jwt!.apply(
-                      (jwt) =>
-                        jwt.identitySource ?? "$request.header.Authorization",
+                      (jwt) => jwt.identitySource ?? defaultIdentitySource,
                     ),
                   ],
                   jwtConfiguration: jwt!.apply((jwt) => ({

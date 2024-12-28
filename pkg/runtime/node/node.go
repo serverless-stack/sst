@@ -14,10 +14,10 @@ import (
 
 	"github.com/evanw/esbuild/pkg/api"
 	esbuild "github.com/evanw/esbuild/pkg/api"
-	"github.com/sst/ion/pkg/flag"
-	"github.com/sst/ion/pkg/process"
-	"github.com/sst/ion/pkg/project/path"
-	"github.com/sst/ion/pkg/runtime"
+	"github.com/sst/sst/v3/pkg/flag"
+	"github.com/sst/sst/v3/pkg/process"
+	"github.com/sst/sst/v3/pkg/project/path"
+	"github.com/sst/sst/v3/pkg/runtime"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -143,7 +143,7 @@ func (r *Runtime) Run(ctx context.Context, input *runtime.RunInput) (runtime.Wor
 	cmd.Env = append(cmd.Env, "NODE_OPTIONS="+os.Getenv("NODE_OPTIONS"))
 	cmd.Env = append(cmd.Env, "VSCODE_INSPECTOR_OPTIONS="+os.Getenv("VSCODE_INSPECTOR_OPTIONS"))
 	cmd.Env = append(cmd.Env, "AWS_LAMBDA_RUNTIME_API="+input.Server)
-	slog.Info("starting worker", "env", cmd.Env, "args", cmd.Args)
+	slog.Info("starting worker", "server", input.Server)
 	cmd.Dir = input.Build.Out
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()

@@ -17,3 +17,7 @@ func ResolveLogDir(cfgPath string) string {
 func ResolveRootDir(cfgPath string) string {
 	return filepath.Dir(cfgPath)
 }
+
+func ResolveProviderLock(cfgPath string) string {
+	return filepath.Join(ResolveWorkingDir(cfgPath), "provider-lock.json")
+}

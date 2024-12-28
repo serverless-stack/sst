@@ -1,23 +1,23 @@
 ---
 title: SDK
-description: Interact with linked resources in your functions in a typesafe way.
+description: Interact with your infrastructure in your runtime code.
 ---
 
-The JS SDK is an [npm package](https://www.npmjs.com/package/sst) that you can use in your runtime code to interact with your infrastructure.
+The SST SDK allows your runtime code to interact with your infrastructure in a typesafe way.
 
-You can use the SDK in your **functions**, **frontends**, and **container applications**. You can access links from components in a typesafe way. And some components come with SDK clients that you can use.
+You can use the SDK in your **functions**, **frontends**, and **container applications**. You can access links from components. And some components come with SDK clients that you can use.
 
 :::tip
 Check out the _SDK_ section in a component's API reference doc.
 :::
 
-Currently, the SDK is only available for JavaScript and TypeScript. Support for other languages is coming soon.
+Currently, the SDK is only available for JavaScript/TypeScript and Golang. Support for other languages is on the roadmap.
 
 ---
 
-## Installation
+## Node.js
 
-Install the [npm package](https://www.npmjs.com/package/sst).
+The JS SDK is an [npm package](https://www.npmjs.com/package/sst) that you can install in your functions, frontends, or container applications.
 
 ```bash
 npm install sst
@@ -25,7 +25,7 @@ npm install sst
 
 ---
 
-## Links
+### Links
 
 Import `Resource` to access the linked resources.
 
@@ -41,7 +41,7 @@ The `Resource` object is typesafe and will autocomplete the available resources 
 
 Here we are assuming that a bucket has been linked to the function. Here's what that could look like.
 
-```js title="sst.config.ts"
+```js title="sst.config.ts" {5}
 const bucket = new sst.aws.Bucket("MyBucket");
 
 new sst.aws.Function("MyFunction", {
@@ -52,7 +52,7 @@ new sst.aws.Function("MyFunction", {
 
 ---
 
-### Defaults
+#### Defaults
 
 By default, the `Resource` object contains `Resource.App`. This gives you some info about the current app including:
 
@@ -67,7 +67,23 @@ console.log(Resource.App.name, Resource.App.stage);
 
 ---
 
-#### How it works
+### Clients
+
+Components like the [`Realtime`](/docs/component/aws/realtime/) component come with a client that you can use.
+
+```ts title="src/lambda.ts"
+import { realtime } from "sst/aws/realtime";
+
+export const handler = realtime.authorizer(async (token) => {
+  // Validate the token
+});
+```
+
+For example, `realtime.authorizer` lets you create the handler for the authorizer function that `Realtime` needs.
+
+---
+
+### How it works
 
 In the above example, `Resource.MyBucket.name` works because it's been injected into the function package on `sst dev` and `sst deploy`.
 
@@ -77,16 +93,38 @@ The JS SDK first checks the `process.env` and then the `globalThis` for the link
 
 ---
 
-## Client
+## Golang
 
-Components like the [`Realtime`](/docs/component/aws/realtime/) component come with a client that you can use.
+Use the SST Go SDK package in your Golang functions or container applications.
 
-```ts
-import { realtime } from "sst/aws/realtime";
+```go title="src/main.go"
+import (
+  "github.com/sst/sst/v3/sdk/golang/resource"
+)
+```
 
-export const handler = realtime.authorizer(async (token) => {
-  // Validate the token
+In your runtime code, use the `resource.Get` function to access the linked resources.
+
+```go title="src/main.go"
+resource.Get("MyBucket", "name")
+```
+
+Where `MyBucket` is the name of a bucket that's linked to the function.
+
+```js title="sst.config.ts" {5}
+const bucket = new sst.aws.Bucket("MyBucket");
+
+new sst.aws.Function("MyFunction", {
+  handler: "./src",
+  link: [bucket]
 });
 ```
 
-For example, `realtime.authorizer` lets you create the handler for the authorizer function that `Realtime` needs.
+You can also access the current app's info with.
+
+```go title="src/main.go"
+resource.Get("App", "name")
+resource.Get("App", "stage")
+```
+
+Client functions are currently **not supported** in the Go SDK.

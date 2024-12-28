@@ -14,12 +14,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sst/ion/pkg/global"
-	"github.com/sst/ion/pkg/project"
-	"github.com/sst/ion/pkg/server/aws"
-	"github.com/sst/ion/pkg/server/resource"
-	"github.com/sst/ion/pkg/server/runtime"
-	"github.com/sst/ion/pkg/server/scrap"
+	"github.com/sst/sst/v3/pkg/global"
+	"github.com/sst/sst/v3/pkg/project"
+	"github.com/sst/sst/v3/pkg/server/aws"
+	"github.com/sst/sst/v3/pkg/server/resource"
+	"github.com/sst/sst/v3/pkg/server/runtime"
+	"github.com/sst/sst/v3/pkg/server/scrap"
 )
 
 type Server struct {

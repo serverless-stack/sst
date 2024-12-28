@@ -10,20 +10,21 @@ import (
 	"time"
 
 	"github.com/kballard/go-shellquote"
-	"github.com/sst/ion/cmd/sst/cli"
-	"github.com/sst/ion/cmd/sst/mosaic/aws"
-	"github.com/sst/ion/cmd/sst/mosaic/cloudflare"
-	"github.com/sst/ion/cmd/sst/mosaic/deployer"
-	"github.com/sst/ion/cmd/sst/mosaic/dev"
-	"github.com/sst/ion/cmd/sst/mosaic/multiplexer"
-	"github.com/sst/ion/cmd/sst/mosaic/socket"
-	"github.com/sst/ion/cmd/sst/mosaic/watcher"
-	"github.com/sst/ion/internal/util"
-	"github.com/sst/ion/pkg/bus"
-	"github.com/sst/ion/pkg/process"
-	"github.com/sst/ion/pkg/project"
-	"github.com/sst/ion/pkg/runtime"
-	"github.com/sst/ion/pkg/server"
+	"github.com/sst/sst/v3/cmd/sst/cli"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/aws"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/cloudflare"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/deployer"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/dev"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/monoplexer"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/multiplexer"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/socket"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/watcher"
+	"github.com/sst/sst/v3/internal/util"
+	"github.com/sst/sst/v3/pkg/bus"
+	"github.com/sst/sst/v3/pkg/process"
+	"github.com/sst/sst/v3/pkg/project"
+	"github.com/sst/sst/v3/pkg/runtime"
+	"github.com/sst/sst/v3/pkg/server"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -198,6 +199,11 @@ func CmdMosaic(c *cli.Cli) error {
 		return server.Start(c.Context, p)
 	})
 
+	wg.Go(func() error {
+		defer c.Cancel()
+		return deployer.Start(c.Context, p, server)
+	})
+
 	currentExecutable, _ := os.Executable()
 
 	mode := c.String("mode")
@@ -213,6 +219,7 @@ func CmdMosaic(c *cli.Cli) error {
 		)
 		multi.AddProcess("deploy", []string{currentExecutable, "ui", "--filter=sst"}, "⑆", "SST", "", false, true, append(multiEnv, "SST_LOG="+p.PathLog("ui-deploy"))...)
 		multi.AddProcess("function", []string{currentExecutable, "ui", "--filter=function"}, "λ", "Functions", "", false, true, append(multiEnv, "SST_LOG="+p.PathLog("ui-function"))...)
+		// multi.AddProcess("task", []string{currentExecutable, "ui", "--filter=task"}, "λ", "Tasks", "", false, true, append(multiEnv, "SST_LOG="+p.PathLog("ui-task"))...)
 		wg.Go(func() error {
 			defer c.Cancel()
 			multi.Start()
@@ -254,6 +261,62 @@ func CmdMosaic(c *cli.Cli) error {
 								"SST_LOG="+p.PathLog("tunnel_"+name),
 							)...)
 						}
+						if len(evt.Tasks) > 0 {
+							multi.AddProcess("task", []string{currentExecutable, "ui", "--filter=task"}, "⧉", "Tasks", "", false, true, append(multiEnv, "SST_LOG="+p.PathLog("ui-task"))...)
+						}
+						break
+					}
+				}
+			}
+		})
+	}
+
+	if mode == "basic" {
+		wg.Go(func() error {
+			return CmdUI(c)
+		})
+	}
+
+	if mode == "mono" {
+		mono := monoplexer.New()
+		mono.AddProcess("deploy", []string{currentExecutable, "ui", "--filter=sst"}, "", "SST")
+		mono.AddProcess("function", []string{currentExecutable, "ui", "--filter=function"}, "", "Function")
+
+		wg.Go(func() error {
+			defer c.Cancel()
+			return mono.Start(c.Context)
+		})
+
+		wg.Go(func() error {
+			evts := bus.Subscribe(&project.CompleteEvent{})
+			defer c.Cancel()
+			for {
+				select {
+				case <-c.Context.Done():
+					return nil
+				case unknown := <-evts:
+					switch evt := unknown.(type) {
+					case *project.CompleteEvent:
+						for _, d := range evt.Devs {
+							if d.Command == "" {
+								continue
+							}
+							dir := filepath.Join(cwd, d.Directory)
+							words, _ := shellquote.Split(d.Command)
+							title := d.Title
+							if title == "" {
+								title = d.Name
+							}
+							mono.AddProcess(
+								d.Name,
+								append([]string{currentExecutable, "dev", "--"}, words...),
+								dir,
+								title,
+							)
+						}
+						for range evt.Tunnels {
+							mono.AddProcess("tunnel", []string{currentExecutable, "tunnel", "--stage", p.App().Stage}, "", "Tunnel")
+						}
 						break
 					}
 				}
@@ -262,15 +325,10 @@ func CmdMosaic(c *cli.Cli) error {
 	}
 
 	wg.Go(func() error {
-		defer c.Cancel()
-		return deployer.Start(c.Context, p, server)
+		<-c.Context.Done()
+		fmt.Println("Cleaning up...")
+		return nil
 	})
-
-	if mode == "basic" {
-		wg.Go(func() error {
-			return CmdUI(c)
-		})
-	}
 
 	err = wg.Wait()
 	slog.Info("done mosaic", "err", err)

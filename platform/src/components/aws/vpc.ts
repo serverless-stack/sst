@@ -24,17 +24,31 @@ export type { VpcArgs as VpcV1Args } from "./vpc-v1";
 
 export interface VpcArgs {
   /**
-   * Number of Availability Zones or AZs for the VPC. By default, it creates a VPC with 2
-   * availability zones since services like RDS and Fargate need at least 2 AZs.
+   * Specify the Availability Zones or AZs for the VPC.
+   *
+   * You can specify a number of AZs or a list of AZs. If you specify a number, it will
+   * look up the availability zones in the region and automatically select that number of
+   * AZs. If you specify a list of AZs, it will use that list of AZs.
+   *
+   * By default, it creates a VPC with 2 availability zones since services like RDS and
+   * Fargate need at least 2 AZs.
    * @default `2`
    * @example
+   * Create a VPC with 3 AZs
    * ```ts
    * {
    *   az: 3
    * }
    * ```
+   *
+   * Create a VPC with specific AZs
+   * ```ts
+   * {
+   *   az: ["us-east-1a", "us-east-1b"]
+   * }
+   * ```
    */
-  az?: Input<number>;
+  az?: Input<number | Input<string>[]>;
   /**
    * Configures NAT. Enabling NAT allows resources in private subnets to connect to the internet.
    *
@@ -197,6 +211,10 @@ export interface VpcArgs {
      * Transform the EC2 bastion instance resource.
      */
     bastionInstance?: Transform<ec2.InstanceArgs>;
+    /**
+     * Transform the EC2 bastion security group resource.
+     */
+    bastionSecurityGroup?: Transform<ec2.SecurityGroupArgs>;
   };
 }
 
@@ -654,17 +672,21 @@ export class Vpc extends Component implements Link.Linkable {
     }
 
     function normalizeAz() {
-      const zones = getAvailabilityZonesOutput(
-        {
-          state: "available",
-        },
-        { parent: self },
-      );
-      return all([zones, args.az ?? 2]).apply(([zones, az]) =>
-        Array(az)
-          .fill(0)
-          .map((_, i) => zones.names[i]),
-      );
+      return output(args.az).apply((az) => {
+        if (Array.isArray(az)) return output(az);
+
+        const zones = getAvailabilityZonesOutput(
+          {
+            state: "available",
+          },
+          { parent: self },
+        );
+        return all([zones, args.az ?? 2]).apply(([zones, az]) =>
+          Array(az)
+            .fill(0)
+            .map((_, i) => zones.names[i]),
+        );
+      });
     }
 
     function normalizeNat() {
@@ -756,6 +778,7 @@ export class Vpc extends Component implements Link.Linkable {
           args.transform?.securityGroup,
           `${name}SecurityGroup`,
           {
+            description: "Managed by SST",
             vpcId: vpc.id,
             egress: [
               {
@@ -1049,27 +1072,30 @@ export class Vpc extends Component implements Link.Linkable {
           if (natInstances.length) return natInstances[0];
 
           const sg = new ec2.SecurityGroup(
-            `${name}BastionSecurityGroup`,
-            {
-              vpcId: vpc.id,
-              ingress: [
-                {
-                  protocol: "tcp",
-                  fromPort: 22,
-                  toPort: 22,
-                  cidrBlocks: ["0.0.0.0/0"],
-                },
-              ],
-              egress: [
-                {
-                  protocol: "-1",
-                  fromPort: 0,
-                  toPort: 0,
-                  cidrBlocks: ["0.0.0.0/0"],
-                },
-              ],
-            },
-            { parent: self },
+            ...transform(
+              args.transform?.bastionSecurityGroup,
+              `${name}BastionSecurityGroup`,
+              {
+                vpcId: vpc.id,
+                ingress: [
+                  {
+                    protocol: "tcp",
+                    fromPort: 22,
+                    toPort: 22,
+                    cidrBlocks: ["0.0.0.0/0"],
+                  },
+                ],
+                egress: [
+                  {
+                    protocol: "-1",
+                    fromPort: 0,
+                    toPort: 0,
+                    cidrBlocks: ["0.0.0.0/0"],
+                  },
+                ],
+              },
+              { parent: self },
+            ),
           );
 
           const role = new iam.Role(
@@ -1180,7 +1206,7 @@ export class Vpc extends Component implements Link.Linkable {
    * A list of VPC security group IDs.
    */
   public get securityGroups() {
-    return [this.securityGroup.id];
+    return output(this.securityGroup).apply((v) => [v.id]);
   }
 
   /**

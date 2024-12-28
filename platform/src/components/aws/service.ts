@@ -1,70 +1,51 @@
-import fs from "fs";
-import path from "path";
 import {
   ComponentResourceOptions,
-  Input,
   Output,
   all,
   interpolate,
   output,
-  secret,
 } from "@pulumi/pulumi";
-import { Platform } from "@pulumi/docker-build";
-import { Component, transform } from "../component.js";
-import { toGBs, toMBs } from "../size.js";
-import { toNumber } from "../cpu.js";
+import { Component, Prettify, transform } from "../component.js";
 import { dns as awsDns } from "./dns.js";
 import { VisibleError } from "../error.js";
 import { DnsValidatedCertificate } from "./dns-validated-certificate.js";
 import { Link } from "../link.js";
-import { bootstrap } from "./helpers/bootstrap.js";
 import {
-  ClusterArgs,
+  Cluster,
   ClusterServiceArgs,
-  supportedCpus,
-  supportedMemories,
+  ClusterVpcsNormalizedArgs,
+  createExecutionRole,
+  createTaskDefinition,
+  createTaskRole,
+  normalizeArchitecture,
+  normalizeContainers,
+  normalizeCpu,
+  normalizeMemory,
+  normalizeStorage,
 } from "./cluster.js";
-import { RETENTION } from "./logging.js";
 import { URL_UNAVAILABLE } from "./linkable.js";
 import {
   appautoscaling,
-  cloudwatch,
   ec2,
-  ecr,
   ecs,
-  getCallerIdentityOutput,
-  getPartitionOutput,
   getRegionOutput,
   iam,
   lb,
   servicediscovery,
 } from "@pulumi/aws";
-import { Permission } from "./permission.js";
 import { Vpc } from "./vpc.js";
-import { Vpc as VpcV1 } from "./vpc-v1";
 import { DevCommand } from "../experimental/dev-command.js";
-import { Efs } from "./efs.js";
 import { toSeconds } from "../duration.js";
-import { imageBuilder } from "./helpers/container-builder.js";
 
 export interface ServiceArgs extends ClusterServiceArgs {
   /**
    * The cluster to use for the service.
    */
-  cluster: Input<{
-    /**
-     * The name of the cluster.
-     */
-    name: Input<string>;
-    /**
-     * The ARN of the cluster.
-     */
-    arn: Input<string>;
-  }>;
+  cluster: Cluster;
   /**
    * The VPC to use for the cluster.
    */
-  vpc: ClusterArgs["vpc"];
+  vpc: Vpc | Output<Prettify<ClusterVpcsNormalizedArgs>>;
 }
 
 /**
@@ -94,25 +75,25 @@ export class Service extends Component implements Link.Linkable {
   constructor(
     name: string,
     args: ServiceArgs,
-    opts?: ComponentResourceOptions,
+    opts: ComponentResourceOptions = {},
   ) {
     super(__pulumiType, name, args, opts);
 
     const self = this;
-    const partition = getPartitionOutput({}, opts).partition;
+    const clusterArn = args.cluster.nodes.cluster.arn;
+    const clusterName = args.cluster.nodes.cluster.name;
     const region = getRegionOutput({}, opts).name;
     const dev = normalizeDev();
-    const cluster = output(args.cluster);
-    const architecture = normalizeArchitecture();
-    const cpu = normalizeCpu();
-    const memory = normalizeMemory();
-    const storage = normalizeStorage();
+    const architecture = normalizeArchitecture(args);
+    const cpu = normalizeCpu(args);
+    const memory = normalizeMemory(cpu, args);
+    const storage = normalizeStorage(args);
     const scaling = normalizeScaling();
-    const containers = normalizeContainers();
+    const containers = normalizeContainers("service", args, name, architecture);
     const lbArgs = normalizeLoadBalancer();
     const vpc = normalizeVpc();
 
-    const taskRole = createTaskRole();
+    const taskRole = createTaskRole(name, args, opts, self);
 
     this.dev = !!dev;
     this.cloudmapNamespace = vpc.cloudmapNamespaceName;
@@ -124,9 +105,20 @@ export class Service extends Component implements Link.Linkable {
       return;
     }
 
-    const bootstrapData = region.apply((region) => bootstrap.forRegion(region));
-    const executionRole = createExecutionRole();
-    const taskDefinition = createTaskDefinition();
+    const executionRole = createExecutionRole(name, args, opts, self);
+    const taskDefinition = createTaskDefinition(
+      name,
+      args,
+      opts,
+      self,
+      containers,
+      architecture,
+      cpu,
+      memory,
+      storage,
+      taskRole,
+      executionRole,
+    );
     const certificateArn = createSsl();
     const loadBalancer = createLoadBalancer();
     const targets = createTargets();
@@ -165,13 +157,6 @@ export class Service extends Component implements Link.Linkable {
     }
 
     function normalizeVpc() {
-      // "vpc" is a Vpc.v1 component
-      if (args.vpc instanceof VpcV1) {
-        throw new VisibleError(
-          `You are using the "Vpc.v1" component. Please migrate to the latest "Vpc" component.`,
-        );
-      }
-
       // "vpc" is a Vpc component
       if (args.vpc instanceof Vpc) {
         const vpc = args.vpc;
@@ -181,7 +166,7 @@ export class Service extends Component implements Link.Linkable {
           loadBalancerSubnets: lbArgs?.pub.apply((v) =>
             v ? vpc.publicSubnets : vpc.privateSubnets,
           ),
-          serviceSubnets: vpc.publicSubnets,
+          containerSubnets: vpc.publicSubnets,
           securityGroups: vpc.securityGroups,
           cloudmapNamespaceId: vpc.nodes.cloudmapNamespace.id,
           cloudmapNamespaceName: vpc.nodes.cloudmapNamespace.name,
@@ -192,47 +177,6 @@ export class Service extends Component implements Link.Linkable {
       return output(args.vpc).apply((vpc) => ({ isSstVpc: false, ...vpc }));
     }
 
-    function normalizeArchitecture() {
-      return output(args.architecture ?? "x86_64").apply((v) => v);
-    }
-
-    function normalizeCpu() {
-      return output(args.cpu ?? "0.25 vCPU").apply((v) => {
-        if (!supportedCpus[v]) {
-          throw new Error(
-            `Unsupported CPU: ${v}. The supported values for CPU are ${Object.keys(
-              supportedCpus,
-            ).join(", ")}`,
-          );
-        }
-        return v;
-      });
-    }
-
-    function normalizeMemory() {
-      return all([cpu, args.memory ?? "0.5 GB"]).apply(([cpu, v]) => {
-        if (!(v in supportedMemories[cpu])) {
-          throw new Error(
-            `Unsupported memory: ${v}. The supported values for memory for a ${cpu} CPU are ${Object.keys(
-              supportedMemories[cpu],
-            ).join(", ")}`,
-          );
-        }
-        return v;
-      });
-    }
-
-    function normalizeStorage() {
-      return output(args.storage ?? "20 GB").apply((v) => {
-        const storage = toGBs(v);
-        if (storage < 20 || storage > 200)
-          throw new Error(
-            `Unsupported storage: ${v}. The supported value for storage is between "20 GB" and "200 GB"`,
-          );
-        return v;
-      });
-    }
-
     function normalizeScaling() {
       return output(args.scaling).apply((v) => ({
         min: v?.min ?? 1,
@@ -240,90 +184,6 @@ export class Service extends Component implements Link.Linkable {
         cpuUtilization: v?.cpuUtilization ?? 70,
         memoryUtilization: v?.memoryUtilization ?? 70,
       }));
-    }
-
-    function normalizeContainers() {
-      if (
-        args.containers &&
-        (args.image ||
-          args.logging ||
-          args.environment ||
-          args.volumes ||
-          args.health ||
-          args.ssm)
-      ) {
-        throw new VisibleError(
-          `You cannot provide both "containers" and "image", "logging", "environment", "volumes", "health" or "ssm".`,
-        );
-      }
-
-      // Standardize containers
-      const containers = args.containers ?? [
-        {
-          name: name,
-          image: args.image,
-          logging: args.logging,
-          environment: args.environment,
-          ssm: args.ssm,
-          volumes: args.volumes,
-          command: args.command,
-          entrypoint: args.entrypoint,
-          health: args.health,
-          dev: args.dev,
-        },
-      ];
-
-      // Normalize container props
-      return output(containers).apply((containers) =>
-        containers.map((v) => {
-          return {
-            ...v,
-            volumes: normalizeVolumes(),
-            image: normalizeImage(),
-            logging: normalizeLogging(),
-          };
-
-          function normalizeVolumes() {
-            return output(v.volumes).apply(
-              (volumes) =>
-                volumes?.map((volume) => ({
-                  path: volume.path,
-                  efs:
-                    volume.efs instanceof Efs
-                      ? {
-                          fileSystem: volume.efs.id,
-                          accessPoint: volume.efs.accessPoint,
-                        }
-                      : volume.efs,
-                })),
-            );
-          }
-
-          function normalizeImage() {
-            return all([v.image, architecture]).apply(
-              ([image, architecture]) => {
-                if (typeof image === "string") return image;
-
-                return {
-                  ...image,
-                  context: image?.context ?? ".",
-                  platform:
-                    architecture === "arm64"
-                      ? Platform.Linux_arm64
-                      : Platform.Linux_amd64,
-                };
-              },
-            );
-          }
-
-          function normalizeLogging() {
-            return output(v.logging).apply((logging) => ({
-              ...logging,
-              retention: logging?.retention ?? "1 month",
-            }));
-          }
-        }),
-      );
     }
 
     function normalizeLoadBalancer() {
@@ -432,6 +292,7 @@ export class Service extends Component implements Link.Linkable {
           typeof lb.domain === "string" ? { name: lb.domain } : lb.domain;
         return {
           name: domain.name,
+          aliases: domain.aliases ?? [],
           dns: domain.dns === false ? undefined : domain.dns ?? awsDns(),
           cert: domain.cert,
         };
@@ -488,6 +349,7 @@ export class Service extends Component implements Link.Linkable {
           args?.transform?.loadBalancerSecurityGroup,
           `${name}LoadBalancerSecurityGroup`,
           {
+            description: "Managed by SST",
             vpcId: vpc.id,
             egress: [
               {
@@ -684,289 +546,12 @@ export class Service extends Component implements Link.Linkable {
           `${name}Ssl`,
           {
             domainName: domain.name,
+            alternativeNames: domain.aliases,
             dns: domain.dns!,
           },
           { parent: self },
         ).arn;
       });
-    }
-
-    function createTaskRole() {
-      if (args.taskRole)
-        return iam.Role.get(
-          `${name}TaskRole`,
-          args.taskRole,
-          {},
-          { parent: self },
-        );
-
-      const policy = all([
-        args.permissions || [],
-        Link.getInclude<Permission>("aws.permission", args.link),
-      ]).apply(([argsPermissions, linkPermissions]) =>
-        iam.getPolicyDocumentOutput({
-          statements: [
-            ...argsPermissions,
-            ...linkPermissions.map((item) => ({
-              actions: item.actions,
-              resources: item.resources,
-            })),
-            {
-              actions: [
-                "ssmmessages:CreateControlChannel",
-                "ssmmessages:CreateDataChannel",
-                "ssmmessages:OpenControlChannel",
-                "ssmmessages:OpenDataChannel",
-              ],
-              resources: ["*"],
-            },
-          ],
-        }),
-      );
-
-      return new iam.Role(
-        ...transform(
-          args.transform?.taskRole,
-          `${name}TaskRole`,
-          {
-            assumeRolePolicy: !dev
-              ? iam.assumeRolePolicyForPrincipal({
-                  Service: "ecs-tasks.amazonaws.com",
-                })
-              : iam.assumeRolePolicyForPrincipal({
-                  AWS: interpolate`arn:${partition}:iam::${
-                    getCallerIdentityOutput({}, opts).accountId
-                  }:root`,
-                }),
-            inlinePolicies: policy.apply(({ statements }) =>
-              statements ? [{ name: "inline", policy: policy.json }] : [],
-            ),
-          },
-          { parent: self },
-        ),
-      );
-    }
-
-    function createExecutionRole() {
-      if (args.executionRole)
-        return iam.Role.get(
-          `${name}ExecutionRole`,
-          args.executionRole,
-          {},
-          { parent: self },
-        );
-
-      return new iam.Role(
-        ...transform(
-          args.transform?.executionRole,
-          `${name}ExecutionRole`,
-          {
-            assumeRolePolicy: iam.assumeRolePolicyForPrincipal({
-              Service: "ecs-tasks.amazonaws.com",
-            }),
-            managedPolicyArns: [
-              interpolate`arn:${partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy`,
-            ],
-            inlinePolicies: [
-              {
-                name: "inline",
-                policy: iam.getPolicyDocumentOutput({
-                  statements: [
-                    {
-                      sid: "ReadSsmAndSecrets",
-                      actions: [
-                        "ssm:GetParameters",
-                        "ssm:GetParameter",
-                        "ssm:GetParameterHistory",
-                        "secretsmanager:GetSecretValue",
-                      ],
-                      resources: ["*"],
-                    },
-                  ],
-                }).json,
-              },
-            ],
-          },
-          { parent: self },
-        ),
-      );
-    }
-
-    function createTaskDefinition() {
-      const containerDefinitions = all([
-        containers,
-        Link.propertiesToEnv(Link.getProperties(args.link)),
-      ]).apply(([containers, linkEnvs]) =>
-        containers.map((container) => ({
-          name: container.name,
-          image: (() => {
-            if (typeof container.image === "string")
-              return output(container.image);
-
-            const contextPath = path.join(
-              $cli.paths.root,
-              container.image.context,
-            );
-            const dockerfile = container.image.dockerfile ?? "Dockerfile";
-            const dockerfilePath = container.image.dockerfile
-              ? path.join($cli.paths.root, container.image.dockerfile)
-              : path.join(
-                  $cli.paths.root,
-                  container.image.context,
-                  "Dockerfile",
-                );
-            const dockerIgnorePath = fs.existsSync(
-              path.join(contextPath, `${dockerfile}.dockerignore`),
-            )
-              ? path.join(contextPath, `${dockerfile}.dockerignore`)
-              : path.join(contextPath, ".dockerignore");
-
-            // add .sst to .dockerignore if not exist
-            const lines = fs.existsSync(dockerIgnorePath)
-              ? fs.readFileSync(dockerIgnorePath).toString().split("\n")
-              : [];
-            if (!lines.find((line) => line === ".sst")) {
-              fs.writeFileSync(
-                dockerIgnorePath,
-                [...lines, "", "# sst", ".sst"].join("\n"),
-              );
-            }
-
-            // Build image
-            const image = imageBuilder(
-              ...transform(
-                args.transform?.image,
-                `${name}Image${container.name}`,
-                {
-                  context: { location: contextPath },
-                  dockerfile: { location: dockerfilePath },
-                  buildArgs: {
-                    ...container.image.args,
-                    ...linkEnvs,
-                  },
-                  platforms: [container.image.platform],
-                  tags: [container.name, ...(container.image.tags ?? [])].map(
-                    (tag) => interpolate`${bootstrapData.assetEcrUrl}:${tag}`,
-                  ),
-                  registries: [
-                    ecr
-                      .getAuthorizationTokenOutput(
-                        {
-                          registryId: bootstrapData.assetEcrRegistryId,
-                        },
-                        { parent: self },
-                      )
-                      .apply((authToken) => ({
-                        address: authToken.proxyEndpoint,
-                        password: secret(authToken.password),
-                        username: authToken.userName,
-                      })),
-                  ],
-                  push: true,
-                },
-                { parent: self },
-              ),
-            );
-
-            return interpolate`${bootstrapData.assetEcrUrl}@${image.digest}`;
-          })(),
-          command: container.command,
-          entrypoint: container.entrypoint,
-          healthCheck: container.health && {
-            command: container.health.command,
-            startPeriod: toSeconds(container.health.startPeriod ?? "0 seconds"),
-            timeout: toSeconds(container.health.timeout ?? "5 seconds"),
-            interval: toSeconds(container.health.interval ?? "30 seconds"),
-            retries: container.health.retries ?? 3,
-          },
-          pseudoTerminal: true,
-          portMappings: [{ containerPortRange: "1-65535" }],
-          logConfiguration: {
-            logDriver: "awslogs",
-            options: {
-              "awslogs-group": (() => {
-                return new cloudwatch.LogGroup(
-                  ...transform(
-                    args.transform?.logGroup,
-                    `${name}LogGroup${container.name}`,
-                    {
-                      name: interpolate`/sst/cluster/${cluster.name}/${name}/${container.name}`,
-                      retentionInDays: RETENTION[container.logging.retention],
-                    },
-                    { parent: self },
-                  ),
-                );
-              })().name,
-              "awslogs-region": region,
-              "awslogs-stream-prefix": "/service",
-            },
-          },
-          environment: Object.entries({
-            ...container.environment,
-            ...linkEnvs,
-          }).map(([name, value]) => ({ name, value })),
-          linuxParameters: {
-            initProcessEnabled: true,
-          },
-          mountPoints: container.volumes?.map((volume) => ({
-            sourceVolume: volume.efs.accessPoint,
-            containerPath: volume.path,
-          })),
-          secrets: Object.entries(container.ssm ?? {}).map(
-            ([name, valueFrom]) => ({ name, valueFrom }),
-          ),
-        })),
-      );
-
-      return storage.apply(
-        (storage) =>
-          new ecs.TaskDefinition(
-            ...transform(
-              args.transform?.taskDefinition,
-              `${name}Task`,
-              {
-                family: interpolate`${cluster.name}-${name}`,
-                trackLatest: true,
-                cpu: cpu.apply((v) => toNumber(v).toString()),
-                memory: memory.apply((v) => toMBs(v).toString()),
-                networkMode: "awsvpc",
-                ephemeralStorage: (() => {
-                  const sizeInGib = toGBs(storage);
-                  return sizeInGib === 20 ? undefined : { sizeInGib };
-                })(),
-                requiresCompatibilities: ["FARGATE"],
-                runtimePlatform: {
-                  cpuArchitecture: architecture.apply((v) => v.toUpperCase()),
-                  operatingSystemFamily: "LINUX",
-                },
-                executionRoleArn: executionRole.arn,
-                taskRoleArn: taskRole.arn,
-                volumes: output(containers).apply((containers) => {
-                  const uniqueAccessPoints: Set<string> = new Set();
-                  return containers.flatMap((container) =>
-                    (container.volumes ?? []).flatMap((volume) => {
-                      if (uniqueAccessPoints.has(volume.efs.accessPoint))
-                        return [];
-                      uniqueAccessPoints.add(volume.efs.accessPoint);
-                      return {
-                        name: volume.efs.accessPoint,
-                        efsVolumeConfiguration: {
-                          fileSystemId: volume.efs.fileSystem,
-                          transitEncryption: "ENABLED",
-                          authorizationConfig: {
-                            accessPointId: volume.efs.accessPoint,
-                          },
-                        },
-                      };
-                    }),
-                  );
-                }),
-                containerDefinitions: $jsonStringify(containerDefinitions),
-              },
-              { parent: self },
-            ),
-          ),
-      );
     }
 
     function createCloudmapService() {
@@ -995,7 +580,7 @@ export class Service extends Component implements Link.Linkable {
           `${name}Service`,
           {
             name,
-            cluster: cluster.arn,
+            cluster: clusterArn,
             taskDefinition: taskDefinition.arn,
             desiredCount: scaling.min,
             launchType: "FARGATE",
@@ -1003,7 +588,7 @@ export class Service extends Component implements Link.Linkable {
               // If the vpc is an SST vpc, services are automatically deployed to the public
               // subnets. So we need to assign a public IP for the service to be accessible.
               assignPublicIp: vpc.isSstVpc,
-              subnets: vpc.serviceSubnets,
+              subnets: vpc.containerSubnets,
               securityGroups: vpc.securityGroups,
             },
             deploymentCircuitBreaker: {
@@ -1043,7 +628,7 @@ export class Service extends Component implements Link.Linkable {
           {
             serviceNamespace: "ecs",
             scalableDimension: "ecs:service:DesiredCount",
-            resourceId: interpolate`service/${cluster.name}/${service.name}`,
+            resourceId: interpolate`service/${clusterName}/${service.name}`,
             maxCapacity: scaling.max,
             minCapacity: scaling.min,
           },
@@ -1100,20 +685,24 @@ export class Service extends Component implements Link.Linkable {
       lbArgs.domain.apply((domain) => {
         if (!domain?.dns) return;
 
-        domain.dns.createAlias(
-          name,
-          {
-            name: domain.name,
-            aliasName: loadBalancer!.dnsName,
-            aliasZone: loadBalancer!.zoneId,
-          },
-          { parent: self },
-        );
+        for (const recordName of [domain.name, ...domain.aliases]) {
+          const namePrefix =
+            recordName === domain.name ? name : `${name}${recordName}`;
+          domain.dns.createAlias(
+            namePrefix,
+            {
+              name: recordName,
+              aliasName: loadBalancer!.dnsName,
+              aliasZone: loadBalancer!.zoneId,
+            },
+            { parent: self },
+          );
+        }
       });
     }
 
     function registerReceiver() {
-      containers.apply((val) => {
+      all([containers]).apply(([val]) => {
         for (const container of val) {
           const title = val.length == 1 ? name : `${name}${container.name}`;
           new DevCommand(`${title}Dev`, {
@@ -1121,12 +710,12 @@ export class Service extends Component implements Link.Linkable {
             dev: {
               title,
               autostart: true,
-              directory: output(args.image).apply((image) => {
-                if (!image) return "";
-                if (typeof image === "string") return "";
-                if (image.context) return path.dirname(image.context);
+              directory: (() => {
+                if (!container.image) return "";
+                if (typeof container.image === "string") return "";
+                if (container.image.context) return container.image.context;
                 return "";
-              }),
+              })(),
               ...container.dev,
             },
             environment: {

@@ -31,6 +31,22 @@ import { ApiGatewayV1IntegrationRoute } from "./apigatewayv1-integration-route";
 
 export interface ApiGatewayV1DomainArgs {
   /**
+   * Use an existing API Gateway domain name.
+   *
+   * By default, a new API Gateway domain name is created. If you'd like to use an existing
+   * domain name, set the `nameId` to the ID of the domain name and **do not** pass in `name`.
+   *
+   * @example
+   * ```js
+   * {
+   *   domain: {
+   *     nameId: "example.com"
+   *   }
+   * }
+   * ```
+   */
+  nameId?: Input<string>;
+  /**
    * The custom domain you want to use.
    *
    * @example
@@ -652,6 +668,7 @@ export class ApiGatewayV1 extends Component implements Link.Linkable {
   private stage?: apigateway.Stage;
   private logGroup?: cloudwatch.LogGroup;
   private endpointType: Output<"EDGE" | "REGIONAL" | "PRIVATE">;
+  private deployed: boolean = false;
 
   constructor(
     name: string,
@@ -729,6 +746,7 @@ export class ApiGatewayV1 extends Component implements Link.Linkable {
    * The underlying [resources](/docs/components/#nodes) this component creates.
    */
   public get nodes() {
+    const self = this;
     return {
       /**
        * The Amazon API Gateway REST API
@@ -742,6 +760,20 @@ export class ApiGatewayV1 extends Component implements Link.Linkable {
        * The CloudWatch LogGroup for the access logs.
        */
       logGroup: this.logGroup,
+      /**
+       * The API Gateway REST API domain name.
+       */
+      get domainName() {
+        if (!self.deployed)
+          throw new VisibleError(
+            `"nodes.domainName" is not available before the "${self.constructorName}" API is deployed.`,
+          );
+        if (!self.apigDomain)
+          throw new VisibleError(
+            `"nodes.domainName" is not available when domain is not configured for the "${self.constructorName}" API.`,
+          );
+        return self.apigDomain;
+      },
     };
   }
 
@@ -1088,6 +1120,7 @@ export class ApiGatewayV1 extends Component implements Link.Linkable {
     createDnsRecords();
     const apiMapping = createDomainMapping();
 
+    this.deployed = true;
     this.logGroup = logGroup;
     this.stage = stage;
     this.apigDomain = apigDomain;
@@ -1107,21 +1140,28 @@ export class ApiGatewayV1 extends Component implements Link.Linkable {
     function normalizeDomain() {
       if (!args.domain) return;
 
-      // validate
-      output(args.domain).apply((domain) => {
-        if (typeof domain === "string") return;
-
-        if (!domain.name) throw new Error(`Missing "name" for domain.`);
-        if (domain.dns === false && !domain.cert)
-          throw new Error(`No "cert" provided for domain with disabled DNS.`);
-      });
-
-      // normalize
       return output(args.domain).apply((domain) => {
-        const norm = typeof domain === "string" ? { name: domain } : domain;
+        // validate
+        if (typeof domain !== "string") {
+          if (domain.name && domain.nameId)
+            throw new VisibleError(
+              `Cannot configure both domain "name" and "nameId" for the "${name}" API.`,
+            );
+          if (!domain.name && !domain.nameId)
+            throw new VisibleError(
+              `Either domain "name" or "nameId" is required for the "${name}" API.`,
+            );
+          if (domain.dns === false && !domain.cert)
+            throw new VisibleError(
+              `Domain "cert" is required when "dns" is disabled for the "${name}" API.`,
+            );
+        }
 
+        // normalize
+        const norm = typeof domain === "string" ? { name: domain } : domain;
         return {
           name: norm.name,
+          nameId: norm.nameId,
           path: norm.path,
           dns: norm.dns === false ? undefined : norm.dns ?? awsDns(),
           cert: norm.cert,
@@ -1335,6 +1375,7 @@ export class ApiGatewayV1 extends Component implements Link.Linkable {
 
       return domain.apply((domain) => {
         if (domain.cert) return output(domain.cert);
+        if (domain.nameId) return output(undefined);
 
         return new DnsValidatedCertificate(
           `${name}Ssl`,
@@ -1350,34 +1391,40 @@ export class ApiGatewayV1 extends Component implements Link.Linkable {
     function createDomainName() {
       if (!domain || !certificateArn) return;
 
-      return endpointType.apply(
-        (endpointType) =>
-          new apigateway.DomainName(
-            ...transform(
-              args.transform?.domainName,
-              `${name}DomainName`,
-              {
-                domainName: domain?.name,
-                endpointConfiguration: { types: endpointType },
-                ...(endpointType === "REGIONAL"
-                  ? { regionalCertificateArn: certificateArn }
-                  : { certificateArn }),
-              },
-              { parent },
-            ),
-          ),
+      return all([domain, certificateArn, endpointType]).apply(
+        ([domain, certificateArn, endpointType]) =>
+          domain.nameId
+            ? apigateway.DomainName.get(
+                `${name}DomainName`,
+                domain.nameId,
+                {},
+                { parent },
+              )
+            : new apigateway.DomainName(
+                ...transform(
+                  args.transform?.domainName,
+                  `${name}DomainName`,
+                  {
+                    domainName: domain?.name,
+                    endpointConfiguration: { types: endpointType },
+                    ...(endpointType === "REGIONAL"
+                      ? { regionalCertificateArn: certificateArn }
+                      : { certificateArn }),
+                  },
+                  { parent },
+                ),
+              ),
       );
     }
 
     function createDnsRecords(): void {
-      if (!domain || !apigDomain) {
-        return;
-      }
+      if (!domain || !apigDomain) return;
 
-      domain.dns.apply((dns) => {
-        if (!dns) return;
+      domain.apply((domain) => {
+        if (!domain.dns) return;
+        if (domain.nameId) return;
 
-        dns.createAlias(
+        domain.dns.createAlias(
           name,
           {
             name: domain.name,

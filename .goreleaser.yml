@@ -3,7 +3,6 @@ project_name: sst
 before:
   hooks:
     - go mod tidy
-    - bash -c "cd ./platform && bun run build"
     - go test ./cmd/... ./pkg/...
 builds:
   - env:
@@ -27,17 +26,17 @@ archives:
       {{- if .Arm }}v{{ .Arm }}{{ end }}
     # use zip for windows archives
     format_overrides:
-    - goos: windows
-      format: zip
+      - goos: windows
+        format: zip
 checksum:
-  name_template: 'checksums.txt'
+  name_template: "checksums.txt"
 snapshot:
   name_template: "0.0.0-{{ .Timestamp }}"
 aurs:
   - homepage: "https://github.com/sst/sst"
     description: "Deploy anything"
-    private_key: '{{ .Env.AUR_KEY }}'
-    git_url: 'ssh://aur@aur.archlinux.org/sst-bin.git'
+    private_key: "{{ .Env.AUR_KEY }}"
+    git_url: "ssh://aur@aur.archlinux.org/sst-bin.git"
     license: "MIT"
     package: |-
       install -Dm755 ./sst "${pkgdir}/usr/bin/sst"
@@ -68,10 +67,10 @@ changelog:
   sort: asc
   filters:
     exclude:
-      - '^docs:'
-      - '^doc:'
-      - '^test:'
-      - '^ci:'
-      - '^ignore:'
-      - '^wip:'
-
+      - "^docs:"
+      - "^doc:"
+      - "^test:"
+      - "^ci:"
+      - "^ignore:"
+      - "^example:"
+      - "^wip:"

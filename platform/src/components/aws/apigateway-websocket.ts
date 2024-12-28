@@ -20,6 +20,7 @@ import { DnsValidatedCertificate } from "./dns-validated-certificate";
 import { RETENTION } from "./logging";
 import { dns as awsDns } from "./dns.js";
 import { ApiGatewayV2DomainArgs } from "./helpers/apigatewayv2-domain";
+import { ApiGatewayV2Authorizer } from "./apigatewayv2-authorizer";
 import { ApiGatewayWebSocketRoute } from "./apigateway-websocket-route";
 import { setupApiGatewayAccount } from "./helpers/apigateway-account";
 import { apigatewayv2, cloudwatch } from "@pulumi/aws";
@@ -134,13 +135,149 @@ export interface ApiGatewayWebSocketArgs {
   };
 }
 
+export interface ApiGatewayWebSocketAuthorizerArgs {
+  /**
+   * Create a JWT or JSON Web Token authorizer that can be used by the routes.
+   *
+   * @example
+   * Configure JWT auth.
+   *
+   * ```js
+   * {
+   *   jwt: {
+   *     issuer: "https://issuer.com/",
+   *     audiences: ["https://api.example.com"],
+   *     identitySource: "$request.header.AccessToken"
+   *   }
+   * }
+   * ```
+   *
+   * You can also use Cognito as the identity provider.
+   *
+   * ```js
+   * {
+   *   jwt: {
+   *     audiences: [userPoolClient.id],
+   *     issuer: $interpolate`https://cognito-idp.${aws.getArnOutput(userPool).region}.amazonaws.com/${userPool.id}`,
+   *   }
+   * }
+   * ```
+   *
+   * Where `userPool` and `userPoolClient` are:
+   *
+   * ```js
+   * const userPool = new aws.cognito.UserPool();
+   * const userPoolClient = new aws.cognito.UserPoolClient();
+   * ```
+   */
+  jwt?: Input<{
+    /**
+     * Base domain of the identity provider that issues JSON Web Tokens.
+     * @example
+     * ```js
+     * {
+     *   issuer: "https://issuer.com/"
+     * }
+     * ```
+     */
+    issuer: Input<string>;
+    /**
+     * List of the intended recipients of the JWT. A valid JWT must provide an `aud` that matches at least one entry in this list.
+     */
+    audiences: Input<Input<string>[]>;
+    /**
+     * Specifies where to extract the JWT from the request.
+     * @default `"route.request.header.Authorization"`
+     */
+    identitySource?: Input<string>;
+  }>;
+  /**
+   * Create a Lambda authorizer that can be used by the routes.
+   *
+   * @example
+   * Configure Lambda auth.
+   *
+   * ```js
+   * {
+   *   lambda: {
+   *     function: "src/authorizer.index"
+   *   }
+   * }
+   * ```
+   */
+  lambda?: Input<{
+    /**
+     * The Lambda authorizer function. Takes the handler path or the function args.
+     * @example
+     * Add a simple authorizer.
+     *
+     * ```js
+     * {
+     *   function: "src/authorizer.index"
+     * }
+     * ```
+     *
+     * Customize the authorizer handler.
+     *
+     * ```js
+     * {
+     *   function: {
+     *     handler: "src/authorizer.index",
+     *     memory: "2048 MB"
+     *   }
+     * }
+     * ```
+     */
+    function: Input<string | FunctionArgs>;
+    /**
+     * The JWT payload version.
+     * @default `"2.0"`
+     * @example
+     * ```js
+     * {
+     *   payload: "2.0"
+     * }
+     * ```
+     */
+    payload?: Input<"1.0" | "2.0">;
+    /**
+     * The response type.
+     * @default `"simple"`
+     * @example
+     * ```js
+     * {
+     *   response: "iam"
+     * }
+     * ```
+     */
+    response?: Input<"simple" | "iam">;
+    /**
+     * Specifies where to extract the identity from.
+     * @default `["route.request.header.Authorization"]`
+     * @example
+     * ```js
+     * {
+     *   identitySources: ["$request.header.RequestToken"]
+     * }
+     * ```
+     */
+    identitySources?: Input<Input<string>[]>;
+  }>;
+  /**
+   * [Transform](/docs/components#transform) how this component creates its underlying
+   * resources.
+   */
+  transform?: {
+    /**
+     * Transform the API Gateway authorizer resource.
+     */
+    authorizer?: Transform<apigatewayv2.AuthorizerArgs>;
+  };
+}
+
 export interface ApiGatewayWebSocketRouteArgs {
   /**
-   * Enable auth for your WebSocket API.
-   *
-   * :::note
-   * Currently only IAM auth is supported.
-   * :::
+   * Enable auth for your WebSocket API. By default, auth is disabled.
    *
    * @example
    * ```js
@@ -151,14 +288,60 @@ export interface ApiGatewayWebSocketRouteArgs {
    * }
    * ```
    */
-  auth?: Input<{
-    /**
-     * Enable IAM authorization for a given API route. When IAM auth is enabled, clients need
-     * to use Signature Version 4 to sign their requests with their AWS credentials.
-     * @default `false`
-     */
-    iam?: Input<boolean>;
-  }>;
+  auth?: Input<
+    | false
+    | {
+        /**
+         * Enable IAM authorization for a given API route. When IAM auth is enabled, clients
+         * need to use Signature Version 4 to sign their requests with their AWS credentials.
+         */
+        iam?: Input<boolean>;
+        /**
+         * Enable JWT or JSON Web Token authorization for a given API route. When JWT auth is enabled, clients need to include a valid JWT in their requests.
+         *
+         * @example
+         * You can configure JWT auth.
+         *
+         * ```js
+         * {
+         *   auth: {
+         *     jwt: {
+         *       authorizer: myAuthorizer.id,
+         *       scopes: ["read:profile", "write:profile"]
+         *     }
+         *   }
+         * }
+         * ```
+         *
+         * Where `myAuthorizer` is created by calling the `addAuthorizer` method.
+         */
+        jwt?: Input<{
+          /**
+           * Authorizer ID of the JWT authorizer.
+           */
+          authorizer: Input<string>;
+          /**
+           * Defines the permissions or access levels that the JWT grants. If the JWT does not have the required scope, the request is rejected. By default it does not require any scopes.
+           */
+          scopes?: Input<Input<string>[]>;
+        }>;
+        /**
+         * Enable custom Lambda authorization for a given API route. Pass in the authorizer ID.
+         *
+         * @example
+         * ```js
+         * {
+         *   auth: {
+         *     lambda: myAuthorizer.id
+         *   }
+         * }
+         * ```
+         *
+         * Where `myAuthorizer` is created by calling the `addAuthorizer` method.
+         */
+        lambda?: Input<string>;
+      }
+  >;
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.
@@ -593,6 +776,84 @@ export class ApiGatewayWebSocket extends Component implements Link.Linkable {
         ...transformed[1],
       },
       transformed[2],
+    );
+  }
+
+  /**
+   * Add an authorizer to the API Gateway WebSocket API.
+   *
+   * @param name The name of the authorizer.
+   * @param args Configure the authorizer.
+   *
+   * @example
+   * Add a Lambda authorizer.
+   *
+   * ```js title="sst.config.ts"
+   * api.addAuthorizer({
+   *   name: "myAuthorizer",
+   *   lambda: {
+   *     function: "src/authorizer.index"
+   *   }
+   * });
+   * ```
+   *
+   * Add a JWT authorizer.
+   *
+   * ```js title="sst.config.ts"
+   * const authorizer = api.addAuthorizer({
+   *   name: "myAuthorizer",
+   *   jwt: {
+   *     issuer: "https://issuer.com/",
+   *     audiences: ["https://api.example.com"],
+   *     identitySource: "$request.header.AccessToken"
+   *   }
+   * });
+   * ```
+   *
+   * Add a Cognito UserPool as a JWT authorizer.
+   *
+   * ```js title="sst.config.ts"
+   * const pool = new sst.aws.CognitoUserPool("MyUserPool");
+   * const poolClient = userPool.addClient("Web");
+   *
+   * const authorizer = api.addAuthorizer({
+   *   name: "myCognitoAuthorizer",
+   *   jwt: {
+   *     issuer: $interpolate`https://cognito-idp.${aws.getRegionOutput().name}.amazonaws.com/${pool.id}`,
+   *     audiences: [poolClient.id]
+   *   }
+   * });
+   * ```
+   *
+   * Now you can use the authorizer in your routes.
+   *
+   * ```js title="sst.config.ts"
+   * api.route("GET /", "src/get.handler", {
+   *   auth: {
+   *     jwt: {
+   *       authorizer: authorizer.id
+   *     }
+   *   }
+   * });
+   * ```
+   */
+  public addAuthorizer(name: string, args: ApiGatewayWebSocketAuthorizerArgs) {
+    const self = this;
+    const constructorName = this.constructorName;
+
+    return new ApiGatewayV2Authorizer(
+      `${constructorName}Authorizer${name}`,
+      {
+        api: {
+          id: self.api.id,
+          name: constructorName,
+          executionArn: this.api.executionArn,
+        },
+        type: "websocket",
+        name,
+        ...args,
+      },
+      { provider: this.constructorOpts.provider },
     );
   }
 

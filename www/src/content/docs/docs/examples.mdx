@@ -6,6 +6,7 @@ description: A collection of example apps for reference.
 {/* DO NOT EDIT. AUTO-GENERATED FROM "examples/" */}
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import VideoAside from '../../../../src/components/VideoAside.astro';
 import Segment from '../../../../src/components/tsdoc/Segment.astro';
 import Section from '../../../../src/components/tsdoc/Section.astro';
 import NestedTitle from '../../../../src/components/tsdoc/NestedTitle.astro';
@@ -217,8 +218,14 @@ const queue = new sst.aws.Queue("MyQueue");
 queue.subscribe("subscriber.handler");
 
 const bucket = new sst.aws.Bucket("MyBucket");
-bucket.subscribeQueue(queue.arn, {
-  events: ["s3:ObjectCreated:*"],
+bucket.notify({
+  notifications: [
+    {
+      name: "MySubscriber",
+      queue,
+      events: ["s3:ObjectCreated:*"],
+    },
+  ],
 });
 
 return {
@@ -236,8 +243,14 @@ View the [full example](https://github.com/sst/sst/tree/dev/examples/aws-bucket-
 Create an S3 bucket and subscribe to its events with a function.
 ```ts title="sst.config.ts"
 const bucket = new sst.aws.Bucket("MyBucket");
-bucket.subscribe("subscriber.handler", {
-  events: ["s3:ObjectCreated:*"],
+bucket.notify({
+  notifications: [
+    {
+      name: "MySubscriber",
+      function: "subscriber.handler",
+      events: ["s3:ObjectCreated:*"],
+    },
+  ],
 });
 
 return {
@@ -257,8 +270,14 @@ const topic = new sst.aws.SnsTopic("MyTopic");
 topic.subscribe("MySubscriber", "subscriber.handler");
 
 const bucket = new sst.aws.Bucket("MyBucket");
-bucket.subscribeTopic(topic.arn, {
-  events: ["s3:ObjectCreated:*"],
+bucket.notify({
+  notifications: [
+    {
+      name: "MySubscriber",
+      topic,
+      events: ["s3:ObjectCreated:*"],
+    },
+  ],
 });
 
 return {
@@ -485,6 +504,64 @@ return {
 ```
 
 View the [full example](https://github.com/sst/sst/tree/dev/examples/aws-dead-letter-queue).
+
+
+---
+## AWS Deno Redis
+
+Creates a hit counter app with Deno and Redis.
+
+This deploys Deno as a Fargate service to ECS and it's linked to Redis.
+
+```ts title="sst.config.ts" {2}
+cluster.addService("MyService", {
+  link: [redis],
+  loadBalancer: {
+    ports: [{ listen: "80/http", forward: "8000/http" }],
+  },
+  dev: {
+    command: "deno task dev",
+  },
+});
+```
+
+Since our Redis cluster is in a VPC, we’ll need a tunnel to connect to it from our local
+machine.
+
+```bash "sudo"
+sudo sst tunnel install
+```
+
+This needs _sudo_ to create a network interface on your machine. You’ll only need to do this
+once on your machine.
+
+To start your app locally run.
+
+```bash
+sst dev
+```
+
+Now if you go to `http://localhost:8000` you’ll see a counter update as you refresh the page.
+
+Finally, you can deploy it using `sst deploy --stage production` using a `Dockerfile`
+that's included in the example.
+```ts title="sst.config.ts"
+const vpc = new sst.aws.Vpc("MyVpc", { bastion: true });
+const redis = new sst.aws.Redis("MyRedis", { vpc });
+const cluster = new sst.aws.Cluster("MyCluster", { vpc });
+
+cluster.addService("MyService", {
+  link: [redis],
+  loadBalancer: {
+    ports: [{ listen: "80/http", forward: "8000/http" }],
+  },
+  dev: {
+    command: "deno task dev",
+  },
+});
+```
+
+View the [full example](https://github.com/sst/sst/tree/dev/examples/aws-deno-redis).
 
 
 ---
@@ -769,51 +846,13 @@ View the [full example](https://github.com/sst/sst/tree/dev/examples/aws-efs).
 
 
 ---
-## AWS Express file upload
+## AWS Express Redis
 
-Deploys an Express app to AWS.
+Creates a hit counter app with Express and Redis.
 
-You can get started by running.
+This deploys Express as a Fargate service to ECS and it's linked to Redis.
 
-```bash
-mkdir aws-express-file-upload && cd aws-express-file-upload
-npm init -y
-npm install express
-npx sst@latest init
-```
-
-Now you can add a service.
-
-```ts title="sst.config.ts"
-cluster.addService("MyService", {
-  loadBalancer: {
-    ports: [{ listen: "80/http", forward: "3000/http" }],
-  },
-  dev: {
-    command: "node --watch index.mjs",
-  },
-});
-```
-
-Start your app locally.
-
-```bash
-npx sst dev
-```
-
-This example lets you upload a file to S3 and then download it.
-
-```bash
-curl -F file=@package.json http://localhost:80/
-curl http://localhost:80/latest
-```
-
-Finally, you can deploy it using `npx sst deploy --stage production`.
-```ts title="sst.config.ts"
-const bucket = new sst.aws.Bucket("MyBucket");
-const vpc = new sst.aws.Vpc("MyVpc");
-
-const cluster = new sst.aws.Cluster("MyCluster", { vpc });
+```ts title="sst.config.ts" {8}
 cluster.addService("MyService", {
   loadBalancer: {
     ports: [{ listen: "80/http" }],
@@ -821,11 +860,47 @@ cluster.addService("MyService", {
   dev: {
     command: "node --watch index.mjs",
   },
-  link: [bucket],
+  link: [redis],
 });
 ```
 
-View the [full example](https://github.com/sst/sst/tree/dev/examples/aws-express-file-upload).
+Since our Redis cluster is in a VPC, we’ll need a tunnel to connect to it from our local
+machine.
+
+```bash "sudo"
+sudo npx sst tunnel install
+```
+
+This needs _sudo_ to create a network interface on your machine. You’ll only need to do this
+once on your machine.
+
+To start your app locally run.
+
+```bash
+npx sst dev
+```
+
+Now if you go to `http://localhost:80` you’ll see a counter update as you refresh the page.
+
+Finally, you can deploy it using `npx sst deploy --stage production` using a `Dockerfile`
+that's included in the example.
+```ts title="sst.config.ts"
+const vpc = new sst.aws.Vpc("MyVpc", { bastion: true });
+const redis = new sst.aws.Redis("MyRedis", { vpc });
+const cluster = new sst.aws.Cluster("MyCluster", { vpc });
+
+cluster.addService("MyService", {
+  link: [redis],
+  loadBalancer: {
+    ports: [{ listen: "80/http" }],
+  },
+  dev: {
+    command: "node --watch index.mjs",
+  },
+});
+```
+
+View the [full example](https://github.com/sst/sst/tree/dev/examples/aws-express-redis).
 
 
 ---
@@ -877,6 +952,150 @@ return {
 ```
 
 View the [full example](https://github.com/sst/sst/tree/dev/examples/aws-ffmpeg).
+
+
+---
+## AWS ApiGatewayV2 Go
+
+Uses [aws-lambda-go-api-proxy](https://github.com/awslabs/aws-lambda-go-api-proxy/tree/master) to allow you to run a Go API with API Gateway V2.
+
+:::tip
+We use the `aws-lambda-go-api-proxy` package to handle the API Gateway V2 event.
+:::
+
+So you write your Go function as you normally would and then use the package to handle the API Gateway V2 event.
+
+```go title="main.go"
+import (
+ "github.com/aws/aws-lambda-go/lambda"
+ "github.com/awslabs/aws-lambda-go-api-proxy/httpadapter"
+)
+
+func router() *http.ServeMux {
+  mux := http.NewServeMux()
+
+  mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte(`{"message": "hello world"}`))
+  })
+
+  return mux
+}
+
+func main() {
+  lambda.Start(httpadapter.NewV2(router()).ProxyWithContext)
+}
+```
+```ts title="sst.config.ts"
+const api = new sst.aws.ApiGatewayV2("GoApi");
+
+api.route("$default", {
+  handler: "src/",
+  runtime: "go",
+});
+```
+
+View the [full example](https://github.com/sst/sst/tree/dev/examples/aws-go-api-gateway-v2).
+
+
+---
+## AWS Lambda Go S3 Presigned
+
+Generates a presigned URL for the linked S3 bucket in a Go Lambda function.
+
+Configure the S3 Client and the PresignedClient.
+
+```go title="main.go"
+cfg, err := config.LoadDefaultConfig(context.TODO())
+if err != nil {
+   panic(err)
+}
+
+client := s3.NewFromConfig(cfg)
+presignedClient := s3.NewPresignClient(client)
+```
+
+Generate the presigned URL.
+
+```go title="main.go"
+bucketName, err := resource.Get("Bucket", "name")
+if err != nil {
+  panic(err)
+}
+url, err := presignedClient.PresignPutObject(context.TODO(), &s3.PutObjectInput{
+  Bucket: aws.String(bucket.(string)),
+  Key:    aws.String(key),
+})
+```
+```ts title="sst.config.ts"
+const bucket = new sst.aws.Bucket("Bucket");
+
+const api = new sst.aws.ApiGatewayV2("Api");
+
+api.route("GET /upload-url", {
+  handler: "src/",
+  runtime: "go",
+  link: [bucket],
+});
+```
+
+View the [full example](https://github.com/sst/sst/tree/dev/examples/aws-go-lambda-bucket-presigned-url).
+
+
+---
+## AWS Lambda Go DynamoDB
+
+An example on how to use a Go runtime Lambda with DynamoDB.
+
+You configure the DynamoDB client.
+
+```go title="src/main.go"
+import (
+  "github.com/sst/sst/v3/sdk/golang/resource"
+)
+
+func main() {
+  cfg, err := config.LoadDefaultConfig(context.Background())
+ if err != nil {
+   panic(err)
+ }
+ client := dynamodb.NewFromConfig(cfg)
+
+
+ tableName, err := resource.Get("Table", "name")
+ if err != nil {
+   panic(err)
+ }
+}
+```
+
+And make a request to DynamoDB.
+
+```go title="src/main.go"
+_, err = r.client.PutItem(ctx, &dynamodb.PutItemInput{
+  TableName: tableName.(string),
+	 Item:      item,
+})
+```
+```ts title="sst.config.ts"
+const table = new sst.aws.Dynamo("Table", {
+  fields: {
+    PK: "string",
+    SK: "string",
+  },
+  primaryIndex: { hashKey: "PK", rangeKey: "SK" },
+});
+
+new sst.aws.Function("GoFunction", {
+  url: true,
+  runtime: "go",
+  handler: "./src",
+  link: [table],
+});
+```
+
+View the [full example](https://github.com/sst/sst/tree/dev/examples/aws-go-lambda-dynamo).
 
 
 ---
@@ -946,7 +1165,7 @@ Finally, you can deploy it by:
    +  "build": "tsc"
    }
    ```
-4. Running `npx sst deploy --stage production`.
+And finally, running `npx sst deploy --stage production`.
 ```ts title="sst.config.ts"
 const vpc = new sst.aws.Vpc("MyVpc", { bastion: true });
 const redis = new sst.aws.Redis("MyRedis", { vpc });
@@ -1169,6 +1388,273 @@ return {
 ```
 
 View the [full example](https://github.com/sst/sst/tree/dev/examples/aws-kinesis-stream).
+
+
+---
+## AWS Lambda Go
+
+This example shows how to use the [`go`](https://golang.org/) runtime in your Lambda
+functions.
+
+Our Go function is in the `src` directory and we point to it in our function.
+
+```ts title="sst.config.ts" {5}
+new sst.aws.Function("MyFunction", {
+  url: true,
+  runtime: "go",
+  link: [bucket],
+  handler: "./src",
+});
+```
+
+We are also linking it to an S3 bucket. We can reference the bucket in our function.
+
+```go title="src/main.go" {2}
+func handler() (string, error) {
+  bucket, err := resource.Get("MyBucket", "name")
+  if err != nil {
+    return "", err
+  }
+  return bucket.(string), nil
+}
+```
+
+The `resource.Get` function is from the SST Go SDK.
+
+```go title="src/main.go" {2}
+import (
+  "github.com/sst/sst/v3/sdk/golang/resource"
+)
+```
+
+The `sst dev` CLI also supports running your Go function [_Live_](/docs/live).
+```ts title="sst.config.ts"
+const bucket = new sst.aws.Bucket("MyBucket");
+
+new sst.aws.Function("MyFunction", {
+  url: true,
+  runtime: "go",
+  link: [bucket],
+  handler: "./src",
+});
+```
+
+View the [full example](https://github.com/sst/sst/tree/dev/examples/aws-lambda-golang).
+
+
+---
+## AWS Lambda retry with queues
+
+An example on how to retry Lambda invocations using SQS queues.
+
+Create a SQS retry queue which will be set as the destination for the Lambda function.
+
+```ts title="src/retry.ts"
+const retryQueue = new sst.aws.Queue("retryQueue");
+
+const bus = new sst.aws.Bus("bus");
+
+const busSubscriber = bus.subscribe("busSubscriber", {
+  handler: "src/bus-subscriber.handler",
+  environment: {
+    RETRIES: "2", // set the number of retries
+  },
+  link: [retryQueue], // so the function can send messages to the retry queue
+});
+
+new aws.lambda.FunctionEventInvokeConfig("eventConfig", {
+  functionName: $resolve([busSubscriber.nodes.function.name]).apply(
+    ([name]) => name,
+  ),
+  maximumRetryAttempts: 2, // default is 2, must be between 0 and 2
+  destinationConfig: {
+    onFailure: {
+      destination: retryQueue.arn,
+    },
+  },
+});
+```
+
+Create a bus subscriber which will publish messages to the bus. Include a DLQ for messages that continue to fail.
+
+```ts title="sst.config.ts"
+
+const dlq = new sst.aws.Queue("dlq");
+
+retryQueue.subscribe({
+  handler: "src/retry.handler",
+  link: [busSubscriber.nodes.function, retryQueue, dlq],
+  timeout: "30 seconds",
+  environment: {
+    RETRIER_QUEUE_URL: retryQueue.url,
+  },
+  permissions: [
+    {
+      actions: ["lambda:GetFunction", "lambda:InvokeFunction"],
+      resources: [
+        $interpolate`arn:aws:lambda:${aws.getRegionOutput().name}:${
+          aws.getCallerIdentityOutput().accountId
+        }:function:*`,
+      ],
+    },
+  ],
+  transform: {
+    function: {
+      deadLetterConfig: {
+        targetArn: dlq.arn,
+      },
+    },
+  },
+});
+```
+
+
+The Retry function will read mesaages and send back to the queue to be retried with a backoff.
+
+```ts title="src/retry.ts"
+export const handler: SQSHandler = async (evt) => {
+  for (const record of evt.Records) {
+    const parsed = JSON.parse(record.body);
+    console.log("body", parsed);
+    const functionName = parsed.requestContext.functionArn
+      .replace(":$LATEST", "")
+      .split(":")
+      .pop();
+    if (parsed.responsePayload) {
+      const attempt = (parsed.requestPayload.attempts || 0) + 1;
+
+      const info = await lambda.send(
+        new GetFunctionCommand({
+          FunctionName: functionName,
+        }),
+      );
+      const max =
+        Number.parseInt(
+          info.Configuration?.Environment?.Variables?.RETRIES || "",
+        ) || 0;
+      console.log("max retries", max);
+      if (attempt > max) {
+        console.log(`giving up after ${attempt} retries`);
+        // send to dlq
+        await sqs.send(
+          new SendMessageCommand({
+            QueueUrl: Resource.dlq.url,
+            MessageBody: JSON.stringify({
+              requestPayload: parsed.requestPayload,
+              requestContext: parsed.requestContext,
+              responsePayload: parsed.responsePayload,
+            }),
+          }),
+        );
+        return;
+      }
+      const seconds = Math.min(Math.pow(2, attempt), 900);
+      console.log(
+        "delaying retry by ",
+        seconds,
+        "seconds for attempt",
+        attempt,
+      );
+      parsed.requestPayload.attempts = attempt;
+      await sqs.send(
+        new SendMessageCommand({
+          QueueUrl: Resource.retryQueue.url,
+          DelaySeconds: seconds,
+          MessageBody: JSON.stringify({
+            requestPayload: parsed.requestPayload,
+            requestContext: parsed.requestContext,
+          }),
+        }),
+      );
+    }
+
+    if (!parsed.responsePayload) {
+      console.log("triggering function");
+      try {
+        await lambda.send(
+          new InvokeCommand({
+            InvocationType: "Event",
+            Payload: Buffer.from(JSON.stringify(parsed.requestPayload)),
+            FunctionName: functionName,
+          }),
+        );
+      } catch (e) {
+        if (e instanceof ResourceNotFoundException) {
+          return;
+        }
+        throw e;
+      }
+    }
+  }
+};
+```
+```ts title="sst.config.ts"
+const dlq = new sst.aws.Queue("dlq");
+
+const retryQueue = new sst.aws.Queue("retryQueue");
+
+const bus = new sst.aws.Bus("bus");
+
+const busSubscriber = bus.subscribe("busSubscriber", {
+  handler: "src/bus-subscriber.handler",
+  environment: {
+    RETRIES: "2",
+  },
+  link: [retryQueue], // so the function can send messages to the queue
+});
+
+const publisher = new sst.aws.Function("publisher", {
+  handler: "src/publisher.handler",
+  link: [bus],
+  url: true,
+});
+
+new aws.lambda.FunctionEventInvokeConfig("eventConfig", {
+  functionName: $resolve([busSubscriber.nodes.function.name]).apply(
+    ([name]) => name,
+  ),
+  maximumRetryAttempts: 1,
+  destinationConfig: {
+    onFailure: {
+      destination: retryQueue.arn,
+    },
+  },
+});
+
+retryQueue.subscribe({
+  handler: "src/retry.handler",
+  link: [busSubscriber.nodes.function, retryQueue, dlq],
+  timeout: "30 seconds",
+  environment: {
+    RETRIER_QUEUE_URL: retryQueue.url,
+  },
+  permissions: [
+    {
+      actions: ["lambda:GetFunction", "lambda:InvokeFunction"],
+      resources: [
+        $interpolate`arn:aws:lambda:${aws.getRegionOutput().name}:${
+          aws.getCallerIdentityOutput().accountId
+        }:function:*`,
+      ],
+    },
+  ],
+  transform: {
+    function: {
+      deadLetterConfig: {
+        targetArn: dlq.arn,
+      },
+    },
+  },
+});
+
+return {
+  publisher: publisher.url,
+  dlq: dlq.url,
+  retryQueue: retryQueue.url,
+};
+```
+
+View the [full example](https://github.com/sst/sst/tree/dev/examples/aws-lambda-retry-with-queues).
 
 
 ---
@@ -2560,6 +3046,113 @@ new sst.x.DevCommand("Studio", {
 ```
 
 View the [full example](https://github.com/sst/sst/tree/dev/examples/aws-t3).
+
+
+---
+## AWS Task Cron
+
+Use the [`Task`](/docs/component/aws/task) and [`Cron`](/docs/component/aws/cron) components
+for long running background tasks.
+
+We have a node script that we want to run in `index.mjs`. It'll be deployed as a
+Docker container using `Dockerfile`.
+
+It'll be invoked by a cron job that runs every 2 minutes.
+
+```ts title="sst.config.ts"
+new sst.aws.Cron("MyCron", {
+  task,
+  schedule: "rate(2 minutes)"
+});
+```
+
+When this is run in `sst dev`, the task is executed locally using `dev.command`.
+
+```ts title="sst.config.ts"
+dev: {
+  command: "node index.mjs"
+}
+```
+
+To deploy, you need the Docker daemon running.
+```ts title="sst.config.ts"
+const bucket = new sst.aws.Bucket("MyBucket");
+const vpc = new sst.aws.Vpc("MyVpc");
+
+const cluster = new sst.aws.Cluster("MyCluster", { vpc });
+const task = cluster.addTask("MyTask", {
+  link: [bucket],
+  dev: {
+    command: "node index.mjs",
+  },
+});
+
+new sst.aws.Cron("MyCron", {
+  task,
+  schedule: "rate(2 minutes)",
+});
+```
+
+View the [full example](https://github.com/sst/sst/tree/dev/examples/aws-task-cron).
+
+
+---
+## AWS Task
+
+Use the [`Task`](/docs/component/aws/task) component to run background tasks.
+
+We have a node script that we want to run in `image/index.mjs`. It'll be deployed as a
+Docker container using `image/Dockerfile`.
+
+We also have a function that the task is linked to. It uses the [SDK](/docs/reference/sdk/)
+to start the task.
+
+```ts title="index.ts" {5}
+import { Resource } from "sst";
+import { task } from "sst/aws/task";
+
+export const handler = async () => {
+  const ret = await task.run(Resource.MyTask);
+  return {
+    statusCode: 200,
+    body: JSON.stringify(ret, null, 2),
+  };
+};
+```
+
+When this is run in `sst dev`, the task is executed locally using `dev.command`.
+
+```ts title="sst.config.ts"
+dev: {
+  command: "node index.mjs"
+}
+```
+
+To deploy, you need the Docker daemon running.
+```ts title="sst.config.ts"
+const bucket = new sst.aws.Bucket("MyBucket");
+const vpc = new sst.aws.Vpc("MyVpc", { nat: "ec2" });
+
+const cluster = new sst.aws.Cluster("MyCluster", { vpc });
+const task = cluster.addTask("MyTask", {
+  link: [bucket],
+  image: {
+    context: "image",
+  },
+  dev: {
+    command: "node index.mjs",
+  },
+});
+
+new sst.aws.Function("MyApp", {
+  vpc,
+  url: true,
+  link: [task],
+  handler: "index.handler",
+});
+```
+
+View the [full example](https://github.com/sst/sst/tree/dev/examples/aws-task).
 
 
 ---

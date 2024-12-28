@@ -17,6 +17,7 @@ import { VisibleError } from "../error";
 import { Postgres as PostgresV1 } from "./postgres-v1";
 import { SizeGbTb, toGBs } from "../size";
 import { DevCommand } from "../experimental/dev-command.js";
+import { RdsRoleLookup } from "./providers/rds-role-lookup";
 export type { PostgresArgs as PostgresV1Args } from "./postgres-v1";
 
 export interface PostgresArgs {
@@ -26,7 +27,7 @@ export interface PostgresArgs {
    * @example
    * ```js
    * {
-   *   version: "15.8"
+   *   version: "17.2"
    * }
    * ```
    */
@@ -54,6 +55,13 @@ export interface PostgresArgs {
    * ```js
    * {
    *   password: "Passw0rd!"
+   * }
+   * ```
+   *
+   * Use [Secrets](/docs/component/secret) to manage the password.
+   * ```js
+   * {
+   *   password: new sst.Secret("MyDBPassword").value
    * }
    * ```
    */
@@ -121,7 +129,79 @@ export interface PostgresArgs {
    * }
    * ```
    */
-  proxy?: Input<boolean>;
+  proxy?: Input<
+    | boolean
+    | {
+        /**
+         * Additional credentials the proxy can use to connect to the database. You don't
+         * need to specify the master user credentials as they are always added by default.
+         *
+         * :::note
+         * This component will not create the Postgres users listed here. You need to
+         * create them manually in the database.
+         * :::
+         *
+         * @example
+         * ```js
+         * {
+         *   credentials: [
+         *     {
+         *       username: "metabase",
+         *       password: "Passw0rd!",
+         *     }
+         *   ]
+         * }
+         * ```
+         *
+         * Use [Secrets](/docs/component/secret) to manage the password.
+         * ```js
+         * {
+         *   credentials: [
+         *     {
+         *       username: "metabase",
+         *       password: new sst.Secret("MyDBPassword").value,
+         *     }
+         *   ]
+         * }
+         * ```
+         */
+        credentials?: Input<
+          Input<{
+            /**
+             * The username of the user.
+             */
+            username: Input<string>;
+            /**
+             * The password of the user.
+             */
+            password: Input<string>;
+          }>[]
+        >;
+      }
+  >;
+  /**
+   * Enable [Multi-AZ](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.html)
+   * deployment for the database.
+   *
+   * This creates a standby replica for the database in another availability zone (AZ). The
+   * standby database provides automatic failover in case the primary database fails. However,
+   * when the primary database is healthy, the standby database is not used for serving read
+   * traffic.
+   *
+   * :::caution
+   * Using Multi-AZ will approximately double the cost of the database since it will be
+   * deployed in two AZs.
+   * :::
+   *
+   * @default `false`
+   * @example
+   * ```js
+   * {
+   *   multiAz: true
+   * }
+   * ```
+   */
+  multiAz?: Input<boolean>;
   /**
    * @internal
    */
@@ -234,6 +314,10 @@ export interface PostgresArgs {
      * Transform the database instance in the RDS Cluster.
      */
     instance?: Transform<rds.InstanceArgs>;
+    /**
+     * Transform the RDS Proxy.
+     */
+    proxy?: Transform<rds.ProxyArgs>;
   };
 }
 
@@ -382,6 +466,7 @@ export class Postgres extends Component implements Link.Linkable {
     }
 
     registerVersion();
+    const multiAz = output(args.multiAz).apply((v) => v ?? false);
     const engineVersion = output(args.version).apply((v) => v ?? "16.4");
     const instanceType = output(args.instance).apply((v) => v ?? "t4g.micro");
     const username = output(args.username).apply((v) => v ?? "postgres");
@@ -576,7 +661,7 @@ Listening on "${dev.host}:${dev.port}"...`,
           args.transform?.parameterGroup,
           `${name}ParameterGroup`,
           {
-            family: "postgres16",
+            family: engineVersion.apply((v) => `postgres${v.split(".")[0]}`),
             parameters: [
               {
                 name: "rds.force_ssl",
@@ -637,6 +722,7 @@ Listening on "${dev.host}:${dev.port}"...`,
             storageType: "gp3",
             allocatedStorage: 20,
             maxAllocatedStorage: storage,
+            multiAz,
             backupRetentionPeriod: 7,
             performanceInsightsEnabled: true,
             tags: {
@@ -681,8 +767,34 @@ Listening on "${dev.host}:${dev.port}"...`,
     }
 
     function createProxy() {
-      return output(args.proxy).apply((proxy) => {
+      return all([args.proxy]).apply(([proxy]) => {
         if (!proxy) return;
+
+        const credentials = proxy === true ? [] : proxy.credentials ?? [];
+
+        // Create secrets
+        const secrets = credentials.map((credential) => {
+          const secret = new secretsmanager.Secret(
+            `${name}ProxySecret${credential.username}`,
+            {
+              recoveryWindowInDays: 0,
+            },
+            { parent: self },
+          );
+
+          new secretsmanager.SecretVersion(
+            `${name}ProxySecretVersion${credential.username}`,
+            {
+              secretId: secret.id,
+              secretString: jsonStringify({
+                username: credential.username,
+                password: credential.password,
+              }),
+            },
+            { parent: self },
+          );
+          return secret;
+        });
 
         const role = new iam.Role(
           `${name}ProxyRole`,
@@ -697,7 +809,7 @@ Listening on "${dev.host}:${dev.port}"...`,
                   statements: [
                     {
                       actions: ["secretsmanager:GetSecretValue"],
-                      resources: [secret.arn],
+                      resources: [secret.arn, ...secrets.map((s) => s.arn)],
                     },
                   ],
                 }).json,
@@ -707,21 +819,35 @@ Listening on "${dev.host}:${dev.port}"...`,
           { parent: self },
         );
 
-        const rdsProxy = new rds.Proxy(
-          `${name}Proxy`,
-          {
-            engineFamily: "POSTGRESQL",
-            auths: [
-              {
-                authScheme: "SECRETS",
-                iamAuth: "DISABLED",
-                secretArn: secret.arn,
-              },
-            ],
-            roleArn: role.arn,
-            vpcSubnetIds: vpc.subnets,
-          },
+        const lookup = new RdsRoleLookup(
+          `${name}ProxyRoleLookup`,
+          { name: "AWSServiceRoleForRDS" },
           { parent: self },
+        );
+
+        const rdsProxy = new rds.Proxy(
+          ...transform(
+            args.transform?.proxy,
+            `${name}Proxy`,
+            {
+              engineFamily: "POSTGRESQL",
+              auths: [
+                {
+                  authScheme: "SECRETS",
+                  iamAuth: "DISABLED",
+                  secretArn: secret.arn,
+                },
+                ...secrets.map((s) => ({
+                  authScheme: "SECRETS",
+                  iamAuth: "DISABLED",
+                  secretArn: s.arn,
+                })),
+              ],
+              roleArn: role.arn,
+              vpcSubnetIds: vpc.subnets,
+            },
+            { parent: self, dependsOn: [lookup] },
+          ),
         );
 
         const targetGroup = new rds.ProxyDefaultTargetGroup(

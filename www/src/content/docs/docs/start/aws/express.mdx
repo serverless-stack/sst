@@ -13,6 +13,7 @@ We'll build a simple app below.
 
 We also have a few other Express examples that you can refer to.
 
+- [Build a hit counter with Express and Redis](/docs/examples/#aws-express-redis)
 - [Use service discovery to connect to your Express app](/docs/examples/#aws-cluster-service-discovery)
 
 ---
@@ -74,13 +75,13 @@ This'll create a `sst.config.ts` file in your project root.
 
 ---
 
-## 2. Add a Cluster
+## 2. Add a Service
 
 To deploy our Express app, let's add an [AWS Fargate](https://aws.amazon.com/fargate/) container with [Amazon ECS](https://aws.amazon.com/ecs/). Update your `sst.config.ts`.
 
 ```js title="sst.config.ts" {9-11}
 async run() {
-  const vpc = new sst.aws.Vpc("MyVpc", { bastion: true });
+  const vpc = new sst.aws.Vpc("MyVpc");
   const cluster = new sst.aws.Cluster("MyCluster", { vpc });
 
   cluster.addService("MyService", {
@@ -94,7 +95,7 @@ async run() {
 }
 ```
 
-This creates a VPC with a bastion host, an ECS Cluster, and adds a Fargate service to it.
+This creates a VPC with an ECS Cluster, and adds a Fargate service to it.
 
 :::note
 By default, your service in not deployed when running in _dev_.
@@ -104,94 +105,120 @@ The `dev.command` tells SST to instead run our Express app locally in dev mode.
 
 ---
 
-## 3. Add Redis
-
-Let's add an [Amazon ElastiCache](https://aws.amazon.com/elasticache/) Redis cluster. Add this below the `Vpc` component in your `sst.config.ts`.
-
-```js title="sst.config.ts"
-const redis = new sst.aws.Redis("MyRedis", { vpc });
-```
-
-This shares the same VPC as our ECS cluster.
-
----
-
-#### Link Redis
-
-Now, link the Redis cluster to the container.
-
-```ts title="sst.config.ts" {3}
-cluster.addService("MyService", {
-  // ...
-  link: [redis],
-});
-```
-
-This will allow us to reference the Redis cluster in our Express app.
-
----
-
-#### Install a tunnel
-
-Since our Redis cluster is in a VPC, we'll need a tunnel to connect to it from our local machine.
-
-```bash "sudo"
-sudo npx sst tunnel install
-```
-
-This needs _sudo_ to create a network interface on your machine. You'll only need to do this once on your machine.
-
----
-
 #### Start dev mode
 
-Start your app in dev mode.
+Run the following to start dev mode. This'll start SST and your Express app.
 
 ```bash
 npx sst dev
 ```
 
-This will deploy your app, start a tunnel in the **Tunnel** tab, and run your Express app locally in the **MyServiceDev** tab.
+Once complete, click on **MyService** in the sidebar and open your Express app in your browser.
 
 ---
 
-## 4. Connect to Redis
+## 3. Add an S3 Bucket
 
-We want the `/` route of our API to increment a counter in our Redis cluster. Let's start by installing the npm package we'll use.
+Let's add an S3 Bucket for file uploads. Add this to your `sst.config.ts` below the `Vpc` component.
 
-```bash
-npm install ioredis
+```ts title="sst.config.ts"
+const bucket = new sst.aws.Bucket("MyBucket");
 ```
 
-Add the relevant imports to your `index.mjs`.
+---
 
-```ts title="index.mjs" {5}
-import { Resource } from "sst";
-import { Cluster } from "ioredis";
+#### Link the bucket
 
-const redis = new Cluster(
-  [{ host: Resource.MyRedis.host, port: Resource.MyRedis.port }],
-  {
-    dnsLookup: (address, callback) => callback(null, address),
-    redisOptions: {
-      tls: {},
-      username: Resource.MyRedis.username,
-      password: Resource.MyRedis.password,
-    },
-  }
-);
+Now, link the bucket to the container.
+
+```ts title="sst.config.ts" {3}
+cluster.addService("MyService", {
+  // ...
+  link: [bucket],
+});
+```
+
+This will allow us to reference the bucket in our Express app.
+
+---
+
+## 4. Upload a file
+
+We want a `POST` request made to the `/` route to upload a file to our S3 bucket. Let's add this below our _Hello World_ route in our `index.mjs`.
+
+```js title="index.mjs" {4}
+app.post("/", upload.single("file"), async (req, res) => {
+  const file = req.file;
+  const params = {
+    Bucket: Resource.MyBucket.name,
+    ContentType: file.mimetype,
+    Key: file.originalname,
+    Body: file.buffer,
+  };
+
+  const upload = new Upload({
+    params,
+    client: s3,
+  });
+
+  await upload.done();
+
+  res.status(200).send("File uploaded successfully.");
+});
 ```
 
 :::tip
-We are directly accessing our Redis cluster with `Resource.MyRedis.*`.
+We are directly accessing our S3 bucket with `Resource.MyBucket.name`.
 :::
 
-Let's update the `/` route.
+Add the imports. We'll use the extra ones below.
 
-```ts title="index.mjs"
-app.get("/", async (req, res) => {
-  const counter = await redis.incr("counter");
-  res.send(`Hit counter: ${counter}`);
+```js title="index.mjs"
+import multer from "multer";
+import { Resource } from "sst";
+import { Upload } from "@aws-sdk/lib-storage";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import {
+  S3Client,
+  GetObjectCommand,
+  ListObjectsV2Command,
+} from "@aws-sdk/client-s3";
+
+const s3 = new S3Client({});
+const upload = multer({ storage: multer.memoryStorage() });
+```
+
+And install the npm packages.
+
+```bash
+npm install multer @aws-sdk/client-s3 @aws-sdk/lib-storage @aws-sdk/s3-request-presigner
+```
+
+---
+
+## 5. Download the file
+
+We'll add a `/latest` route that'll download the latest file in our S3 bucket. Let's add this below our upload route in `index.mjs`.
+
+```js title="index.mjs"
+app.get("/latest", async (req, res) => {
+  const objects = await s3.send(
+    new ListObjectsV2Command({
+      Bucket: Resource.MyBucket.name,
+    }),
+  );
+
+  const latestFile = objects.Contents.sort(
+    (a, b) => b.LastModified - a.LastModified,
+  )[0];
+
+  const command = new GetObjectCommand({
+    Key: latestFile.Key,
+    Bucket: Resource.MyBucket.name,
+  });
+  const url = await getSignedUrl(s3, command);
+
+  res.redirect(url);
 });
 ```
 
@@ -199,9 +226,13 @@ app.get("/", async (req, res) => {
 
 #### Test your app
 
-Let's head over to `http://localhost:80` in your browser and it'll show the current hit counter.
+To upload a file run the following from your project root.
 
-You should see it increment every time you refresh the page.
+```bash
+curl -F file=@package.json http://localhost:80/
+```
+
+This should upload the `package.json`. Now head over to `http://localhost:80/latest` in your browser and it'll show you what you just uploaded.
 
 ---
 
@@ -210,7 +241,7 @@ You should see it increment every time you refresh the page.
 To deploy our app we'll first add a `Dockerfile`.
 
 ```dockerfile title="Dockerfile"
-FROM node:18-bullseye-slim
+FROM node:lts-alpine
 
 WORKDIR /app/
 

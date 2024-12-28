@@ -15,17 +15,17 @@ import (
 
 	"github.com/briandowns/spinner"
 	"github.com/fatih/color"
-	"github.com/sst/ion/cmd/sst/cli"
-	"github.com/sst/ion/cmd/sst/mosaic/errors"
-	"github.com/sst/ion/cmd/sst/mosaic/ui"
-	"github.com/sst/ion/internal/util"
-	"github.com/sst/ion/pkg/flag"
-	"github.com/sst/ion/pkg/global"
-	"github.com/sst/ion/pkg/id"
-	"github.com/sst/ion/pkg/process"
-	"github.com/sst/ion/pkg/project"
-	"github.com/sst/ion/pkg/project/provider"
-	"github.com/sst/ion/pkg/telemetry"
+	"github.com/sst/sst/v3/cmd/sst/cli"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/errors"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/ui"
+	"github.com/sst/sst/v3/internal/util"
+	"github.com/sst/sst/v3/pkg/flag"
+	"github.com/sst/sst/v3/pkg/global"
+	"github.com/sst/sst/v3/pkg/id"
+	"github.com/sst/sst/v3/pkg/process"
+	"github.com/sst/sst/v3/pkg/project"
+	"github.com/sst/sst/v3/pkg/project/provider"
+	"github.com/sst/sst/v3/pkg/telemetry"
 )
 
 var version = "dev"
@@ -109,19 +109,23 @@ func run() error {
 
 	if !flag.SST_SKIP_DEPENDENCY_CHECK {
 		spin := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
-		spin.Suffix = "  Updating dependencies..."
+		spin.Suffix = "  Download dependencies..."
 		if global.NeedsPulumi() {
+			spin.Suffix = "  Installing pulumi..."
 			spin.Start()
-			err := global.InstallPulumi()
+			err := global.InstallPulumi(ctx)
 			if err != nil {
-				return err
+				spin.Stop()
+				return util.NewHintedError(err, "Could not install pulumi")
 			}
 		}
 		if global.NeedsBun() {
+			spin.Suffix = "  Installing bun..."
 			spin.Start()
-			err := global.InstallBun()
+			err := global.InstallBun(ctx)
 			if err != nil {
-				return err
+				spin.Stop()
+				return util.NewHintedError(err, "Could not install bun")
 			}
 		}
 		spin.Stop()
@@ -162,7 +166,7 @@ var root = &cli.Command{
 			"",
 			"- **macOS**",
 			"",
-			"  The CLI is available via a Homebrew Tap, and as downloadable binary in the [releases](https://github.com/sst/ion/releases/latest).",
+			"  The CLI is available via a Homebrew Tap, and as downloadable binary in the [releases](https://github.com/sst/sst/v3/releases/latest).",
 			"",
 			"  ```bash",
 			"  brew install sst/tap/sst",
@@ -175,7 +179,7 @@ var root = &cli.Command{
 			"",
 			"- **Linux**",
 			"",
-			"  The CLI is available as downloadable binaries in the [releases](https://github.com/sst/ion/releases/latest). Download the `.deb` or `.rpm` and install with `sudo dpkg -i` and `sudo rpm -i`.",
+			"  The CLI is available as downloadable binaries in the [releases](https://github.com/sst/sst/v3/releases/latest). Download the `.deb` or `.rpm` and install with `sudo dpkg -i` and `sudo rpm -i`.",
 			"",
 			"  For Arch Linux, it's available in the [aur](https://aur.archlinux.org/packages/sst-bin).",
 			"---",
@@ -349,38 +353,38 @@ var root = &cli.Command{
 			Description: cli.Description{
 				Short: "Run in development mode",
 				Long: strings.Join([]string{
-					"Run your app in dev mode.",
+					"Run your app in dev mode. By default, this starts a multiplexer with processes that",
+					" deploy your app, run your functions, and start your frontend.",
 					"",
 					"```bash frame=\"none\"",
 					"sst dev",
 					"```",
-					"By default, this starts a multiplexer with processes that deploy your app, run your functions, and start your frontend.",
+					"",
+					"Each process is run in a separate tab that you can click on in the sidebar.",
 					"",
 					"![sst dev multiplexer mode](../../../../assets/docs/cli/sst-dev-multiplexer-mode.png)",
-					"",
-					"Each process is run in a separate pane that you can click on in the sidebar. These",
-					"include processes that:",
-					"",
-					"1. Watch your `sst.config.ts` and deploy your app",
-					"2. Run your functions [Live](/docs/live/) and logs their invocations",
-					"3. Start a [`sst tunnel`](#tunnel) session if your app has a VPC with `bastion` enabled",
-					"4. Run the dev mode for components that have `dev.autostart` enabled",
-					"   - Components like `Service` and frontends like `Nextjs`, `Remix`, `Astro`, `StaticSite`, etc. that have `dev.autostart` enabled.",
-					"   - Components like `Postgres` and `Redis` that have the `dev` prop set.",
-					"   - It starts their `dev.command` in a separate pane.",
-					"   - And loads any [linked resources](/docs/linking) in the environment.",
 					"",
 					"The multiplexer makes it so that you won't have to start your frontend or",
 					"your container applications separately.",
 					"",
-					":::tip",
-					"The `sst dev` CLI also starts your frontend. So you don't need to start it",
-					"separately.",
-					":::",
+					"<VideoAside title=\"Watch a video about dev mode\" href=\"https://youtu.be/mefLc137EB0\" />",
 					"",
-					"While `sst dev` does a deploy when it starts up, it does not deploy components like",
-					"`Service`, or the frontends like `Nextjs`, `Remix`, `Astro`, `StaticSite`, etc.",
-					"That's because these have their own dev modes that the multiplexer starts.",
+					"Here's what happens when you run `sst dev`.",
+					"",
+					"- Deploy most of your resources as-is.",
+					"- Except for components that have a `dev` prop.",
+					"  - `Function` components are run [_Live_](/docs/live/) in the **Functions** tab.",
+					"  - `Task` components have their _stub_ versions deployed that proxy the task",
+					"    and run their `dev.command` in the **Tasks** tab.",
+					"  - Frontends like `Nextjs`, `Remix`, `Astro`, `StaticSite`, etc. have their dev",
+					"    servers started in a separate tab and are not deployed.",
+					"  - `Service` components are not deployed, and instead their `dev.command` is",
+					"    started in a separate tab.",
+					"  - `Postgres` and `Redis` link to a local database if the `dev` prop is set.",
+					"- Start an [`sst tunnel`](#tunnel) session in a new tab if your app has a `Vpc`",
+					"  with `bastion` enabled.",
+					"- Load any [linked resources](/docs/linking) in the environment.",
+					"- Start a watcher for your `sst.config.ts` and redeploy any changes.",
 					"",
 					":::note",
 					"The `Service` component and the frontends like `Nextjs` or `StaticSite` are not",
@@ -453,77 +457,7 @@ var root = &cli.Command{
 			},
 			Run: CmdMosaic,
 		},
-		{
-			Name: "deploy",
-			Description: cli.Description{
-				Short: "Deploy your application",
-				Long: strings.Join([]string{
-					"Deploy your application. By default, it deploys to your personal stage.",
-					"You typically want to deploy it to a specific stage.",
-					"",
-					"```bash frame=\"none\"",
-					"sst deploy --stage production",
-					"```",
-					"",
-					"Optionally, deploy specific resources by passing in a list of their URNs.",
-					"You can get the URN of a resource from the [Console](/docs/console/#resources).",
-					"",
-					"```bash frame=\"none\"",
-					"sst deploy --target urn:pulumi:prod::www::sst:aws:Astro::Astro,urn:pulumi:prod::www::sst:aws:Bucket::Assets",
-					"```",
-					"",
-					"All the resources are deployed as concurrently as possible, based on their dependencies.",
-					"For resources like your container images, sites, and functions; it first builds them and then deploys the generated assets.",
-					"",
-					":::tip",
-					"Configure the concurrency if your CI builds are running out of memory.",
-					":::",
-					"",
-					"Since the build processes for some of these resources take a lot of memory, their concurrency is limited by default.",
-					"However, this can be configured.",
-					"",
-					"| Resource | Concurrency | Flag |",
-					"| -------- | ----------- | ---- |",
-					"| Sites | 1 | `SST_BUILD_CONCURRENCY_SITE` |",
-					"| Functions | 4 | `SST_BUILD_CONCURRENCY_FUNCTION` |",
-					"| Containers | 1 | `SST_BUILD_CONCURRENCY_CONTAINER` |",
-					"",
-					"So only one site is built at a time, 4 functions are built at a time, and only 1 container is built at a time.",
-					"",
-					"You can set the above environment variables to change this when you run `sst deploy`. This is useful for CI",
-					"environments where you want to control this based on how much memory your CI machine has.",
-					"",
-					"For example, to build a maximum of 2 sites concurrently.",
-					"",
-					"```bash frame=\"none\"",
-					"SST_BUILD_CONCURRENCY_SITE=2 sst deploy",
-					"```",
-					" Or to configure all these together.",
-					"",
-					"```bash frame=\"none\"",
-					"SST_BUILD_CONCURRENCY_SITE=2 SST_BUILD_CONCURRENCY_CONTAINER=2 SST_BUILD_CONCURRENCY_FUNCTION=8 sst deploy",
-					"```",
-				}, "\n"),
-			},
-			Flags: []cli.Flag{
-				{
-					Name: "target",
-					Description: cli.Description{
-						Short: "Comma separated list of target URNs",
-						Long:  "Comma separated list of target URNs.",
-					},
-				},
-			},
-			Examples: []cli.Example{
-				{
-					Content: "sst deploy --stage production",
-					Description: cli.Description{
-						Short: "Deploy to production",
-					},
-				},
-			},
-			Run: CmdDeploy,
-		},
+		CmdDeploy,
 		{
 			Name: "diff",
 			Description: cli.Description{
@@ -612,7 +546,7 @@ var root = &cli.Command{
 					"}",
 					"```",
 					"",
-					"You can use any provider listed in the [Directory](/docs/providers#directory).",
+					"You can use any provider listed in the [Directory](/docs/all-providers#directory).",
 					"",
 					":::note",
 					"Running `sst add aws` above is the same as manually adding the provider to your config and running `sst install`.",
@@ -699,7 +633,7 @@ var root = &cli.Command{
 					return err
 				}
 				spin.Stop()
-				ui.Success(fmt.Sprintf("Added provider \"%s\". You can create resources with `new %s.SomeResource()`", entry.Alias, entry.Alias))
+				ui.Success(fmt.Sprintf("Added provider \"%s\". You can create resources with `new %s.SomeResource()`.", entry.Alias, entry.Alias))
 				return nil
 			},
 		},
@@ -924,7 +858,7 @@ var root = &cli.Command{
 				}
 				defer p.Cleanup()
 
-				err = p.Cancel()
+				err = p.ForceUnlock()
 				if err != nil {
 					return err
 				}
@@ -1089,24 +1023,28 @@ var root = &cli.Command{
 						}
 						defer p.Cleanup()
 
-						var parsed provider.Summary
-						parsed.Version = version
-						parsed.UpdateID = id.Descending()
-						parsed.TimeStarted = time.Now().UTC().Format(time.RFC3339)
-						err = p.Lock(parsed.UpdateID, "edit")
+						var update provider.Update
+						update.Version = version
+						update.ID = id.Descending()
+						update.TimeStarted = time.Now().UTC().Format(time.RFC3339)
+						err = p.Lock(update.ID, "edit")
 						if err != nil {
 							return util.NewReadableError(err, "Could not lock state")
 						}
 						defer p.Unlock()
 						defer func() {
-							parsed.TimeCompleted = time.Now().UTC().Format(time.RFC3339)
-							provider.PutSummary(p.Backend(), p.App().Name, p.App().Stage, parsed.UpdateID, parsed)
+							update.TimeCompleted = time.Now().UTC().Format(time.RFC3339)
+							provider.PutUpdate(p.Backend(), p.App().Name, p.App().Stage, update)
 						}()
-
-						path, err := p.PullState()
+						workdir, err := p.NewWorkdir()
+						if err != nil {
+							return err
+						}
+						path, err := workdir.Pull()
 						if err != nil {
 							return util.NewReadableError(err, "Could not pull state")
 						}
+						defer workdir.Cleanup()
 						editor := os.Getenv("EDITOR")
 						if editor == "" {
 							editor = "vim"
@@ -1124,7 +1062,7 @@ var root = &cli.Command{
 							return util.NewReadableError(err, "Editor exited with error")
 						}
 
-						return p.PushState(parsed.UpdateID)
+						return workdir.Push(update.ID)
 					},
 				},
 			},

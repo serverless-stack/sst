@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -e
+export DOCKER_PUSH=true
+./platform/scripts/build
 goreleaser build --clean --snapshot --skip validate
 cd sdk/js
 bun run release

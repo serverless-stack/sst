@@ -314,7 +314,7 @@
 /**
  * Tables
  */
-.sl-markdown-content thead:not(:where(.not-content *)) {
+.sl-markdown-content thead th:not(:where(.not-content *)) {
   border-bottom: 2px solid var(--divider-color);
 }
 .sl-markdown-content :is(th):not(:where(.not-content *)) {
@@ -326,19 +326,12 @@
   font-size: var(--sl-text-code-sm);
   border: none;
   text-align: left;
+  padding-block-start: 0;
 }
-.sl-markdown-content tbody:not(:where(.not-content *)) > tr {
+.sl-markdown-content tbody > tr td:not(:where(.not-content *)) {
   border-bottom: 1px solid var(--divider-color);
-}
-.sl-markdown-content :is(td):not(:where(.not-content *)) {
-  border: none;
+  padding-block: 0.5rem;
 }
 .sl-markdown-content tr:nth-child(2n):not(:where(.not-content *)) {
   background-color: transparent;
-}
-.sl-markdown-content :is(th, td):not(:where(.not-content *)) {
-  padding-block: 0.5rem;
-}
-.sl-markdown-content :is(th):not(:where(.not-content *)) {
-  padding-block-start: 0;
 }

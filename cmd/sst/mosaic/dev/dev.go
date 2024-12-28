@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"reflect"
 
-	"github.com/sst/ion/cmd/sst/mosaic/deployer"
-	"github.com/sst/ion/pkg/bus"
-	"github.com/sst/ion/pkg/project"
-	"github.com/sst/ion/pkg/server"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/deployer"
+	"github.com/sst/sst/v3/pkg/bus"
+	"github.com/sst/sst/v3/pkg/project"
+	"github.com/sst/sst/v3/pkg/server"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -101,6 +101,7 @@ func Start(ctx context.Context, p *project.Project, server *server.Server) error
 		slog.Info("dev not found", "directory", directory)
 		http.Error(w, "dev not found", http.StatusNotFound)
 		return
+
 	})
 
 	return wg.Wait()

@@ -480,6 +480,15 @@ export interface RouterArgs {
      */
     cdn?: Transform<CdnArgs>;
   };
+  /**
+   * @internal
+   */
+  _skipHint?: boolean;
+}
+
+interface RouterRef {
+  ref: boolean;
+  distributionID: Input<string>;
 }
 
 /**
@@ -562,21 +571,36 @@ export class Router extends Component implements Link.Linkable {
     opts: ComponentResourceOptions = {},
   ) {
     super(__pulumiType, name, args, opts);
+    const parent = this;
+
+    if (args && "ref" in args) {
+      const ref = reference();
+      this.cdn = ref.cdn;
+      registerOutputs();
+      return;
+    }
 
     let defaultCfFunction: cloudfront.Function;
     let defaultOac: OriginAccessControl;
-    const parent = this;
-
     const routes = normalizeRoutes();
 
     const cachePolicy = createCachePolicy();
     const cdn = createCdn();
 
     this.cdn = cdn;
+    registerOutputs();
 
-    this.registerOutputs({
-      _hint: this.url,
-    });
+    function reference() {
+      const ref = args as unknown as RouterRef;
+      const cdn = Cdn.get(`${name}Cdn`, ref.distributionID, { parent });
+      return { cdn };
+    }
+
+    function registerOutputs() {
+      parent.registerOutputs({
+        _hint: args._skipHint ? undefined : parent.url,
+      });
+    }
 
     function normalizeRoutes() {
       return output(args.routes).apply((routes) => {
@@ -877,6 +901,13 @@ async function handler(event) {
   }
 
   /**
+   * The ID of the Router distribution.
+   */
+  public get distributionID() {
+    return this.cdn.nodes.distribution.id;
+  }
+
+  /**
    * The URL of the Router.
    *
    * If the `domain` is set, this is the URL with the custom domain.
@@ -907,6 +938,49 @@ async function handler(event) {
         url: this.url,
       },
     };
+  }
+
+  /**
+   * Reference an existing Router with the given Router distribution ID. This is useful when
+   * you create a Router in one stage and want to share it in another. It avoids having to
+   * create a new Router in the other stage.
+   *
+   * :::tip
+   * You can use the `static get` method to share Routers across stages.
+   * :::
+   *
+   * @param name The name of the component.
+   * @param distributionID The id of the existing Router distribution.
+   * @param opts? Resource options.
+   *
+   * @example
+   * Imagine you create a Router in the `dev` stage. And in your personal stage `frank`,
+   * instead of creating a new Router, you want to share the same Router from `dev`.
+   *
+   * ```ts title="sst.config.ts"
+   * const router = $app.stage === "frank"
+   *   ? sst.aws.Router.get("MyRouter", "E2IDLMESRN6V62")
+   *   : new sst.aws.Router("MyRouter");
+   * ```
+   *
+   * Here `E2IDLMESRN6V62` is the ID of the Router distribution created in the `dev` stage.
+   * You can find this by outputting the distribution ID in the `dev` stage.
+   *
+   * ```ts title="sst.config.ts"
+   * return {
+   *   router: router.distributionID
+   * };
+   * ```
+   */
+  public static get(
+    name: string,
+    distributionID: Input<string>,
+    opts?: ComponentResourceOptions,
+  ) {
+    return new Router(name, {
+      ref: true,
+      distributionID: distributionID,
+    } as unknown as RouterArgs);
   }
 }
 

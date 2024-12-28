@@ -1,6 +1,6 @@
 package main
 
-import "github.com/sst/ion/cmd/sst/cli"
+import "github.com/sst/sst/v3/cmd/sst/cli"
 
 var CmdStateCopy = &cli.Command{
 	Name: "copy",
