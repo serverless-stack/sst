@@ -1,9 +1,11 @@
 /// <reference path="./.sst/platform/config.d.ts" />
 
 /**
- * ## AWS Go Lambda Bucket Presigned URL
+ * ## AWS Lambda Go S3 Presigned
  *
- * Configure S3 Client and PresignedClient
+ * Generates a presigned URL for the linked S3 bucket in a Go Lambda function.
+ *
+ * Configure the S3 Client and the PresignedClient.
  *
  * ```go title="main.go"
  * cfg, err := config.LoadDefaultConfig(context.TODO())
@@ -15,7 +17,7 @@
  * presignedClient := s3.NewPresignClient(client)
  * ```
  *
- * Generate a presigned URL
+ * Generate the presigned URL.
  *
  * ```go title="main.go"
  * bucketName, err := resource.Get("Bucket", "name")
