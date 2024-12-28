@@ -22,12 +22,13 @@ export interface AuthArgs {
    * }
    * ```
    *
-   * @example
+   * You can also pass in the full `FunctionArgs`.
+   *
    * ```js
    * {
    *   authorizer: {
    *     handler: "src/auth.handler",
-   *     link: [table],
+   *     link: [table]
    *   }
    * }
    * ```
