@@ -1,10 +1,7 @@
-// This is a custom Lambda@Edge handler which imports the Remix server
-// build and performs the Remix server rendering.
+// This is a custom Lambda@Edge handler which imports the React Router server
+// build and performs the React Router server rendering.
 
-import {
-  createRequestHandler as createNodeRequestHandler,
-  readableStreamToString,
-} from "@react-router/node";
+import { createRequestHandler, readableStreamToString } from "react-router";
 import { URL } from "url";
 
 /**
@@ -139,7 +136,7 @@ async function convertNodeResponseToCf(nodeResponse) {
 }
 
 function createCfHandler(build) {
-  const requestHandler = createNodeRequestHandler(build, process.env.NODE_ENV);
+  const requestHandler = createRequestHandler(build, process.env.NODE_ENV);
 
   return async (event) => {
     const request = convertCfRequestToNode(event);

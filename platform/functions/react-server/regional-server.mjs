@@ -1,7 +1,7 @@
-// This is a custom Lambda URL handler which imports the Remix server
-// build and performs the Remix server rendering.
+// This is a custom Lambda URL handler which imports the React Router server
+// build and performs the React Router server rendering.
 
-import { createRequestHandler as createNodeRequestHandler } from "@react-router/node";
+import { createRequestHandler } from "react-router";
 
 /**
  * Common binary MIME types
@@ -101,7 +101,7 @@ function convertApigRequestToNode(event) {
 }
 
 const createApigHandler = (build) => {
-  const requestHandler = createNodeRequestHandler(build, process.env.NODE_ENV);
+  const requestHandler = createRequestHandler(build, process.env.NODE_ENV);
 
   return awslambda.streamifyResponse(async (event, responseStream, context) => {
     context.callbackWaitsForEmptyEventLoop = false;
