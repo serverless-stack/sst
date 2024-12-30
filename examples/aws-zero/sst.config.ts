@@ -9,9 +9,8 @@ export default $config({
     };
   },
   async run() {
-    const vpc = new sst.aws.Vpc("Vpc", {
-      bastion: true,
-    });
+    const vpc = new sst.aws.Vpc("Vpc", { bastion: true });
+
     const db = new sst.aws.Postgres("Database", {
       vpc,
       transform: {
@@ -36,9 +35,12 @@ export default $config({
         },
       },
     });
+
     const cluster = new sst.aws.Cluster("Cluster", { vpc });
+
     const connection = $interpolate`postgres://${db.username}:${db.password}@${db.host}:${db.port}`;
-    cluster.addService("Zero", {
+
+    const service = cluster.addService("Zero", {
       image: "rocicorp/zero",
       dev: {
         command: "npx zero-cache",
@@ -48,15 +50,30 @@ export default $config({
       },
       environment: {
         ZERO_UPSTREAM_DB: $interpolate`${connection}/${db.database}`,
-        ZERO_CVR_DB: $interpolate`${connection}/${db.database}_cvr`,
-        ZERO_CHANGE_DB: $interpolate`${connection}/${db.database}_change`,
+        ZERO_CVR_DB: $interpolate`${connection}/zero_cvr`,
+        ZERO_CHANGE_DB: $interpolate`${connection}/zero_change`,
         ZERO_REPLICA_FILE: "zero.db",
         ZERO_NUM_SYNC_WORKERS: "1",
+        ZERO_SCHEMA_FILE: "packages/web/zero-schema.json",
+        ZERO_AUTH_SECRET: "secretkey",
+      },
+    });
+
+    new sst.aws.StaticSite("Web", {
+      path: "packages/web",
+      build: {
+        command: "npm run build",
+        output: "dist",
+      },
+      environment: {
+        ZERO_AUTH_SECRET: "secretkey",
+        VITE_ZERO_CACHE_URL:
+          $app.stage !== "production" ? "http://localhost:4848" : service.url,
       },
     });
 
     return {
-      connection: $interpolate`${connection}/${db.database}`,
+      connection: $interpolate`${connection}`,
     };
   },
 });
