@@ -492,6 +492,10 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# If static pages need linked resources
+# ARG SST_RESOUCE_MyResource
+
 RUN npm run build
 
 # Stage 3: Production server
@@ -510,6 +514,14 @@ This builds our Next.js app in a Docker image.
 :::tip
 You need to be running [Docker Desktop](https://www.docker.com/products/docker-desktop/) to deploy your app.
 :::
+
+If your Next.js app is building static pages that need linked resources, you can need to declare them in your `Dockerfile`. For example, if we need the linked `MyBucket` component from above.
+
+```dockerfile
+ARG SST_RESOURCE_MyBucket
+```
+
+You'll need to do this for each linked resource.
 
 Let's also add a `.dockerignore` file in the root.
 

@@ -633,7 +633,7 @@ var root = &cli.Command{
 					return err
 				}
 				spin.Stop()
-				ui.Success(fmt.Sprintf("Added provider \"%s\". You can create resources with `new %s.SomeResource()`", entry.Alias, entry.Alias))
+				ui.Success(fmt.Sprintf("Added provider \"%s\". You can create resources with `new %s.SomeResource()`.", entry.Alias, entry.Alias))
 				return nil
 			},
 		},

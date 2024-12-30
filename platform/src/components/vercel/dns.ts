@@ -12,7 +12,9 @@
  * {
  *   domain: {
  *     name: "example.com",
- *     dns: sst.vercel.dns()
+ *     dns: sst.vercel.dns({
+ *       domain: "example.com"
+ *     })
  *   }
  * }
  * ```

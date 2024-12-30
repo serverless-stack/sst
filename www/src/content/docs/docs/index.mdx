@@ -111,16 +111,12 @@ Like your API deployed in a container. Or any Lambda functions, Postgres databas
 </Tabs>
 
 
-You can even set up Stripe webhooks in code.
+You can even set up your Stripe products in code.
 
 ```ts title="sst.config.ts"
-new stripe.WebhookEndpoint("MyStripeWebhook", {
-  url: "https://example.com/webhook",
-  enabledEvents: [
-    "payment_method.attached",
-    "payment_method.detached",
-    "payment_method.updated"
-  ]
+new stripe.Product("MyStripeProduct", {
+  name: "SST Paid Plan",
+  description: "This is how SST makes money",
 });
 ```
 
@@ -172,6 +168,8 @@ Learn more about [transforms](/docs/components#transforms).
 ### Providers
 
 SST has built-in components for AWS and Cloudflare that make these services easier to use.
+
+<VideoAside title="Watch a video about providers in SST" href="https://youtu.be/rlR2f5N9mW4" />
 
 However it also supports components from any one of the **150+ Pulumi/Terraform providers**. For example, you can use Vercel for your frontends.
 

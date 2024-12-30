@@ -186,7 +186,8 @@ export function dns(args: DnsArgs = {}) {
                       return {
                         flags: parts[0],
                         tag: parts[1],
-                        value: parts.slice(2).join(" "),
+                        // remove quotes from value
+                        value: parts.slice(2).join(" ").replaceAll(`"`, ""),
                       };
                     })(),
               ttl: output(proxy).apply((proxy) => (proxy ? 1 : 60)),

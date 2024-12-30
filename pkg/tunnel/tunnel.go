@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/xjasonlyu/tun2socks/v2/engine"
 
@@ -47,6 +48,7 @@ func Install() error {
 	}
 	err = os.Chmod(BINARY_PATH, 0755)
 	user := os.Getenv("SUDO_USER")
+	user = strings.ReplaceAll(user, ".", "")
 	sudoersPath := "/etc/sudoers.d/sst-" + user
 	slog.Info("creating sudoers file", "path", sudoersPath)
 	command := BINARY_PATH + " tunnel start *"

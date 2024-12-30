@@ -3,6 +3,8 @@ title: All Providers
 description: Use 150+ Pulumi or Terraform providers in your app.
 ---
 
+import VideoAside from "../../../components/VideoAside.astro";
+
 Aside from the [built-in](/docs/components#built-in) components, SST supports any of the **150+** Pulumi and Terrarform providers.
 
 Check out the full list in the [Directory](#directory).
@@ -28,7 +30,7 @@ SST manages these packages internally and you do not need to import the package 
 For example, to add the Stripe provider.
 
 ```bash
-sst add pulumi-stripe
+sst add stripe
 ```
 
 Read more about [providers](/docs/providers).
@@ -56,14 +58,10 @@ For example, use a Stripe resource in your config's `run` function.
 export default $config({
   // ...
   async run() {
-   new stripe.WebhookEndpoint("MyStripeWebhook", {
-     url: "https://example.com/webhook",
-     enabledEvents: [
-       "payment_method.attached",
-       "payment_method.detached",
-       "payment_method.updated"
-     ]
-   });
+    new stripe.Product("MyStripeProduct", {
+      name: "SST Paid Plan",
+      description: "This is how SST makes money",
+    });
   },
 });
 ```
@@ -240,7 +238,7 @@ If you want SST to support a Terraform provider or update a version, you can **s
 | [Spotinst](https://www.pulumi.com/registry/packages/spotinst) | `spotinst` |
 | [Statuscake](https://www.pulumi.com/registry/packages/statuscake) | `@pulumiverse/statuscake` |
 | [Strata Cloud Manager](https://www.pulumi.com/registry/packages/scm) | `scm` |
-| [Stripe](https://github.com/georgegebbett/pulumi-stripe) | `pulumi-stripe` |
+| [Stripe](https://github.com/georgegebbett/pulumi-stripe) | `stripe` |
 | [StrongDM](https://www.pulumi.com/registry/packages/sdm/) | `@pierskarsenbarg/sdm` |
 | [Sumo Logic](https://www.pulumi.com/registry/packages/sumologic) | `sumologic` |
 | [Supabase](https://github.com/sst/pulumi-supabase) | `supabase` |

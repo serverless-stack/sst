@@ -47,6 +47,7 @@ export default $config({
     const vpc = new sst.aws.Vpc("MyVpc", { nat: "ec2" });
 
     const cluster = new sst.aws.Cluster("MyCluster", { vpc });
+
     const task = cluster.addTask("MyTask", {
       link: [bucket],
       image: {

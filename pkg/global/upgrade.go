@@ -66,7 +66,7 @@ func Upgrade(existingVersion string, nextVersion string) (string, error) {
 	if nextVersion == existingVersion {
 		return nextVersion, nil
 	}
-	url := "https://github.com/sst/sst/v3/releases/download/" + nextVersion + "/sst-" + filename
+	url := "https://github.com/sst/sst/releases/download/" + nextVersion + "/sst-" + filename
 	slog.Info("downloading", "url", url)
 	resp, err := http.Get(url)
 	if err != nil {

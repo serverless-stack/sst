@@ -228,6 +228,26 @@ func CmdInit(cli *cli.Cli) error {
 		spin.Stop()
 	}
 
+	if template == "nextjs" {
+		hasEslint := slices.ContainsFunc(hints, func(s string) bool {
+			return strings.Contains(strings.ToLower(s), "eslint")
+		})
+
+		if hasEslint {
+			configFile := "sst.config.ts"
+			content, err := os.ReadFile(configFile)
+			if err != nil {
+				return err
+			}
+
+			newContent := "// eslint-disable-next-line @typescript-eslint/triple-slash-reference\n" + string(content)
+			err = os.WriteFile(configFile, []byte(newContent), 0644)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
 	spin.Stop()
 
 	if len(instructions) == 0 {

@@ -1,7 +1,7 @@
 /// <reference path="./.sst/platform/config.d.ts" />
 
 /**
- * ## AWS Go Lambda DynamoDB
+ * ## AWS Lambda Go DynamoDB
  *
  * An example on how to use a Go runtime Lambda with DynamoDB.
  *

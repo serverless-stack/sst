@@ -292,6 +292,10 @@ interface TaskContainerArgs {
          * Key-value pairs of build args. Same as the top-level [`image.args`](#image-args).
          */
         args?: Input<Record<string, Input<string>>>;
+        /**
+         * The stage to build up to. Same as the top-level [`image.target`](#image-target).
+         */
+        target?: Input<string>;
       }
   >;
   /**
@@ -571,6 +575,16 @@ interface ClusterBaseArgs {
          * ```
          */
         tags?: Input<Input<string>[]>;
+        /**
+         * The stage to build up to in a [multi-stage Dockerfile](https://docs.docker.com/build/building/multi-stage/#stop-at-a-specific-build-stage).
+         * @example
+         * ```js
+         * {
+         *   target: "stage1"
+         * }
+         * ```
+         */
+        target?: Input<string>;
       }
   >;
   /**
@@ -2688,6 +2702,7 @@ export function createTaskDefinition(
                 ...container.image.args,
                 ...linkEnvs,
               },
+              target: container.image.target,
               platforms: [container.image.platform],
               tags: [container.name, ...(container.image.tags ?? [])].map(
                 (tag) => interpolate`${bootstrapData.assetEcrUrl}:${tag}`,
