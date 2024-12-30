@@ -22,7 +22,11 @@ import (
 )
 
 func BunPath() string {
-	return filepath.Join(BinPath(), "bun")
+	path := filepath.Join(BinPath(), "bun")
+	if runtime.GOOS == "windows" {
+		path += ".exe"
+	}
+	return path
 }
 
 func NeedsBun() bool {
@@ -101,7 +105,7 @@ func InstallBun(ctx context.Context) error {
 	slog.Info("bun selected", "filename", filename)
 
 	_, err := task.Run(ctx, func() (any, error) {
-		url := "https://github.com/oven-sh/bun/releases//download/bun-v" + BUN_VERSION + "/" + filename
+		url := "https://github.com/oven-sh/bun/releases/download/bun-v" + BUN_VERSION + "/" + filename
 		slog.Info("bun downloading", "url", url)
 		response, err := http.Get(url)
 		if err != nil {
@@ -121,7 +125,8 @@ func InstallBun(ctx context.Context) error {
 			return nil, err
 		}
 		for _, file := range zipReader.File {
-			if filepath.Base(file.Name) == "bun" {
+			filename := filepath.Base(file.Name)
+			if filename == "bun" || filename == "bun.exe" {
 				f, err := file.Open()
 				if err != nil {
 					return nil, err

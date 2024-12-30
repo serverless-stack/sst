@@ -1,9 +1,12 @@
 package global
 
 import (
+	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -91,8 +94,50 @@ func InstallPulumi(ctx context.Context) error {
 				return nil, err
 			}
 
+		case ".zip":
+			// Read zip file
+			zipBytes, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+
+			// Open zip archive
+			zipReader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+			if err != nil {
+				return nil, err
+			}
+
+			// Extract all files to tmp root
+			for _, file := range zipReader.File {
+				if file.FileInfo().IsDir() {
+					continue
+				}
+
+				// Strip pulumi/bin/ prefix from filename
+				filename := filepath.Base(file.Name)
+				destPath := filepath.Join(tmp, filename)
+
+				rc, err := file.Open()
+				if err != nil {
+					return nil, err
+				}
+
+				outFile, err := os.Create(destPath)
+				if err != nil {
+					rc.Close()
+					return nil, err
+				}
+
+				_, err = io.Copy(outFile, rc)
+				rc.Close()
+				outFile.Close()
+				if err != nil {
+					return nil, err
+				}
+			}
+
 		default:
-			return nil, fmt.Errorf("cannot extract zip file for pulumi")
+			return nil, fmt.Errorf("unsupported file extension: %s", fileExtension)
 		}
 
 		entries, err := os.ReadDir(tmp)
@@ -112,5 +157,9 @@ func InstallPulumi(ctx context.Context) error {
 }
 
 func PulumiPath() string {
-	return filepath.Join(BinPath(), "pulumi")
+	path := filepath.Join(BinPath(), "pulumi")
+	if runtime.GOOS == "windows" {
+		path += ".exe"
+	}
+	return path
 }

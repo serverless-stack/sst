@@ -23,12 +23,16 @@ func CopyTo(srcDir, destDir string) error {
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return err
 	}
-	entries, err := files.ReadDir(srcDir)
+	// Convert Windows path separators to forward slashes for embed.FS
+	embedPath := filepath.ToSlash(srcDir)
+	entries, err := files.ReadDir(embedPath)
 	if err != nil {
 		return err
 	}
 	for _, entry := range entries {
-		srcPath := filepath.Join(srcDir, entry.Name())
+		// Use forward slashes for source (embed.FS) path
+		srcPath := filepath.ToSlash(filepath.Join(srcDir, entry.Name()))
+		// Use system-specific separators for destination path
 		destPath := filepath.Join(destDir, entry.Name())
 
 		if entry.IsDir() {
