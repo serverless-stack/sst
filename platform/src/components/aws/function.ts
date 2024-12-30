@@ -1794,7 +1794,7 @@ export class Function extends Component implements Link.Linkable {
           args.transform?.role,
           `${name}Role`,
           {
-            assumeRolePolicy: !$dev
+            assumeRolePolicy: !dev
               ? iam.assumeRolePolicyForPrincipal({
                   Service: "lambda.amazonaws.com",
                 })
