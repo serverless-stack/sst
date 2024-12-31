@@ -187,112 +187,109 @@ export class Service extends Component implements Link.Linkable {
     }
 
     function normalizeLoadBalancer() {
-      if (!args.loadBalancer && !args.public) return;
+      const loadBalancer = ((args.loadBalancer ??
+        args.public) as typeof args.loadBalancer)!;
+      if (!loadBalancer) return;
 
-      if (args.loadBalancer && args.public)
-        throw new VisibleError(
-          `You cannot provide both "loadBalancer" and "public". "public" is deprecated. Use "loadBalancer" to configure the load balancer.`,
-        );
+      // normalize rules
+      const rules = all([loadBalancer, containers]).apply(
+        ([lb, containers]) => {
+          // validate rules
+          const lbRules = lb.rules ?? lb.ports;
+          if (!lbRules || lbRules.length === 0)
+            throw new VisibleError(
+              `You must provide the ports to expose via "loadBalancer.rules".`,
+            );
 
-      // normalize ports
-      const ports = all([
-        (args.loadBalancer ?? args.public)!,
-        containers,
-      ]).apply(([lb, containers]) => {
-        // validate ports
-        if (!lb.ports || lb.ports.length === 0)
-          throw new VisibleError(
-            `You must provide the ports to expose via "loadBalancer.ports".`,
-          );
+          // validate container defined when multiple containers exists
+          if (containers.length > 1) {
+            lbRules.forEach((v) => {
+              if (!v.container)
+                throw new VisibleError(
+                  `You must provide a container name in "loadBalancer.rules" when there is more than one container.`,
+                );
+            });
+          }
 
-        // validate container defined when multiple containers exists
-        if (containers.length > 1) {
-          lb.ports.forEach((v) => {
-            if (!v.container)
+          // parse protocols and ports
+          const rules = lbRules.map((v) => {
+            const listenParts = v.listen.split("/");
+            const listenPort = parseInt(listenParts[0]);
+            const listenProtocol = listenParts[1];
+            const listenConditions =
+              v.conditions || v.path
+                ? {
+                    path: v.conditions?.path ?? v.path,
+                    query: v.conditions?.query,
+                  }
+                : undefined;
+            if (protocolType(listenProtocol) === "network" && listenConditions)
               throw new VisibleError(
-                `You must provide a container name in "loadBalancer.ports" when there is more than one container.`,
+                `Invalid rule conditions for listen protocol "${v.listen}". Only "http" protocols support conditions.`,
               );
-          });
-        }
 
-        // parse protocols and ports
-        const ports = lb.ports.map((v) => {
-          const listenParts = v.listen.split("/");
-          const listenPort = parseInt(listenParts[0]);
-          const listenProtocol = listenParts[1];
-          const listenPath = v.path;
-          const listenQueryString = v.queryString;
-          if (protocolType(listenProtocol) === "network" && listenPath)
-            throw new VisibleError(
-              `Invalid path "${v.path}" for listen protocol "${v.listen}". Only "http" protocols support path-based routing.`,
-            );
+            const redirectParts = v.redirect?.split("/");
+            const redirectPort = redirectParts && parseInt(redirectParts[0]);
+            const redirectProtocol = redirectParts && redirectParts[1];
+            if (redirectPort && redirectProtocol) {
+              if (
+                protocolType(listenProtocol) !== protocolType(redirectProtocol)
+              )
+                throw new VisibleError(
+                  `The listen protocol "${v.listen}" must match the redirect protocol "${v.redirect}".`,
+                );
+              return {
+                type: "redirect" as const,
+                listenPort,
+                listenProtocol,
+                listenConditions,
+                redirectPort,
+                redirectProtocol,
+              };
+            }
 
-          if (protocolType(listenProtocol) === "network" && listenQueryString)
-            throw new VisibleError(
-              `Invalid query string "${v.queryString}" for listen protocol "${v.listen}". Only "http" protocols support query string-based routing.`,
-            );
-
-          const redirectParts = v.redirect?.split("/");
-          const redirectPort = redirectParts && parseInt(redirectParts[0]);
-          const redirectProtocol = redirectParts && redirectParts[1];
-          if (redirectPort && redirectProtocol) {
-            if (protocolType(listenProtocol) !== protocolType(redirectProtocol))
+            const forwardParts = v.forward ? v.forward.split("/") : listenParts;
+            const forwardPort = forwardParts && parseInt(forwardParts[0]);
+            const forwardProtocol = forwardParts && forwardParts[1];
+            if (protocolType(listenProtocol) !== protocolType(forwardProtocol))
               throw new VisibleError(
-                `The listen protocol "${v.listen}" must match the redirect protocol "${v.redirect}".`,
+                `The listen protocol "${v.listen}" must match the forward protocol "${v.forward}".`,
               );
             return {
-              type: "redirect" as const,
+              type: "forward" as const,
               listenPort,
               listenProtocol,
-              listenPath,
-              listenQueryString,
-              redirectPort,
-              redirectProtocol,
+              listenConditions,
+              forwardPort,
+              forwardProtocol,
+              container: v.container ?? containers[0].name,
             };
-          }
+          });
 
-          const forwardParts = v.forward ? v.forward.split("/") : listenParts;
-          const forwardPort = forwardParts && parseInt(forwardParts[0]);
-          const forwardProtocol = forwardParts && forwardParts[1];
-          if (protocolType(listenProtocol) !== protocolType(forwardProtocol))
-            throw new VisibleError(
-              `The listen protocol "${v.listen}" must match the forward protocol "${v.forward}".`,
-            );
-          return {
-            type: "forward" as const,
-            listenPort,
-            listenProtocol,
-            listenPath,
-            listenQueryString,
-            forwardPort,
-            forwardProtocol,
-            container: v.container ?? containers[0].name,
-          };
-        });
-
-        // validate protocols are consistent
-        const appProtocols = ports.filter(
-          (port) => protocolType(port.listenProtocol) === "application",
-        );
-        if (appProtocols.length > 0 && appProtocols.length < ports.length)
-          throw new VisibleError(
-            `Protocols must be either all http/https, or all tcp/udp/tcp_udp/tls.`,
+          // validate protocols are consistent
+          const appProtocols = rules.filter(
+            (rule) => protocolType(rule.listenProtocol) === "application",
           );
-
-        // validate certificate exists for https/tls protocol
-        ports.forEach((port) => {
-          if (["https", "tls"].includes(port.listenProtocol) && !lb.domain) {
+          if (appProtocols.length > 0 && appProtocols.length < rules.length)
             throw new VisibleError(
-              `You must provide a custom domain for ${port.listenProtocol.toUpperCase()} protocol.`,
+              `Protocols must be either all http/https, or all tcp/udp/tcp_udp/tls.`,
             );
-          }
-        });
 
-        return ports;
-      });
+          // validate certificate exists for https/tls protocol
+          rules.forEach((rule) => {
+            if (["https", "tls"].includes(rule.listenProtocol) && !lb.domain) {
+              throw new VisibleError(
+                `You must provide a custom domain for ${rule.listenProtocol.toUpperCase()} protocol.`,
+              );
+            }
+          });
+
+          return rules;
+        },
+      );
 
       // normalize domain
-      const domain = output((args.loadBalancer ?? args.public)!).apply((lb) => {
+      const domain = output(loadBalancer).apply((lb) => {
         if (!lb.domain) return undefined;
 
         // normalize domain
@@ -307,21 +304,21 @@ export class Service extends Component implements Link.Linkable {
       });
 
       // normalize type
-      const type = output(ports).apply((ports) =>
-        ports[0].listenProtocol.startsWith("http") ? "application" : "network",
+      const type = output(rules).apply((rules) =>
+        rules[0].listenProtocol.startsWith("http") ? "application" : "network",
       );
 
       // normalize public/private
-      const pub = output(args.loadBalancer).apply((lb) => lb?.public ?? true);
+      const pub = output(loadBalancer).apply((lb) => lb?.public ?? true);
 
       // normalize health check
-      const health = all([type, ports, args.loadBalancer]).apply(
-        ([type, ports, lb]) =>
+      const health = all([type, rules, loadBalancer]).apply(
+        ([type, rules, lb]) =>
           Object.fromEntries(
             Object.entries(lb?.health ?? {}).map(([k, v]) => {
               if (
-                !ports.find(
-                  (p) => `${p.forwardPort}/${p.forwardProtocol}` === k,
+                !rules.find(
+                  (r) => `${r.forwardPort}/${r.forwardProtocol}` === k,
                 )
               )
                 throw new VisibleError(
@@ -346,7 +343,7 @@ export class Service extends Component implements Link.Linkable {
           ),
       );
 
-      return { type, ports, domain, pub, health };
+      return { type, rules, domain, pub, health };
     }
 
     function createLoadBalancer() {
@@ -399,15 +396,15 @@ export class Service extends Component implements Link.Linkable {
     function createTargets() {
       if (!loadBalancer || !lbArgs) return;
 
-      return all([lbArgs.ports, lbArgs.health]).apply(([ports, health]) => {
+      return all([lbArgs.rules, lbArgs.health]).apply(([rules, health]) => {
         const targets: Record<string, lb.TargetGroup> = {};
 
-        ports.forEach((p) => {
-          if (p.type !== "forward") return;
+        rules.forEach((r) => {
+          if (r.type !== "forward") return;
 
-          const container = p.container;
-          const forwardProtocol = p.forwardProtocol.toUpperCase();
-          const forwardPort = p.forwardPort;
+          const container = r.container;
+          const forwardProtocol = r.forwardProtocol.toUpperCase();
+          const forwardPort = r.forwardPort;
           const targetId = `${container}${forwardProtocol}${forwardPort}`;
           const target =
             targets[targetId] ??
@@ -428,7 +425,7 @@ export class Service extends Component implements Link.Linkable {
                   protocol: forwardProtocol,
                   targetType: "ip",
                   vpcId: vpc.id,
-                  healthCheck: health[`${p.forwardPort}/${p.forwardProtocol}`],
+                  healthCheck: health[`${r.forwardPort}/${r.forwardProtocol}`],
                 },
                 { parent: self },
               ),
@@ -442,28 +439,28 @@ export class Service extends Component implements Link.Linkable {
     function createListeners() {
       if (!lbArgs || !loadBalancer || !targets) return;
 
-      return all([lbArgs.ports, targets, certificateArn]).apply(
-        ([ports, targets, cert]) => {
+      return all([lbArgs.rules, targets, certificateArn]).apply(
+        ([rules, targets, cert]) => {
           // Group listeners by protocol and port
           // Because listeners with the same protocol and port but different path
           // are just rules of the same listener.
-          const listenersById: Record<string, typeof ports> = {};
-          ports.forEach((p) => {
-            const listenProtocol = p.listenProtocol.toUpperCase();
-            const listenPort = p.listenPort;
+          const listenersById: Record<string, typeof rules> = {};
+          rules.forEach((r) => {
+            const listenProtocol = r.listenProtocol.toUpperCase();
+            const listenPort = r.listenPort;
             const listenerId = `${listenProtocol}${listenPort}`;
             listenersById[listenerId] = listenersById[listenerId] ?? [];
-            listenersById[listenerId].push(p);
+            listenersById[listenerId].push(r);
           });
 
           // Create listeners
-          return Object.entries(listenersById).map(([listenerId, ports]) => {
-            const listenProtocol = ports[0].listenProtocol.toUpperCase();
-            const listenPort = ports[0].listenPort;
-            const defaultRule = ports.find((p) => !p.listenPath && !p.listenQueryString);
-            const customRules = ports.filter((p) => p.listenPath || p.listenQueryString);
-            const buildActions = (p?: (typeof ports)[number]) => [
-              ...(!p
+          return Object.entries(listenersById).map(([listenerId, rules]) => {
+            const listenProtocol = rules[0].listenProtocol.toUpperCase();
+            const listenPort = rules[0].listenPort;
+            const defaultRule = rules.find((r) => !r.listenConditions);
+            const customRules = rules.filter((r) => r.listenConditions);
+            const buildActions = (r?: (typeof rules)[number]) => [
+              ...(!r
                 ? [
                     {
                       type: "fixed-response",
@@ -475,26 +472,26 @@ export class Service extends Component implements Link.Linkable {
                     },
                   ]
                 : []),
-              ...(p?.type === "forward"
+              ...(r?.type === "forward"
                 ? [
                     {
                       type: "forward",
                       targetGroupArn:
                         targets[
-                          `${p.container}${p.forwardProtocol.toUpperCase()}${
-                            p.forwardPort
+                          `${r.container}${r.forwardProtocol.toUpperCase()}${
+                            r.forwardPort
                           }`
                         ].arn,
                     },
                   ]
                 : []),
-              ...(p?.type === "redirect"
+              ...(r?.type === "redirect"
                 ? [
                     {
                       type: "redirect",
                       redirect: {
-                        port: p.redirectPort.toString(),
-                        protocol: p.redirectProtocol.toUpperCase(),
+                        port: r.redirectPort.toString(),
+                        protocol: r.redirectProtocol.toUpperCase(),
                         statusCode: "HTTP_301",
                       },
                     },
@@ -519,29 +516,20 @@ export class Service extends Component implements Link.Linkable {
             );
 
             customRules.forEach(
-              (p) =>
+              (r) =>
                 new lb.ListenerRule(
-                  `${name}Listener${listenerId}Rule${p.listenPath ?? ""}${p.listenQueryString ?? ""}`,
+                  `${name}Listener${listenerId}Rule${
+                    r.listenConditions!.path ?? ""
+                  }${r.listenConditions!.query ?? ""}`,
                   {
                     listenerArn: listener.arn,
-                    actions: buildActions(p),
+                    actions: buildActions(r),
                     conditions: [
                       {
-                        ...(p.listenPath
-                          ? {
-                            pathPattern: {
-                              values: [p.listenPath!],
-                            },
-                          }
-                          : {}),
-                        ...(p.listenQueryString
-                          ? {
-                            queryStrings: p.listenQueryString.split("&").map(pair => {
-                              const [key, value] = pair.split("=");
-                              return { key, value };
-                            })
-                          }
-                          : {}),
+                        pathPattern: r.listenConditions!.path
+                          ? { values: [r.listenConditions!.path!] }
+                          : undefined,
+                        queryStrings: r.listenConditions!.query,
                       },
                     ],
                   },
@@ -617,12 +605,12 @@ export class Service extends Component implements Link.Linkable {
             },
             loadBalancers:
               lbArgs &&
-              all([lbArgs.ports, targets!]).apply(([ports, targets]) =>
+              all([lbArgs.rules, targets!]).apply(([rules, targets]) =>
                 Object.values(targets).map((target) => ({
                   targetGroupArn: target.arn,
                   containerName: target.port.apply(
                     (port) =>
-                      ports.find((p) => p.forwardPort === port)!.container!,
+                      rules.find((r) => r.forwardPort === port)!.container!,
                   ),
                   containerPort: target.port.apply((port) => port!),
                 })),

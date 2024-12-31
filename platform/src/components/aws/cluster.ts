@@ -181,54 +181,110 @@ export type ClusterVpcsNormalizedArgs = Required<
 > &
   Omit<ClusterVpcArgs, "containerSubnets" | "serviceSubnets">;
 
-export interface ClusterArgs {
+interface ServiceRules {
   /**
-   * The VPC to use for the cluster.
-   *
-   * @example
-   * Create a `Vpc` component.
-   *
-   * ```js title="sst.config.ts"
-   * const myVpc = new sst.aws.Vpc("MyVpc");
-   * ```
-   *
-   * And pass it in.
-   *
-   * ```js
-   * {
-   *   vpc: myVpc
-   * }
-   * ```
-   *
-   * By default, both the load balancer and the services are deployed in public subnets.
-   * The above is equivalent to:
-   *
-   * ```js
-   * {
-   *   vpc: {
-   *     id: myVpc.id,
-   *     securityGroups: myVpc.securityGroups,
-   *     containerSubnets: myVpc.publicSubnets,
-   *     loadBalancerSubnets: myVpc.publicSubnets,
-   *     cloudmapNamespaceId: myVpc.nodes.cloudmapNamespace.id,
-   *     cloudmapNamespaceName: myVpc.nodes.cloudmapNamespace.name,
-   *   }
-   * }
-   * ```
+   * The port and protocol the service listens on. Uses the format `{port}/{protocol}`.
    */
-  vpc: Vpc | Input<Prettify<ClusterVpcArgs>>;
-  /** @internal */
-  forceUpgrade?: "v2";
+  listen: Input<Port>;
   /**
-   * [Transform](/docs/components#transform) how this component creates its underlying
-   * resources.
+   * The port and protocol of the container the service forwards the traffic to. Uses the
+   * format `{port}/{protocol}`.
+   * @default The same port and protocol as `listen`.
    */
-  transform?: {
+  forward?: Input<Port>;
+  /**
+   * The name of the container to forward the traffic to.
+   *
+   * You need this if there's more than one container.
+   *
+   * If there is only one container, the traffic is automatically forwarded to that
+   * container.
+   */
+  container?: Input<string>;
+  /**
+   * The port and protocol to redirect the traffic to. Uses the format `{port}/{protocol}`.
+   */
+  redirect?: Input<Port>;
+  /**
+   * @deprecated Use `conditions.path` instead.
+   */
+  path?: Input<string>;
+  /**
+   * The conditions for the redirect. Only applicable to "http" protocols.
+   */
+  conditions?: Input<{
     /**
-     * Transform the ECS Cluster resource.
+     * Configure path-based routing. Only requests matching the path are forwarded to
+     * the container.
+     *
+     * The path pattern is case-sensitive, supports wildcards, and can be up to 128
+     * characters.
+     * - `*` matches 0 or more characters.
+     * - `?` matches exactly 1 character.
+     *
+     * For example:
+     * - `/api/*`
+     * - `/api/*.png
+     *
+     * @default Requests to all paths are forwarded.
      */
-    cluster?: Transform<ecs.ClusterArgs>;
-  };
+    path?: Input<string>;
+    /**
+     * Configure query string based routing. Only requests matching one of the query
+     * string conditions are forwarded to the container.
+     *
+     * @example
+     *
+     * Matching requests with query string `version=v1`.
+     *
+     * ```js
+     * {
+     *   query: [
+     *     { key: "version", value: "v1" }
+     *   ]
+     * }
+     * ```
+     *
+     * Matching requests with query string matching `env=test*`.
+     *
+     * ```js
+     * {
+     *   query: [
+     *     { key: "env", value: "test*" }
+     *   ]
+     * }
+     * ```
+     *
+     * Matching requests with query string `version=v1` or `env=test*`.
+     *
+     * ```js
+     * {
+     *   query: [
+     *     { key: "version", value: "v1" },
+     *     { key: "env", value: "test*" }
+     *   ]
+     * }
+     * ```
+     *
+     * Matching requests with any query string key with value `example`.
+     *
+     * ```js
+     * {
+     *   query: [
+     *     { value: "example" }
+     *   ]
+     * }
+     * ```
+     *
+     * @default Query string is not checked when forwarding requests.
+     */
+    query?: Input<
+      Input<{
+        key?: Input<string>;
+        value: Input<string>;
+      }>[]
+    >;
+  }>;
 }
 
 interface TaskContainerArgs {
@@ -761,6 +817,56 @@ interface ClusterBaseArgs {
   executionRole?: Input<string>;
 }
 
+export interface ClusterArgs {
+  /**
+   * The VPC to use for the cluster.
+   *
+   * @example
+   * Create a `Vpc` component.
+   *
+   * ```js title="sst.config.ts"
+   * const myVpc = new sst.aws.Vpc("MyVpc");
+   * ```
+   *
+   * And pass it in.
+   *
+   * ```js
+   * {
+   *   vpc: myVpc
+   * }
+   * ```
+   *
+   * By default, both the load balancer and the services are deployed in public subnets.
+   * The above is equivalent to:
+   *
+   * ```js
+   * {
+   *   vpc: {
+   *     id: myVpc.id,
+   *     securityGroups: myVpc.securityGroups,
+   *     containerSubnets: myVpc.publicSubnets,
+   *     loadBalancerSubnets: myVpc.publicSubnets,
+   *     cloudmapNamespaceId: myVpc.nodes.cloudmapNamespace.id,
+   *     cloudmapNamespaceName: myVpc.nodes.cloudmapNamespace.name,
+   *   }
+   * }
+   * ```
+   */
+  vpc: Vpc | Input<Prettify<ClusterVpcArgs>>;
+  /** @internal */
+  forceUpgrade?: "v2";
+  /**
+   * [Transform](/docs/components#transform) how this component creates its underlying
+   * resources.
+   */
+  transform?: {
+    /**
+     * Transform the ECS Cluster resource.
+     */
+    cluster?: Transform<ecs.ClusterArgs>;
+  };
+}
+
 export interface ClusterServiceArgs extends ClusterBaseArgs {
   /**
    * Configure how this component works in `sst dev`.
@@ -818,7 +924,7 @@ export interface ClusterServiceArgs extends ClusterBaseArgs {
    * {
    *   public: {
    *     domain: "example.com",
-   *     ports: [
+   *     rules: [
    *       { listen: "80/http" },
    *       { listen: "443/https", forward: "80/http" }
    *     ]
@@ -977,6 +1083,8 @@ export interface ClusterServiceArgs extends ClusterBaseArgs {
           dns?: Input<false | (Dns & {})>;
         }
     >;
+    /** @deprecated Use `rules` instead. */
+    ports?: Input<Prettify<ServiceRules>[]>;
     /**
      * Configure the mapping for the ports the public endpoint listens to and forwards to
      * the service.
@@ -997,7 +1105,7 @@ export interface ClusterServiceArgs extends ClusterBaseArgs {
      * ```js
      * {
      *   public: {
-     *     ports: [
+     *     rules: [
      *       { listen: "80/http", forward: "8080/http" }
      *     ]
      *   }
@@ -1010,7 +1118,7 @@ export interface ClusterServiceArgs extends ClusterBaseArgs {
      * ```js
      * {
      *   public: {
-     *     ports: [
+     *     rules: [
      *       { listen: "80/http" }
      *     ]
      *   }
@@ -1023,7 +1131,7 @@ export interface ClusterServiceArgs extends ClusterBaseArgs {
      * ```js
      * {
      *   public: {
-     *     ports: [
+     *     rules: [
      *       { listen: "80/http", container: "app" },
      *       { listen: "8000/http", container: "admin" },
      *     ]
@@ -1031,56 +1139,7 @@ export interface ClusterServiceArgs extends ClusterBaseArgs {
      * }
      * ```
      */
-    ports: Input<
-      {
-        /**
-         * The port and protocol the service listens on. Uses the format `{port}/{protocol}`.
-         */
-        listen: Input<Port>;
-        /**
-         * The port and protocol of the container the service forwards the traffic to. Uses the
-         * format `{port}/{protocol}`.
-         * @default The same port and protocol as `listen`.
-         */
-        forward?: Input<Port>;
-        /**
-         * Configure path-based routing. Only requests matching the path are forwarded to
-         * the container. Only applicable to "http" protocols.
-         *
-         * @default Requests to all paths are forwarded.
-         */
-        path?: Input<string>;
-        /**
-         * Configure query string based routing. Only requests matching the query string are
-         * forwarded to the container. Only applicable to "http" protocols.
-         *
-         * The query string pattern supports exact matches and wildcards.
-         *
-         * For example:
-         * - `version=v1`
-         * - `env=*`
-         * - `env=prod&version=v1`
-         *
-         * @default Requests with any query string are forwarded.
-         */
-        queryString?: Input<string>;
-        /**
-         * The name of the container to forward the traffic to.
-         *
-         * If there is only one container, this is not needed. The traffic is automatically
-         * forwarded to the container.
-         *
-         * If there is more than one container, this is required.
-         *
-         * @default The container name when there is only one container.
-         */
-        container?: Input<string>;
-        /**
-         * The port and protocol to redirect the traffic to. Uses the format `{port}/{protocol}`.
-         */
-        redirect?: Input<Port>;
-      }[]
-    >;
+    rules?: Input<Prettify<ServiceRules>[]>;
   }>;
   /**
    * Configure a load balancer to route traffic to the containers.
@@ -1102,7 +1161,7 @@ export interface ClusterServiceArgs extends ClusterBaseArgs {
    * {
    *   loadBalancer: {
    *     domain: "example.com",
-   *     ports: [
+   *     rules: [
    *       { listen: "80/http", redirect: "443/https" },
    *       { listen: "443/https", forward: "80/http" }
    *     ]
@@ -1280,6 +1339,8 @@ export interface ClusterServiceArgs extends ClusterBaseArgs {
           dns?: Input<false | (Dns & {})>;
         }
     >;
+    /** @deprecated Use `rules` instead. */
+    ports?: Input<Prettify<ServiceRules>[]>;
     /**
      * Configure the mapping for the ports the load balancer listens to, forwards, or redirects to
      * the service.
@@ -1300,7 +1361,7 @@ export interface ClusterServiceArgs extends ClusterBaseArgs {
      * Here we are listening on port `80` and forwarding it to the service on port `8080`.
      * ```js
      * {
-     *   ports: [
+     *   rules: [
      *     { listen: "80/http", forward: "8080/http" }
      *   ]
      * }
@@ -1311,7 +1372,7 @@ export interface ClusterServiceArgs extends ClusterBaseArgs {
      *
      * ```js
      * {
-     *   ports: [
+     *   rules: [
      *     { listen: "80/http" }
      *   ]
      * }
@@ -1322,7 +1383,7 @@ export interface ClusterServiceArgs extends ClusterBaseArgs {
      *
      * ```js
      * {
-     *   ports: [
+     *   rules: [
      *     { listen: "80/http", container: "app" },
      *     { listen: "8000/http", container: "admin" }
      *   ]
@@ -1333,9 +1394,17 @@ export interface ClusterServiceArgs extends ClusterBaseArgs {
      *
      * ```js
      * {
-     *   ports: [
-     *     { listen: "80/http", container: "app", path: "/api/*" },
-     *     { listen: "80/http", container: "admin", path: "/admin/*" }
+     *   rules: [
+     *     {
+     *       listen: "80/http",
+     *       container: "app",
+     *       conditions: { path: "/api/*" }
+     *     },
+     *     {
+     *       listen: "80/http",
+     *       container: "admin",
+     *       conditions: { path: "/admin/*" }
+     *     }
      *   ]
      * }
      * ```
@@ -1345,70 +1414,14 @@ export interface ClusterServiceArgs extends ClusterBaseArgs {
      *
      * ```js
      * {
-     *   ports: [
+     *   rules: [
      *     { listen: "80/http", redirect: "443/https" },
      *     { listen: "443/https", forward: "80/http" }
      *   ]
      * }
      * ```
      */
-    ports: Input<
-      {
-        /**
-         * The port and protocol the service listens on. Uses the format `{port}/{protocol}`.
-         */
-        listen: Input<Port>;
-        /**
-         * The port and protocol of the container the service forwards the traffic to. Uses the
-         * format `{port}/{protocol}`.
-         * @default The same port and protocol as `listen`.
-         */
-        forward?: Input<Port>;
-        /**
-         * Configure path-based routing. Only requests matching the path are forwarded to
-         * the container. Only applicable to "http" protocols.
-         *
-         * The path pattern is case-sensitive, supports wildcards, and can be up to 128
-         * characters.
-         * - `*` matches 0 or more characters.
-         * - `?` matches exactly 1 character.
-         *
-         * For example:
-         * - `/api/*`
-         * - `/api/*.png
-         *
-         * @default Requests to all paths are forwarded.
-         */
-        path?: Input<string>;
-        /**
-         * Configure query string based routing. Only requests matching the query string are
-         * forwarded to the container. Only applicable to "http" protocols.
-         *
-         * The query string pattern supports exact matches and wildcards.
-         *
-         * For example:
-         * - `version=v1`
-         * - `env=*`
-         * - `env=prod&version=v1`
-         *
-         * @default Requests with any query string are forwarded.
-         */
-        queryString?: Input<string>;
-        /**
-         * The name of the container to forward the traffic to.
-         *
-         * You need this if there's more than one container.
-         *
-         * If there is only one container, the traffic is automatically forwarded to that
-         * container.
-         */
-        container?: Input<string>;
-        /**
-         * The port and protocol to redirect the traffic to. Uses the format `{port}/{protocol}`.
-         */
-        redirect?: Input<Port>;
-      }[]
-    >;
+    rules?: Input<Prettify<ServiceRules>[]>;
     /**
      * Configure the health check that the load balancer runs on your containers.
      *
@@ -1480,7 +1493,7 @@ export interface ClusterServiceArgs extends ClusterBaseArgs {
      *
      * ```js
      * {
-     *   ports: [
+     *   rules: [
      *     { listen: "80/http", forward: "8080/http" }
      *   ],
      *   health: {
@@ -2025,7 +2038,7 @@ export interface ClusterTaskArgs extends ClusterBaseArgs {
  * cluster.addService("MyService", {
  *   loadBalancer: {
  *     domain: "example.com",
- *     ports: [
+ *     rules: [
  *       { listen: "80/http" },
  *       { listen: "443/https", forward: "80/http" },
  *     ]
@@ -2166,7 +2179,7 @@ export interface ClusterTaskArgs extends ClusterBaseArgs {
  *
  * #### Application Load Balancer
  *
- * If you add `loadBalancer` _HTTP_ or _HTTPS_ `ports`, an ALB is created at $0.0225 per hour,
+ * If you add `loadBalancer` _HTTP_ or _HTTPS_ `rules`, an ALB is created at $0.0225 per hour,
  * $0.008 per LCU-hour, and $0.005 per hour if HTTPS with a custom domain is used. Where LCU
  * is a measure of how much traffic is processed.
  *
@@ -2179,7 +2192,7 @@ export interface ClusterTaskArgs extends ClusterBaseArgs {
  *
  * #### Network Load Balancer
  *
- * If you add `loadBalancer` _TCP_, _UDP_, or _TLS_ `ports`, an NLB is created at $0.0225 per hour and
+ * If you add `loadBalancer` _TCP_, _UDP_, or _TLS_ `rules`, an NLB is created at $0.0225 per hour and
  * $0.006 per NLCU-hour. Where NCLU is a measure of how much traffic is processed.
  *
  * That works out to $0.0225 x 24 x 30 or **$16 per month**. Also add the NLCU-hour used.
