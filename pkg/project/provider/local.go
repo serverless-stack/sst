@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/sst/sst/v3/internal/util"
 	"github.com/sst/sst/v3/pkg/global"
 )
 
@@ -104,4 +105,11 @@ func (a *LocalHome) listStages(app string) ([]string, error) {
 	}
 
 	return stages, nil
+}
+
+func (c *LocalHome) info() (util.KeyValuePairs[string], error) {
+	return util.KeyValuePairs[string]{
+		{Key: "Provider", Value: "Local"},
+		{Key: "Path", Value: global.ConfigDir()},
+	}, nil
 }

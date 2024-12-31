@@ -12,6 +12,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/sst/sst/v3/internal/util"
 	"github.com/sst/sst/v3/pkg/flag"
 	"golang.org/x/exp/slog"
 	"golang.org/x/sync/errgroup"
@@ -25,6 +26,7 @@ type Home interface {
 	setPassphrase(app, stage string, passphrase string) error
 	getPassphrase(app, stage string) (string, error)
 	listStages(app string) ([]string, error)
+	info() (util.KeyValuePairs[string], error)
 }
 
 type DevTransport struct {
@@ -321,6 +323,11 @@ func ForceUnlock(backend Home, version, app, stage string) error {
 func ListStages(backend Home, app string) ([]string, error) {
 	slog.Info("listing stages", "app", app)
 	return backend.listStages(app)
+}
+
+func Info(backend Home) (util.KeyValuePairs[string], error) {
+	slog.Info("fetching backend configuration info")
+	return backend.info()
 }
 
 func putData(backend Home, key, app, stage string, encrypt bool, data interface{}) error {

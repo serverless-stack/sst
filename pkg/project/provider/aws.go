@@ -671,6 +671,28 @@ func (a *AwsHome) listStages(app string) ([]string, error) {
 	return stages, nil
 }
 
+func (c *AwsHome) info() (util.KeyValuePairs[string], error) {
+	caller := sts.NewFromConfig(c.provider.config)
+	identity, err := caller.GetCallerIdentity(context.Background(), &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return nil, err
+	}
+
+	lines := util.KeyValuePairs[string]{
+		{Key: "Provider", Value: "AWS"},
+		{Key: "Region", Value: c.provider.config.Region},
+		{Key: "Account", Value: *identity.Account},
+	}
+
+	if len(c.provider.profile) != 0 {
+		lines = append(lines, util.KeyValuePair[string]{
+			Key: "Profile", Value: c.provider.profile,
+		})
+	}
+
+	return lines, nil
+}
+
 func (a *AwsHome) Bootstrap() error {
 	_, err := a.provider.Bootstrap(a.provider.config.Region)
 	if err != nil {

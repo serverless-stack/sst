@@ -212,3 +212,10 @@ func (c *CloudflareHome) listStages(app string) ([]string, error) {
 
 	return stages, nil
 }
+
+func (c *CloudflareHome) info() (util.KeyValuePairs[string], error) {
+	return util.KeyValuePairs[string]{
+		{Key: "Provider", Value: "Cloudflare"},
+		{Key: "Account", Value: c.provider.identifier.Identifier},
+	}, nil
+}
