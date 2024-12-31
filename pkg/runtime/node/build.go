@@ -99,7 +99,13 @@ func (r *Runtime) Build(ctx context.Context, input *runtime.BuildInput) (*runtim
 	if properties.Plugins != "" {
 		plugins = append(plugins, plugin(properties.Plugins))
 	}
-	external := append(forceExternal, properties.Install...)
+	external := append(forceExternal, func() []string {
+		result := make([]string, 0, len(properties.Install))
+		for key := range properties.Install {
+			result = append(result, key)
+		}
+		return result
+	}()...)
 	external = append(external, properties.ESBuild.External...)
 	options := esbuild.BuildOptions{
 		EntryPoints: []string{file},
@@ -216,7 +222,13 @@ func (r *Runtime) Build(ctx context.Context, input *runtime.BuildInput) (*runtim
 		var metafile js.Metafile
 		json.Unmarshal([]byte(result.Metafile), &metafile)
 
-		installPackages := properties.Install
+		installPackages := func() []string {
+			packages := make([]string, 0, len(properties.Install))
+			for pkg := range properties.Install {
+				packages = append(packages, pkg)
+			}
+			return packages
+		}()
 		for _, pkg := range forceExternal {
 			if slices.Contains(properties.ESBuild.External, pkg) {
 				continue
@@ -247,7 +259,11 @@ func (r *Runtime) Build(ctx context.Context, input *runtime.BuildInput) (*runtim
 			}
 			dependencies := map[string]string{}
 			for _, pkg := range installPackages {
-				dependencies[pkg] = "*"
+				if val, ok := properties.Install[pkg]; ok {
+					dependencies[pkg] = val
+				} else {
+					dependencies[pkg] = "*"
+				}
 				if parsed.Dependencies[pkg] != "" {
 					dependencies[pkg] = parsed.Dependencies[pkg]
 				}
