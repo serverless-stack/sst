@@ -378,6 +378,26 @@ interface AuroraRef {
  * });
  * ```
  *
+ * Or use can use the RDS Data API.
+ *
+ * ```ts title="sst.config.ts"
+ * new sst.aws.Nextjs("MyWeb", {
+ *   link: [database],
+ * });
+ * ```
+ *
+ * ```ts title="app/page.tsx" {1,6,7,8}
+ * import { Resource } from "sst";
+ * import { drizzle } from "drizzle-orm/aws-data-api/pg";
+ * import { RDSDataClient } from "@aws-sdk/client-rds-data";
+ *
+ * drizzle(new RDSDataClient({}), {
+ *   database: Resource.MyDatabase.database,
+ *   secretArn: Resource.MyDatabase.secretArn,
+ *   resourceArn: Resource.MyDatabase.clusterArn
+ * });
+ * ```
+ *
  * ---
  *
  * ### Cost
