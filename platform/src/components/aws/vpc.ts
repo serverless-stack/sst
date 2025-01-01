@@ -1132,7 +1132,7 @@ export class Vpc extends Component implements Link.Linkable {
                 {
                   name: "name",
                   // The AMI has the SSM agent pre-installed
-                  values: ["al2023-ami-2023.5.*"],
+                  values: ["al2023-ami-2023.6.*"],
                 },
                 {
                   name: "architecture",
