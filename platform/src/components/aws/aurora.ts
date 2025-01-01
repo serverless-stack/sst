@@ -407,6 +407,7 @@ export class Aurora extends Component implements Link.Linkable {
   private instance: rds.ClusterInstance;
   private _password: Output<string>;
   private proxy: Output<rds.Proxy | undefined>;
+  private secret: Output<secretsmanager.Secret>;
 
   constructor(name: string, args: AuroraArgs, opts?: ComponentResourceOptions) {
     super(__pulumiType, name, args, opts);
@@ -418,6 +419,7 @@ export class Aurora extends Component implements Link.Linkable {
       this.instance = ref.instance;
       this._password = ref.password;
       this.proxy = output(ref.proxy);
+      this.secret = ref.secret;
       return;
     }
 
@@ -483,6 +485,22 @@ export class Aurora extends Component implements Link.Linkable {
         { parent: self },
       );
 
+      const secret = cluster.tags
+        .apply((tags) => tags?.["sst:ref:password"])
+        .apply((passwordTag) => {
+          if (!passwordTag)
+            throw new VisibleError(
+              `Failed to get password for Postgres ${name}.`,
+            );
+
+          return secretsmanager.Secret.get(
+            `${name}ProxySecret`,
+            passwordTag,
+            undefined,
+            { parent: self },
+          );
+        });
+
       const password = cluster.tags
         .apply((tags) => tags?.["sst:ref:password"])
         .apply((passwordTag) => {
@@ -510,7 +528,7 @@ export class Aurora extends Component implements Link.Linkable {
             : undefined,
         );
 
-      return { cluster, instance, proxy, password };
+      return { cluster, instance, proxy, password, secret };
     }
 
     function normalizeScaling() {
@@ -850,6 +868,20 @@ export class Aurora extends Component implements Link.Linkable {
     );
   }
 
+  /**
+   * The ARN of the RDS Cluster.
+   */
+  public get clusterArn() {
+    return this.cluster.arn;
+  }
+
+  /**
+   * The ARN of the master user secret.
+   */
+  public get secretArn() {
+    return this.secret.arn;
+  }
+
   public get nodes() {
     return {
       cluster: this.cluster,
@@ -861,12 +893,34 @@ export class Aurora extends Component implements Link.Linkable {
   public getSSTLink() {
     return {
       properties: {
+        clusterArn: this.clusterArn,
+        secretArn: this.secretArn,
         database: this.database,
         username: this.username,
         password: this.password,
         port: this.port,
         host: this.host,
       },
+      include: [
+        permission({
+          actions: ["secretsmanager:GetSecretValue"],
+          resources: [
+            this.secret.arn.apply(
+              (v) => v ?? "arn:aws:iam::rdsdoesnotusesecretmanager",
+            ),
+          ],
+        }),
+        permission({
+          actions: [
+            "rds-data:BatchExecuteStatement",
+            "rds-data:BeginTransaction",
+            "rds-data:CommitTransaction",
+            "rds-data:ExecuteStatement",
+            "rds-data:RollbackTransaction",
+          ],
+          resources: [this.cluster.arn],
+        }),
+      ],
     };
   }
 
