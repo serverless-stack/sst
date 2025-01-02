@@ -395,9 +395,9 @@ interface AuroraRef {
  *
  * #### RDS Proxy
  *
- * If you enable the `proxy`, it uses _Provisioned instances_ with 2 vCPUs at $0.015 per hour.
+ * If you enable the `proxy`, it uses _Aurora Capacity Units_ with 8 ACUs at $0.015 per hour.
  *
- * That works out to an **additional** $0.015 x 2 x 24 x 30 or **$22 per month**.
+ * That works out to an **additional** $0.015 x 8 x 24 x 30 or **$86.40 per month**.
  *
  * The above are rough estimates for _us-east-1_, check out the
  * [RDS Proxy pricing](https://aws.amazon.com/rds/proxy/pricing/) for more details.
