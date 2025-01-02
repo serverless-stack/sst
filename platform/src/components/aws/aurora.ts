@@ -178,6 +178,10 @@ export interface AuroraArgs {
     pauseAfter?: Input<DurationHours>;
   }>;
   /**
+   * Enable the RDS Data API for the database. [RDS Data API](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/data-api.html) provides a secure and easy way to access your database.
+   */
+  enableDataApi?: Input<boolean>;
+  /**
    * Enable [RDS Proxy](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html) for the database.
    * @default `false`
    * @example
@@ -428,6 +432,7 @@ export class Aurora extends Component implements Link.Linkable {
   private _password: Output<string>;
   private proxy: Output<rds.Proxy | undefined>;
   private secret: Output<secretsmanager.Secret>;
+  private enableDataApi: Input<boolean>;
 
   constructor(name: string, args: AuroraArgs, opts?: ComponentResourceOptions) {
     super(__pulumiType, name, args, opts);
@@ -472,6 +477,7 @@ export class Aurora extends Component implements Link.Linkable {
     this.instance = instance;
     this._password = password;
     this.proxy = proxy;
+    this.enableDataApi = args.enableDataApi ?? false;
 
     function reference() {
       const ref = args as unknown as AuroraRef;
@@ -705,6 +711,7 @@ export class Aurora extends Component implements Link.Linkable {
             })),
             skipFinalSnapshot: true,
             storageEncrypted: true,
+            enableHttpEndpoint: args.enableDataApi ?? false,
             dbSubnetGroupName: subnetGroup?.name,
             vpcSecurityGroupIds: vpc.securityGroups,
             tags: proxy.apply((proxy) => ({
@@ -921,26 +928,28 @@ export class Aurora extends Component implements Link.Linkable {
         port: this.port,
         host: this.host,
       },
-      include: [
-        permission({
-          actions: ["secretsmanager:GetSecretValue"],
-          resources: [
-            this.secret.arn.apply(
-              (v) => v ?? "arn:aws:iam::rdsdoesnotusesecretmanager",
-            ),
-          ],
-        }),
-        permission({
-          actions: [
-            "rds-data:BatchExecuteStatement",
-            "rds-data:BeginTransaction",
-            "rds-data:CommitTransaction",
-            "rds-data:ExecuteStatement",
-            "rds-data:RollbackTransaction",
-          ],
-          resources: [this.cluster.arn],
-        }),
-      ],
+      include: this.enableDataApi
+        ? [
+            permission({
+              actions: ["secretsmanager:GetSecretValue"],
+              resources: [
+                this.secret.arn.apply(
+                  (v) => v ?? "arn:aws:iam::rdsdoesnotusesecretmanager",
+                ),
+              ],
+            }),
+            permission({
+              actions: [
+                "rds-data:BatchExecuteStatement",
+                "rds-data:BeginTransaction",
+                "rds-data:CommitTransaction",
+                "rds-data:ExecuteStatement",
+                "rds-data:RollbackTransaction",
+              ],
+              resources: [this.cluster.arn],
+            }),
+          ]
+        : [],
     };
   }
 
