@@ -10,6 +10,7 @@
     "./auth": "./dist/auth/index.js",
     "./auth/adapter": "./dist/auth/adapter/index.js",
     "./event": "./dist/event/index.js",
+    "./event/validator": "./dist/event/validator.js",
     "./realtime": "./dist/realtime/index.js",
     "./*": {
       "import": "./dist/*.js",
