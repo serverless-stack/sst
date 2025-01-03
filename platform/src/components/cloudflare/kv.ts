@@ -84,7 +84,7 @@ export class Kv extends Component implements Link.Linkable {
     }
 
     function getNameSpace(namespaceId: string) {
-      return cloudflare.WorkersKvNamespace.get('name', namespaceId, {
+      return cloudflare.WorkersKvNamespace.get(`${name}Namespace`, namespaceId, {
         title: "",
         accountId: DEFAULT_ACCOUNT_ID,
       });
