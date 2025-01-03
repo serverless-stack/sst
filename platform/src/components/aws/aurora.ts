@@ -890,7 +890,7 @@ export class Aurora extends Component implements Link.Linkable {
    * The host of the database.
    */
   public get host() {
-    return all([this.instance.endpoint, this.proxy]).apply(
+    return all([this.cluster.endpoint, this.proxy]).apply(
       ([endpoint, proxy]) => proxy?.endpoint ?? output(endpoint.split(":")[0]),
     );
   }

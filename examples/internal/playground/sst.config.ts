@@ -25,6 +25,7 @@ export default $config({
     //const cluster = addCluster();
     //const service = addService();
     //const task = addTask();
+    //const postgres = addAuroraPostgres();
     //const postgres = addPostgres();
     //const redis = addRedis();
     //const cron = addCron();
@@ -267,6 +268,25 @@ export default $config({
       //});
 
       return task;
+    }
+
+    function addAuroraPostgres() {
+      const postgres = new sst.aws.Aurora("MyPostgres", {
+        engine: "postgres",
+        vpc,
+      });
+      new sst.aws.Function("MyPostgresApp", {
+        handler: "functions/postgres/index.handler",
+        url: true,
+        link: [postgres],
+        vpc,
+      });
+      ret.pgHost = postgres.host;
+      ret.pgPort = $interpolate`${postgres.port}`;
+      ret.pgUsername = postgres.username;
+      ret.pgPassword = postgres.password;
+      ret.pgDatabase = postgres.database;
+      return postgres;
     }
 
     function addPostgres() {

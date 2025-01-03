@@ -920,26 +920,32 @@ export class Vpc extends Component implements Link.Linkable {
 
         return all([zones, publicSubnets, keyPair, args.bastion]).apply(
           ([zones, publicSubnets, keyPair, bastion]) =>
-            zones.map((_, i) => {
-              return new ec2.Instance(
-                `${name}NatInstance${i + 1}`,
-                {
-                  instanceType: nat.ec2.instance,
-                  ami,
-                  subnetId: publicSubnets[i].id,
-                  vpcSecurityGroupIds: [sg.id],
-                  iamInstanceProfile: instanceProfile.name,
-                  sourceDestCheck: false,
-                  keyName: keyPair?.keyName,
-                  tags: {
-                    Name: `${name} NAT Instance`,
-                    "sst:is-nat": "true",
-                    ...(bastion && i === 0 ? { "sst:is-bastion": "true" } : {}),
-                  },
-                },
-                { parent: self },
-              );
-            }),
+            zones.map(
+              (_, i) =>
+                new ec2.Instance(
+                  ...transform(
+                    args.transform?.natInstance,
+                    `${name}NatInstance${i + 1}`,
+                    {
+                      instanceType: nat.ec2.instance,
+                      ami,
+                      subnetId: publicSubnets[i].id,
+                      vpcSecurityGroupIds: [sg.id],
+                      iamInstanceProfile: instanceProfile.name,
+                      sourceDestCheck: false,
+                      keyName: keyPair?.keyName,
+                      tags: {
+                        Name: `${name} NAT Instance`,
+                        "sst:is-nat": "true",
+                        ...(bastion && i === 0
+                          ? { "sst:is-bastion": "true" }
+                          : {}),
+                      },
+                    },
+                    { parent: self },
+                  ),
+                ),
+            ),
         );
       });
     }
