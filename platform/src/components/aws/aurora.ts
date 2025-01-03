@@ -178,9 +178,17 @@ export interface AuroraArgs {
     pauseAfter?: Input<DurationHours>;
   }>;
   /**
-   * Enable the RDS Data API for the database. [RDS Data API](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/data-api.html) provides a secure and easy way to access your database.
+   * Enable [RDS Data API](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/data-api.html)
+   * for the database.
+   * @default `false`
+   * @example
+   * ```js
+   * {
+   *   dataApi: true
+   * }
+   * ```
    */
-  enableDataApi?: Input<boolean>;
+  dataApi?: Input<boolean>;
   /**
    * Enable [RDS Proxy](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html) for the database.
    * @default `false`
@@ -382,13 +390,18 @@ interface AuroraRef {
  * });
  * ```
  *
- * Or use can use the RDS Data API.
+ * #### Use the RDS Data API
  *
  * ```ts title="sst.config.ts"
- * new sst.aws.Nextjs("MyWeb", {
- *   link: [database],
+ * new sst.aws.Aurora("MyDatabase", {
+ *   engine: "postgres",
+ *   dataApi: true,
+ *   vpc
  * });
  * ```
+ *
+ * When using the Data API, connecting to the database does not require a persistent
+ * connection, and works over HTTP. You also don't need a VPN to connect to it locally.
  *
  * ```ts title="app/page.tsx" {1,6,7,8}
  * import { Resource } from "sst";
@@ -431,8 +444,7 @@ export class Aurora extends Component implements Link.Linkable {
   private instance: rds.ClusterInstance;
   private _password: Output<string>;
   private proxy: Output<rds.Proxy | undefined>;
-  private secret: Output<secretsmanager.Secret>;
-  private enableDataApi: Input<boolean>;
+  private secret: secretsmanager.Secret;
 
   constructor(name: string, args: AuroraArgs, opts?: ComponentResourceOptions) {
     super(__pulumiType, name, args, opts);
@@ -460,6 +472,7 @@ export class Aurora extends Component implements Link.Linkable {
     const dbName = output(args.database).apply(
       (name) => name ?? $app.name.replaceAll("-", "_"),
     );
+    const dataApi = output(args.dataApi).apply((v) => v ?? false);
     const scaling = normalizeScaling();
     const vpc = normalizeVpc();
 
@@ -475,9 +488,9 @@ export class Aurora extends Component implements Link.Linkable {
 
     this.cluster = cluster;
     this.instance = instance;
+    this.secret = secret;
     this._password = password;
     this.proxy = proxy;
-    this.enableDataApi = args.enableDataApi ?? false;
 
     function reference() {
       const ref = args as unknown as AuroraRef;
@@ -511,38 +524,29 @@ export class Aurora extends Component implements Link.Linkable {
         { parent: self },
       );
 
-      const secret = cluster.tags
+      const secretId = cluster.tags
         .apply((tags) => tags?.["sst:ref:password"])
         .apply((passwordTag) => {
           if (!passwordTag)
             throw new VisibleError(
               `Failed to get password for Postgres ${name}.`,
             );
-
-          return secretsmanager.Secret.get(
-            `${name}ProxySecret`,
-            passwordTag,
-            undefined,
-            { parent: self },
-          );
+          return passwordTag;
         });
 
-      const password = cluster.tags
-        .apply((tags) => tags?.["sst:ref:password"])
-        .apply((passwordTag) => {
-          if (!passwordTag)
-            throw new VisibleError(
-              `Failed to get password for Postgres ${name}.`,
-            );
-
-          const secret = secretsmanager.getSecretVersionOutput(
-            { secretId: passwordTag },
-            { parent: self },
-          );
-          return $jsonParse(secret.secretString).apply(
-            (v) => v.password as string,
-          );
-        });
+      const secret = secretsmanager.Secret.get(
+        `${name}ProxySecret`,
+        secretId,
+        undefined,
+        { parent: self },
+      );
+      const secretVersion = secretsmanager.getSecretVersionOutput(
+        { secretId },
+        { parent: self },
+      );
+      const password = $jsonParse(secretVersion.secretString).apply(
+        (v) => v.password as string,
+      );
 
       const proxy = cluster.tags
         .apply((tags) => tags?.["sst:ref:proxy"])
@@ -711,7 +715,7 @@ export class Aurora extends Component implements Link.Linkable {
             })),
             skipFinalSnapshot: true,
             storageEncrypted: true,
-            enableHttpEndpoint: args.enableDataApi ?? false,
+            enableHttpEndpoint: dataApi,
             dbSubnetGroupName: subnetGroup?.name,
             vpcSecurityGroupIds: vpc.securityGroups,
             tags: proxy.apply((proxy) => ({
@@ -862,6 +866,20 @@ export class Aurora extends Component implements Link.Linkable {
     return this.cluster.id;
   }
 
+  /**
+   * The ARN of the RDS Cluster.
+   */
+  public get clusterArn() {
+    return this.cluster.arn;
+  }
+
+  /**
+   * The ARN of the master user secret.
+   */
+  public get secretArn() {
+    return this.secret.arn;
+  }
+
   /** The username of the master user. */
   public get username() {
     return this.cluster.masterUsername;
@@ -895,20 +913,6 @@ export class Aurora extends Component implements Link.Linkable {
     );
   }
 
-  /**
-   * The ARN of the RDS Cluster.
-   */
-  public get clusterArn() {
-    return this.cluster.arn;
-  }
-
-  /**
-   * The ARN of the master user secret.
-   */
-  public get secretArn() {
-    return this.secret.arn;
-  }
-
   public get nodes() {
     return {
       cluster: this.cluster,
@@ -928,28 +932,22 @@ export class Aurora extends Component implements Link.Linkable {
         port: this.port,
         host: this.host,
       },
-      include: this.enableDataApi
-        ? [
-            permission({
-              actions: ["secretsmanager:GetSecretValue"],
-              resources: [
-                this.secret.arn.apply(
-                  (v) => v ?? "arn:aws:iam::rdsdoesnotusesecretmanager",
-                ),
-              ],
-            }),
-            permission({
-              actions: [
-                "rds-data:BatchExecuteStatement",
-                "rds-data:BeginTransaction",
-                "rds-data:CommitTransaction",
-                "rds-data:ExecuteStatement",
-                "rds-data:RollbackTransaction",
-              ],
-              resources: [this.cluster.arn],
-            }),
-          ]
-        : [],
+      include: [
+        permission({
+          actions: ["secretsmanager:GetSecretValue"],
+          resources: [this.secretArn],
+        }),
+        permission({
+          actions: [
+            "rds-data:BatchExecuteStatement",
+            "rds-data:BeginTransaction",
+            "rds-data:CommitTransaction",
+            "rds-data:ExecuteStatement",
+            "rds-data:RollbackTransaction",
+          ],
+          resources: [this.clusterArn],
+        }),
+      ],
     };
   }
 
