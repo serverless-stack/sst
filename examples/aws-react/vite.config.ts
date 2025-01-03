@@ -10,5 +10,10 @@ export default defineConfig({
       plugins: [tailwindcss, autoprefixer],
     },
   },
-  plugins: [reactRouter(), tsconfigPaths()],
+  plugins: [
+    reactRouter(),
+    tsconfigPaths({
+      projects: ["./tsconfig.json"],
+    }),
+  ],
 });
