@@ -353,16 +353,18 @@ export interface AuroraArgs {
    * }
    * ```
    */
-  vpc: Input<{
-    /**
-     * A list of subnet IDs in the VPC to deploy the Aurora cluster in.
-     */
-    subnets: Input<Input<string>[]>;
-    /**
-     * A list of VPC security group IDs.
-     */
-    securityGroups: Input<Input<string>[]>;
-  }>;
+  vpc:
+    | Vpc
+    | Input<{
+        /**
+         * A list of subnet IDs in the VPC to deploy the Aurora cluster in.
+         */
+        subnets: Input<Input<string>[]>;
+        /**
+         * A list of VPC security group IDs.
+         */
+        securityGroups: Input<Input<string>[]>;
+      }>;
   /**
    * Configure how this component works in `sst dev`.
    *
