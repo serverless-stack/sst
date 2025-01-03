@@ -226,7 +226,7 @@ var TEXT_HIGHLIGHT_BOLD = TEXT_HIGHLIGHT.Copy().Bold(true)
 var TEXT_DIM = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 var TEXT_DIM_BOLD = TEXT_DIM.Copy().Bold(true)
 
-var TEXT_NORMAL = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
+var TEXT_NORMAL = lipgloss.NewStyle()
 var TEXT_NORMAL_BOLD = TEXT_NORMAL.Copy().Bold(true)
 
 var TEXT_WARNING = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))

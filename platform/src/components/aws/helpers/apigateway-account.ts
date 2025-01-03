@@ -19,7 +19,6 @@ export function setupApiGatewayAccount(
     if (arn) return account;
 
     const partition = getPartitionOutput(undefined, opts).partition;
-    $print("!@#!@#!@#!@# PARTITION", partition);
     const role = new iam.Role(
       `APIGatewayPushToCloudWatchLogsRole`,
       {

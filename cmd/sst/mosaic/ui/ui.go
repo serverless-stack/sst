@@ -565,12 +565,12 @@ func (u *UI) printEvent(barColor lipgloss.Style, label string, message ...string
 		u.print(TEXT_DIM.Render(fmt.Sprint(fmt.Sprintf("%-11s", label), " ")))
 	}
 	if len(message) > 0 {
-		u.print(TEXT_DIM.Render(message[0]))
+		u.print(TEXT_NORMAL.Render(message[0]))
 	}
 	u.println()
 	for _, msg := range message[1:] {
 		u.print(barColor.Copy().Bold(true).Render("|  "))
-		u.println(TEXT_DIM.Render(msg))
+		u.println(TEXT_NORMAL.Render(msg))
 	}
 }
 

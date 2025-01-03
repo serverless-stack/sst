@@ -88,9 +88,9 @@ export class Service extends Component implements Link.Linkable {
     const cpu = normalizeCpu(args);
     const memory = normalizeMemory(cpu, args);
     const storage = normalizeStorage(args);
-    const scaling = normalizeScaling();
     const containers = normalizeContainers("service", args, name, architecture);
     const lbArgs = normalizeLoadBalancer();
+    const scaling = normalizeScaling();
     const vpc = normalizeVpc();
 
     const taskRole = createTaskRole(name, args, opts, self);
@@ -121,7 +121,7 @@ export class Service extends Component implements Link.Linkable {
     );
     const certificateArn = createSsl();
     const loadBalancer = createLoadBalancer();
-    const targets = createTargets();
+    const targetGroups = createTargets();
     createListeners();
     const cloudmapService = createCloudmapService();
     const service = createService();
@@ -178,12 +178,20 @@ export class Service extends Component implements Link.Linkable {
     }
 
     function normalizeScaling() {
-      return output(args.scaling).apply((v) => ({
-        min: v?.min ?? 1,
-        max: v?.max ?? 1,
-        cpuUtilization: v?.cpuUtilization ?? 70,
-        memoryUtilization: v?.memoryUtilization ?? 70,
-      }));
+      return all([lbArgs?.type, args.scaling]).apply(([type, v]) => {
+        if (type !== "application" && v?.requestCount)
+          throw new VisibleError(
+            `Request count scaling is only supported for http/https protocols.`,
+          );
+
+        return {
+          min: v?.min ?? 1,
+          max: v?.max ?? 1,
+          cpuUtilization: v?.cpuUtilization ?? 70,
+          memoryUtilization: v?.memoryUtilization ?? 70,
+          requestCount: v?.requestCount ?? false,
+        };
+      });
     }
 
     function normalizeLoadBalancer() {
@@ -437,9 +445,9 @@ export class Service extends Component implements Link.Linkable {
     }
 
     function createListeners() {
-      if (!lbArgs || !loadBalancer || !targets) return;
+      if (!lbArgs || !loadBalancer || !targetGroups) return;
 
-      return all([lbArgs.rules, targets, certificateArn]).apply(
+      return all([lbArgs.rules, targetGroups, certificateArn]).apply(
         ([rules, targets, cert]) => {
           // Group listeners by protocol and port
           // Because listeners with the same protocol and port but different path
@@ -605,7 +613,7 @@ export class Service extends Component implements Link.Linkable {
             },
             loadBalancers:
               lbArgs &&
-              all([lbArgs.rules, targets!]).apply(([rules, targets]) =>
+              all([lbArgs.rules, targetGroups!]).apply(([rules, targets]) =>
                 Object.values(targets).map((target) => ({
                   targetGroupArn: target.arn,
                   containerName: target.port.apply(
@@ -683,6 +691,49 @@ export class Service extends Component implements Link.Linkable {
           { parent: self },
         );
       });
+
+      all([scaling.requestCount, targetGroups]).apply(
+        ([requestCount, targetGroups]) => {
+          if (requestCount === false) return;
+          if (!targetGroups) return;
+
+          const targetGroup = Object.values(targetGroups)[0];
+
+          new appautoscaling.Policy(
+            `${name}AutoScalingRequestCountPolicy`,
+            {
+              serviceNamespace: target.serviceNamespace,
+              scalableDimension: target.scalableDimension,
+              resourceId: target.resourceId,
+              policyType: "TargetTrackingScaling",
+              targetTrackingScalingPolicyConfiguration: {
+                predefinedMetricSpecification: {
+                  predefinedMetricType: "ALBRequestCountPerTarget",
+                  resourceLabel: all([
+                    loadBalancer?.arn,
+                    targetGroup.arn,
+                  ]).apply(([loadBalancerArn, targetGroupArn]) => {
+                    // arn:...:loadbalancer/app/frank-MyServiceLoadBalan/005af2ad12da1e52
+                    // => app/frank-MyServiceLoadBalan/005af2ad12da1e52
+                    const lbPart = loadBalancerArn
+                      ?.split(":")
+                      .pop()
+                      ?.split("/")
+                      .slice(1)
+                      .join("/");
+                    // arn:...:targetgroup/HTTP20250103004618450100000001/e0811b8cf3a60762
+                    // => targetgroup/HTTP20250103004618450100000001
+                    const tgPart = targetGroupArn?.split(":").pop();
+                    return `${lbPart}/${tgPart}`;
+                  }),
+                },
+                targetValue: requestCount,
+              },
+            },
+            { parent: self },
+          );
+        },
+      );
 
       return target;
     }

@@ -924,9 +924,7 @@ Listening on "${dev.host}:${dev.port}"...`,
    * The ID of the RDS Cluster.
    */
   public get id() {
-    return this.dev?.enabled
-      ? output("placeholder")
-      : this.cluster.id;
+    return this.dev?.enabled ? output("placeholder") : this.cluster.id;
   }
 
   /** The username of the master user. */
@@ -962,8 +960,7 @@ Listening on "${dev.host}:${dev.port}"...`,
    */
   public get host() {
     if (this.dev?.enabled) return this.dev.host;
-
-    return all([this.instance.endpoint, this.proxy]).apply(
+    return all([this.cluster.endpoint, this.proxy]).apply(
       ([endpoint, proxy]) => proxy?.endpoint ?? output(endpoint.split(":")[0]),
     );
   }

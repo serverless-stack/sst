@@ -5,6 +5,13 @@
  *
  * Creates a hit counter app with NestJS and Redis.
  *
+ * :::note
+ * You need Node 22.12 or higher for this example to work.
+ * :::
+ *
+ * Also make sure you have Node 22.12. Or set the `--experimental-require-module` flag.
+ * This'll allow NestJS to import the SST SDK.
+ *
  * This deploys NestJS as a Fargate service to ECS and it's linked to Redis.
  *
  * ```ts title="sst.config.ts" {2}

@@ -1654,6 +1654,20 @@ export interface ClusterServiceArgs extends ClusterBaseArgs {
      * ```
      */
     memoryUtilization?: Input<false | number>;
+    /**
+     * The target request count to scale up or down. It'll scale up when the request count is
+     * above the target and scale down when it's below the target.
+     * @default `false`
+     * @example
+     * ```js
+     * {
+     *   scaling: {
+     *     requestCount: 1500
+     *   }
+     * }
+     * ```
+     */
+    requestCount?: Input<false | number>;
   }>;
   /**
    * Configure the health check that ECS runs on your containers.
