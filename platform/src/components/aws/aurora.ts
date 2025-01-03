@@ -16,6 +16,7 @@ import { RandomPassword } from "@pulumi/random";
 import { DevCommand } from "../experimental/dev-command.js";
 import { RdsRoleLookup } from "./providers/rds-role-lookup.js";
 import { DurationHours, toSeconds } from "../duration.js";
+import { permission } from "./permission.js";
 
 type ACU = `${number} ACU`;
 
@@ -469,6 +470,40 @@ interface AuroraRef {
  * });
  * ```
  *
+ * #### Running locally
+ *
+ * By default, your RDS Aurora database is deployed in `sst dev`. But let's say you are running
+ * Postgres locally.
+ *
+ * ```bash
+ * docker run \
+ *   --rm \
+ *   -p 5432:5432 \
+ *   -v $(pwd)/.sst/storage/postgres:/var/lib/postgresql/data \
+ *   -e POSTGRES_USER=postgres \
+ *   -e POSTGRES_PASSWORD=password \
+ *   -e POSTGRES_DB=local \
+ *   postgres:16.4
+ * ```
+ *
+ * You can connect to it in `sst dev` by configuring the `dev` prop.
+ *
+ * ```ts title="sst.config.ts" {3-8}
+ * new sst.aws.Aurora("MyDatabase", {
+ *   engine: "postgres",
+ *   vpc,
+ *   dev: {
+ *     username: "postgres",
+ *     password: "password",
+ *     database: "local",
+ *     port: 5432
+ *   }
+ * });
+ * ```
+ *
+ * This will skip deploying an RDS database and link to the locally running Postgres database
+ * instead. [Check out the full example](/docs/examples/#aws-aurora-local).
+ *
  * ---
  *
  * ### Cost
@@ -494,11 +529,11 @@ interface AuroraRef {
  * [RDS Proxy pricing](https://aws.amazon.com/rds/proxy/pricing/) for more details.
  */
 export class Aurora extends Component implements Link.Linkable {
-  private cluster: rds.Cluster;
-  private instance: rds.ClusterInstance;
-  private secret: secretsmanager.Secret;
-  private _password: Output<string>;
-  private proxy: Output<rds.Proxy | undefined>;
+  private cluster?: rds.Cluster;
+  private instance?: rds.ClusterInstance;
+  private secret?: secretsmanager.Secret;
+  private _password?: Output<string>;
+  private proxy?: Output<rds.Proxy | undefined>;
   private dev?: {
     enabled: boolean;
     host: Output<string>;
@@ -679,7 +714,9 @@ export class Aurora extends Component implements Link.Linkable {
       const dev = {
         enabled: $dev,
         host: output(args.dev.host ?? "localhost"),
-        port: output(args.dev.port ?? 5432),
+        port: all([args.dev.port, engine]).apply(
+          ([port, engine]) => port ?? { postgres: 5432, mysql: 3306 }[engine],
+        ),
         username: args.dev.username ? output(args.dev.username) : username,
         password: output(args.dev.password ?? args.password ?? ""),
         database: args.dev.database ? output(args.dev.database) : dbName,
@@ -973,33 +1010,36 @@ Listening on "${dev.host}:${dev.port}"...`,
    * The ID of the RDS Cluster.
    */
   public get id() {
-    return this.dev?.enabled ? output("placeholder") : this.cluster.id;
+    if (this.dev?.enabled) return output("placeholder");
+    return this.cluster!.id;
   }
 
   /**
    * The ARN of the RDS Cluster.
    */
   public get clusterArn() {
-    return this.cluster.arn;
+    if (this.dev?.enabled) return output("placeholder");
+    return this.cluster!.arn;
   }
 
   /**
    * The ARN of the master user secret.
    */
   public get secretArn() {
-    return this.secret.arn;
+    if (this.dev?.enabled) return output("placeholder");
+    return this.secret!.arn;
   }
 
   /** The username of the master user. */
   public get username() {
     if (this.dev?.enabled) return this.dev.username;
-    return this.cluster.masterUsername;
+    return this.cluster!.masterUsername;
   }
 
   /** The password of the master user. */
   public get password() {
     if (this.dev?.enabled) return this.dev.password;
-    return this._password;
+    return this._password!;
   }
 
   /**
@@ -1007,7 +1047,7 @@ Listening on "${dev.host}:${dev.port}"...`,
    */
   public get database() {
     if (this.dev?.enabled) return this.dev.database;
-    return this.cluster.databaseName;
+    return this.cluster!.databaseName;
   }
 
   /**
@@ -1015,7 +1055,7 @@ Listening on "${dev.host}:${dev.port}"...`,
    */
   public get port() {
     if (this.dev?.enabled) return this.dev.port;
-    return this.instance.port;
+    return this.instance!.port;
   }
 
   /**
@@ -1023,7 +1063,7 @@ Listening on "${dev.host}:${dev.port}"...`,
    */
   public get host() {
     if (this.dev?.enabled) return this.dev.host;
-    return all([this.cluster.endpoint, this.proxy]).apply(
+    return all([this.cluster!.endpoint, this.proxy!]).apply(
       ([endpoint, proxy]) => proxy?.endpoint ?? output(endpoint.split(":")[0]),
     );
   }
