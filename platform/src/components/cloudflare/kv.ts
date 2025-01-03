@@ -16,6 +16,11 @@ export interface KvArgs {
      */
     namespace?: Transform<cloudflare.WorkersKvNamespaceArgs>;
   };
+
+  /**
+   * If instead of creating a new namespaces, we want to bind to an existing one.
+   */
+  existingNamespaceId?: string;
 }
 
 /**
@@ -58,7 +63,9 @@ export class Kv extends Component implements Link.Linkable {
 
     const parent = this;
 
-    const namespace = createNamespace();
+    const namespace = args?.existingNamespaceId
+      ? getNameSpace(args.existingNamespaceId)
+      : createNamespace();
 
     this.namespace = namespace;
 
@@ -74,6 +81,13 @@ export class Kv extends Component implements Link.Linkable {
           { parent },
         ),
       );
+    }
+
+    function getNameSpace(namespaceId: string) {
+      return cloudflare.WorkersKvNamespace.get('name', namespaceId, {
+        title: "",
+        accountId: DEFAULT_ACCOUNT_ID,
+      });
     }
   }
 
