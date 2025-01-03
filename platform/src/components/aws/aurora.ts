@@ -179,6 +179,18 @@ export interface AuroraArgs {
     pauseAfter?: Input<DurationHours>;
   }>;
   /**
+   * Enable [RDS Data API](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/data-api.html)
+   * for the database.
+   * @default `false`
+   * @example
+   * ```js
+   * {
+   *   dataApi: true
+   * }
+   * ```
+   */
+  dataApi?: Input<boolean>;
+  /**
    * Enable [RDS Proxy](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html) for the database.
    * @default `false`
    * @example
@@ -432,6 +444,31 @@ interface AuroraRef {
  * });
  * ```
  *
+ * #### Use the RDS Data API
+ *
+ * ```ts title="sst.config.ts"
+ * new sst.aws.Aurora("MyDatabase", {
+ *   engine: "postgres",
+ *   dataApi: true,
+ *   vpc
+ * });
+ * ```
+ *
+ * When using the Data API, connecting to the database does not require a persistent
+ * connection, and works over HTTP. You also don't need a VPN to connect to it locally.
+ *
+ * ```ts title="app/page.tsx" {1,6,7,8}
+ * import { Resource } from "sst";
+ * import { drizzle } from "drizzle-orm/aws-data-api/pg";
+ * import { RDSDataClient } from "@aws-sdk/client-rds-data";
+ *
+ * drizzle(new RDSDataClient({}), {
+ *   database: Resource.MyDatabase.database,
+ *   secretArn: Resource.MyDatabase.secretArn,
+ *   resourceArn: Resource.MyDatabase.clusterArn
+ * });
+ * ```
+ *
  * ---
  *
  * ### Cost
@@ -459,6 +496,7 @@ interface AuroraRef {
 export class Aurora extends Component implements Link.Linkable {
   private cluster: rds.Cluster;
   private instance: rds.ClusterInstance;
+  private secret: secretsmanager.Secret;
   private _password: Output<string>;
   private proxy: Output<rds.Proxy | undefined>;
   private dev?: {
@@ -480,6 +518,7 @@ export class Aurora extends Component implements Link.Linkable {
       this.instance = ref.instance;
       this._password = ref.password;
       this.proxy = output(ref.proxy);
+      this.secret = ref.secret;
       return;
     }
 
@@ -495,6 +534,7 @@ export class Aurora extends Component implements Link.Linkable {
     const dbName = output(args.database).apply(
       (name) => name ?? $app.name.replaceAll("-", "_"),
     );
+    const dataApi = output(args.dataApi).apply((v) => v ?? false);
     const scaling = normalizeScaling();
     const vpc = normalizeVpc();
 
@@ -516,6 +556,7 @@ export class Aurora extends Component implements Link.Linkable {
 
     this.cluster = cluster;
     this.instance = instance;
+    this.secret = secret;
     this._password = password;
     this.proxy = proxy;
 
@@ -551,22 +592,29 @@ export class Aurora extends Component implements Link.Linkable {
         { parent: self },
       );
 
-      const password = cluster.tags
+      const secretId = cluster.tags
         .apply((tags) => tags?.["sst:ref:password"])
         .apply((passwordTag) => {
           if (!passwordTag)
             throw new VisibleError(
               `Failed to get password for Postgres ${name}.`,
             );
-
-          const secret = secretsmanager.getSecretVersionOutput(
-            { secretId: passwordTag },
-            { parent: self },
-          );
-          return $jsonParse(secret.secretString).apply(
-            (v) => v.password as string,
-          );
+          return passwordTag;
         });
+
+      const secret = secretsmanager.Secret.get(
+        `${name}ProxySecret`,
+        secretId,
+        undefined,
+        { parent: self },
+      );
+      const secretVersion = secretsmanager.getSecretVersionOutput(
+        { secretId },
+        { parent: self },
+      );
+      const password = $jsonParse(secretVersion.secretString).apply(
+        (v) => v.password as string,
+      );
 
       const proxy = cluster.tags
         .apply((tags) => tags?.["sst:ref:proxy"])
@@ -578,7 +626,7 @@ export class Aurora extends Component implements Link.Linkable {
             : undefined,
         );
 
-      return { cluster, instance, proxy, password };
+      return { cluster, instance, proxy, password, secret };
     }
 
     function normalizeScaling() {
@@ -777,6 +825,7 @@ Listening on "${dev.host}:${dev.port}"...`,
             })),
             skipFinalSnapshot: true,
             storageEncrypted: true,
+            enableHttpEndpoint: dataApi,
             dbSubnetGroupName: subnetGroup?.name,
             vpcSecurityGroupIds: vpc.securityGroups,
             tags: proxy.apply((proxy) => ({
@@ -927,6 +976,20 @@ Listening on "${dev.host}:${dev.port}"...`,
     return this.dev?.enabled ? output("placeholder") : this.cluster.id;
   }
 
+  /**
+   * The ARN of the RDS Cluster.
+   */
+  public get clusterArn() {
+    return this.cluster.arn;
+  }
+
+  /**
+   * The ARN of the master user secret.
+   */
+  public get secretArn() {
+    return this.secret.arn;
+  }
+
   /** The username of the master user. */
   public get username() {
     if (this.dev?.enabled) return this.dev.username;
@@ -976,12 +1039,30 @@ Listening on "${dev.host}:${dev.port}"...`,
   public getSSTLink() {
     return {
       properties: {
+        clusterArn: this.clusterArn,
+        secretArn: this.secretArn,
         database: this.database,
         username: this.username,
         password: this.password,
         port: this.port,
         host: this.host,
       },
+      include: [
+        permission({
+          actions: ["secretsmanager:GetSecretValue"],
+          resources: [this.secretArn],
+        }),
+        permission({
+          actions: [
+            "rds-data:BatchExecuteStatement",
+            "rds-data:BeginTransaction",
+            "rds-data:CommitTransaction",
+            "rds-data:ExecuteStatement",
+            "rds-data:RollbackTransaction",
+          ],
+          resources: [this.clusterArn],
+        }),
+      ],
     };
   }
 
