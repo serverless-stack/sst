@@ -65,7 +65,7 @@ Let's add a Hono API using an AWS Lambda. Update your `sst.config.ts`.
 async run() {
   new sst.aws.Function("Hono", {
     url: true,
-    handler: "index.handler",
+    handler: "src/index.handler",
   });
 }
 ```
@@ -107,7 +107,7 @@ Now, link the bucket to the API.
 new sst.aws.Function("Hono", {
   url: true,
   link: [bucket],
-  handler: "index.handler",
+  handler: "src/index.handler",
 });
 ```
 
