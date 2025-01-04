@@ -5,6 +5,10 @@
   "sideEffects": false,
   "version": "0.0.0",
   "main": "./dist/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sst/sst.git"
+  },
   "exports": {
     ".": "./dist/index.js",
     "./auth": "./dist/auth/index.js",
