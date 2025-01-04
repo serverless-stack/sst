@@ -3,11 +3,11 @@ title: Custom Domains
 description: Configure custom domains in your components.
 ---
 
-You can configure custom domains for your frontends or APIs in SST. By default, these components auto-generate a URL. You can pass in the `domain` to use your custom domain.
+You can configure custom domains and subdomains for your frontends or APIs in SST. By default, these components auto-generate a URL. You can pass in the `domain` to use your custom domain.
 
 ```ts {2}
 new sst.aws.Nextjs("MyWeb", {
-  domain: "example.com"
+  domain: "example.com" # or "app.example.com"
 });
 ```
 
@@ -120,6 +120,8 @@ If your domains are hosted on [Cloudflare](https://developers.cloudflare.com/dns
    ```
 
 2. Set the **`CLOUDFLARE_API_TOKEN`** in your environment.
+
+To get your API tokens, head to the [API Tokens section of your Cloudflare dashboard](https://dash.cloudflare.com/profile/api-tokens) and create one with _Edit zone DNS_ policy.
 
    ```bash
    export CLOUDFLARE_API_TOKEN=aaaaaaaa_aaaaaaaaaaaa_aaaaaaaa
