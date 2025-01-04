@@ -40,6 +40,23 @@ export default $config({
     };
   },
   async run() {
+    // make sure the knowledge base is linkable
+    sst.Linkable.wrap(aws.bedrock.AgentKnowledgeBase, (knowledgeBase) => {
+      return {
+        properties: {
+          id: knowledgeBase.id,
+          arn: knowledgeBase.arn,
+          name: knowledgeBase.name,
+        },
+        include: [
+          sst.aws.permission({
+            actions: ["bedrock:RetrieveAndGenerate", "bedrock:Retrieve"],
+            resources: [knowledgeBase.arn],
+          }),
+        ],
+      };
+    });
+
     const vpc = new sst.aws.Vpc("Vpc", {
       nat: "ec2",
       bastion: true, // so you can connect to RDS and setup the table
