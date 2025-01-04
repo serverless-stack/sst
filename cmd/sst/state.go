@@ -2,6 +2,11 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"os"
+	"strings"
+	"time"
+
 	"github.com/sst/sst/v3/cmd/sst/cli"
 	"github.com/sst/sst/v3/cmd/sst/mosaic/ui"
 	"github.com/sst/sst/v3/internal/util"
@@ -9,10 +14,6 @@ import (
 	"github.com/sst/sst/v3/pkg/process"
 	"github.com/sst/sst/v3/pkg/project/provider"
 	"github.com/sst/sst/v3/pkg/state"
-	"io"
-	"os"
-	"strings"
-	"time"
 )
 
 var CmdState = &cli.Command{
@@ -103,6 +104,67 @@ var CmdState = &cli.Command{
 				defer file.Close()
 				_, err = io.Copy(os.Stdout, file)
 				return err
+			},
+		},
+		{
+			Name: "list",
+			Description: cli.Description{
+				Short: "List all deployed stages",
+				Long:  `List all deployed stages for your application.`,
+			},
+			Flags: []cli.Flag{
+				{
+					Name: "simple",
+					Type: "bool",
+					Description: cli.Description{
+						Short: "Output a basic list of stages",
+						Long:  "Output a basic list of stages without additional information about the provider.",
+					},
+				},
+			},
+			Run: func(c *cli.Cli) error {
+				p, err := c.InitProject()
+				if err != nil {
+					return err
+				}
+				defer p.Cleanup()
+				backend := p.Backend()
+
+				stages, err := provider.ListStages(backend, p.App().Name)
+				if err != nil {
+					return err
+				}
+
+				if c.Bool("simple") {
+					for _, stage := range stages {
+						fmt.Println(stage)
+					}
+					return nil
+				}
+
+				lines, err := provider.Info(backend)
+				if err != nil {
+					ui.Error("Failed to load provider information")
+				}
+
+				renderKeyValue("App", p.App().Name)
+
+				for _, line := range lines {
+					renderKeyValue(line.Key, line.Value)
+				}
+
+				if len(stages) == 0 {
+					return nil
+				}
+
+				renderKeyValue("Stages", stages[0])
+				if len(stages) > 1 {
+					for _, stage := range stages[1:] {
+						fmt.Println(indent("") + ui.TEXT_INFO.Render(stage))
+					}
+				}
+
+				return nil
 			},
 		},
 		{
@@ -277,4 +339,12 @@ func confirmMutations(muts []state.Mutation) error {
 		return util.NewReadableError(nil, "Abandoning changes")
 	}
 	return nil
+}
+
+func indent(key string) string {
+	return fmt.Sprintf("%-12s", key)
+}
+
+func renderKeyValue(key string, value string) {
+	fmt.Println(ui.TEXT_NORMAL_BOLD.Render(indent(key+":")) + ui.TEXT_INFO.Render(value))
 }
