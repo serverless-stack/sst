@@ -18,7 +18,7 @@ export interface KvArgs {
   };
 
   /**
-   * If instead of creating a new namespaces, we want to reference an existing one.
+   * If instead of creating a new namespace, we want to reference an existing one.
    */
   existingNamespaceId?: string;
 }
