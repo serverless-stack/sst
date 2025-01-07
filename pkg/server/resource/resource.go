@@ -6,8 +6,8 @@ import (
 	"net/rpc"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/sst/ion/pkg/project"
-	"github.com/sst/ion/pkg/project/provider"
+	"github.com/sst/sst/v3/pkg/project"
+	"github.com/sst/sst/v3/pkg/project/provider"
 )
 
 type ReadInput[T any] struct {

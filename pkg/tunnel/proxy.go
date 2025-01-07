@@ -6,7 +6,7 @@ import (
 	"net"
 
 	"github.com/armon/go-socks5"
-	"github.com/sst/ion/cmd/sst/mosaic/ui"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/ui"
 	"golang.org/x/crypto/ssh"
 )
 

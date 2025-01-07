@@ -13,8 +13,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/gdamore/tcell/v2/views"
-	tcellterm "github.com/sst/ion/cmd/sst/mosaic/multiplexer/tcell-term"
-	"github.com/sst/ion/pkg/process"
+	tcellterm "github.com/sst/sst/v3/cmd/sst/mosaic/multiplexer/tcell-term"
+	"github.com/sst/sst/v3/pkg/process"
 )
 
 var PAD_HEIGHT = 0

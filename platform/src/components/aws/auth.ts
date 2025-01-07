@@ -21,6 +21,17 @@ export interface AuthArgs {
    *   authorizer: "src/auth.handler"
    * }
    * ```
+   *
+   * You can also pass in the full `FunctionArgs`.
+   *
+   * ```js
+   * {
+   *   authorizer: {
+   *     handler: "src/auth.handler",
+   *     link: [table]
+   *   }
+   * }
+   * ```
    */
   authorizer: Input<string | FunctionArgs>;
   /**

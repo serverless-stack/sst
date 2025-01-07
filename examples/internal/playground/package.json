@@ -11,6 +11,7 @@
   "license": "ISC",
   "dependencies": {
     "@aws-sdk/client-apigatewaymanagementapi": "^3.712.0",
+    "@aws-sdk/client-ecs": "^3.713.0",
     "@aws-sdk/client-eventbridge": "^3.679.0",
     "@aws-sdk/client-sesv2": "^3.515.0",
     "@aws-sdk/client-sns": "^3.679.0",

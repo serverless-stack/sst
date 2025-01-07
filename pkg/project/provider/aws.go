@@ -22,7 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go"
-	"github.com/sst/ion/internal/util"
+	"github.com/sst/sst/v3/internal/util"
 
 	ecrTypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"

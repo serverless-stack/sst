@@ -21,7 +21,7 @@
  * The data is persisted to the `.sst/storage` directory. So if you restart the dev server,
  * the data will still be there.
  *
- * We then configure the `dev` property of the Redis component with the settings for the
+ * We then configure the `dev` property of the `Redis` component with the settings for the
  * local Redis server.
  *
  * ```ts title="sst.config.ts"

@@ -3,14 +3,14 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/fatih/color"
-	"github.com/sst/ion/cmd/sst/cli"
-	"github.com/sst/ion/cmd/sst/mosaic/ui"
-	"github.com/sst/ion/pkg/global"
-	"github.com/sst/ion/pkg/process"
+	"github.com/sst/sst/v3/cmd/sst/cli"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/ui"
+	"github.com/sst/sst/v3/pkg/global"
+	"github.com/sst/sst/v3/pkg/npm"
+	"github.com/sst/sst/v3/pkg/process"
 )
 
 func CmdUpgrade(c *cli.Cli) error {
@@ -32,20 +32,10 @@ func CmdUpgrade(c *cli.Cli) error {
 			}
 		}
 		if hasAny {
-			var cmd *exec.Cmd
-			if _, err := os.Stat("package-lock.json"); err == nil {
-				cmd = process.Command("npm", "install")
-			}
-			if _, err := os.Stat("yarn.lock"); err == nil {
-				cmd = process.Command("yarn", "install")
-			}
-			if _, err := os.Stat("pnpm-lock.yaml"); err == nil {
-				cmd = process.Command("pnpm", "install")
-			}
-			if _, err := os.Stat("bun.lockb"); err == nil {
-				cmd = process.Command("bun", "install")
-			}
-			if cmd != nil {
+			cwd, _ := os.Getwd()
+			mgr := npm.DetectPackageManager(cwd)
+			if mgr != "" {
+				cmd := process.Command(mgr, "install")
 				fmt.Println()
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr

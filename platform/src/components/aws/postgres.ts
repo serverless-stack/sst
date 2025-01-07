@@ -877,9 +877,8 @@ Listening on "${dev.host}:${dev.port}"...`,
    * The identifier of the Postgres instance.
    */
   public get id() {
-    return this.dev?.enabled
-      ? output("placeholder")
-      : this.instance!.identifier;
+    if (this.dev?.enabled) return output("placeholder");
+    return this.instance!.identifier;
   }
 
   /**
@@ -907,7 +906,7 @@ Listening on "${dev.host}:${dev.port}"...`,
   /** The password of the master user. */
   public get password() {
     if (this.dev?.enabled) return this.dev.password;
-    return this._password;
+    return this._password!;
   }
 
   /**

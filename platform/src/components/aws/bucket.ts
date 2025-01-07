@@ -258,7 +258,7 @@ export interface BucketNotificationsArgs {
        * For example, let's say you have a queue.
        *
        * ```js title="sst.config.ts"
-       * const myQueue = sst.aws.Queue("MyQueue");
+       * const myQueue = new sst.aws.Queue("MyQueue");
        * ```
        *
        * You can subscribe to this bucket with it.
@@ -287,7 +287,7 @@ export interface BucketNotificationsArgs {
        * For example, let's say you have a topic.
        *
        * ```js title="sst.config.ts"
-       * const myTopic = sst.aws.SnsTopic("MyTopic");
+       * const myTopic = new sst.aws.SnsTopic("MyTopic");
        * ```
        *
        * You can subscribe to this bucket with it.
@@ -840,7 +840,7 @@ export class Bucket extends Component implements Link.Linkable {
    * Notify a queue. For example, let's say you have a queue.
    *
    * ```js
-   * const myQueue = sst.aws.Queue("MyQueue");
+   * const myQueue = new sst.aws.Queue("MyQueue");
    * ```
    *
    * You can notify it by passing in the queue.
@@ -859,7 +859,7 @@ export class Bucket extends Component implements Link.Linkable {
    * Notify a SNS topic. For example, let's say you have a topic.
    *
    * ```js title="sst.config.ts"
-   * const myTopic = sst.aws.SnsTopic("MyTopic");
+   * const myTopic = new sst.aws.SnsTopic("MyTopic");
    * ```
    *
    * You can notify it by passing in the topic.
@@ -1076,7 +1076,7 @@ export class Bucket extends Component implements Link.Linkable {
    * For example, let's say you have a queue.
    *
    * ```js title="sst.config.ts"
-   * const queue = sst.aws.Queue("MyQueue");
+   * const queue = new sst.aws.Queue("MyQueue");
    * ```
    *
    * You can subscribe to this bucket with it.
@@ -1220,7 +1220,7 @@ export class Bucket extends Component implements Link.Linkable {
    * For example, let's say you have a topic.
    *
    * ```js title="sst.config.ts"
-   * const topic = sst.aws.SnsTopic("MyTopic");
+   * const topic = new sst.aws.SnsTopic("MyTopic");
    * ```
    *
    * You can subscribe to this bucket with it.

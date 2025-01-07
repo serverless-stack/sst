@@ -14,9 +14,9 @@ import (
 	"sync"
 
 	"github.com/BurntSushi/toml"
-	"github.com/sst/ion/pkg/process"
-	"github.com/sst/ion/pkg/project/path"
-	"github.com/sst/ion/pkg/runtime"
+	"github.com/sst/sst/v3/pkg/process"
+	"github.com/sst/sst/v3/pkg/project/path"
+	"github.com/sst/sst/v3/pkg/runtime"
 )
 
 type Worker struct {
@@ -318,7 +318,7 @@ func (r *PythonRuntime) Run(ctx context.Context, input *runtime.RunInput) (runti
 				if source.Subdirectory != nil {
 					repo_url = repo_url + "#subdirectory=" + *source.Subdirectory
 				}
-				// uv run --with git+https://github.com/sst/ion.git#subdirectory=sdk/python python.py
+				// uv run --with git+https://github.com/sst/sst/v3.git#subdirectory=sdk/python python.py
 				args = append(args, "--with", repo_url)
 			}
 		}

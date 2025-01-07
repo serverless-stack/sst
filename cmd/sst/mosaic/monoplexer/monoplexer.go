@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"syscall"
 
-	"github.com/sst/ion/pkg/process"
+	"github.com/sst/sst/v3/pkg/process"
 )
 
 type Monoplexer struct {

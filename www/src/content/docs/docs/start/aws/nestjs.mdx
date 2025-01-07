@@ -1,0 +1,282 @@
+---
+title: NestJS on AWS with SST
+description: Create and deploy an NestJS app to AWS with SST.
+---
+
+We are going to build an app with NestJS, add an S3 Bucket for file uploads, and deploy it to AWS in a container with SST.
+
+:::tip[View source]
+You can [view the source](https://github.com/sst/sst/tree/dev/examples/aws-nestjs-container) of this example in our repo.
+:::
+
+Before you get started, make sure to [configure your AWS credentials](/docs/iam-credentials#credentials).
+
+:::note
+You need Node 22.12 or higher for this example to work.
+:::
+
+Also make sure you have Node 22.12. Or set the `--experimental-require-module` flag. This'll allow NestJS to import the SST SDK.
+
+---
+
+#### Examples
+
+We also have a few other NestJS examples that you can refer to.
+
+- [Build a hit counter with NestJS and Redis](/docs/examples/#aws-nestjs-with-redis)
+
+---
+
+## 1. Create a project
+
+Let's start by creating our Nest app.
+
+```bash
+nest new aws-nestjs-container
+cd aws-nestjs-container
+```
+
+We are picking npm as the package manager.
+
+---
+
+#### Init SST
+
+Now let's initialize SST in our app.
+
+```bash
+npx sst@latest init
+npm install
+```
+
+This'll create a `sst.config.ts` file in your project root.
+
+To make sure the types in the `sst.config.ts` are picked up, add the following to the `tsconfig.json`.
+
+```diff lang="json" title="tsconfig.json"
+{
++ "include": ["src/**/*", "test/**/*", "sst-env.d.ts"]
+}
+```
+
+---
+
+## 2. Add a Service
+
+To deploy our Nest app, let's add an [AWS Fargate](https://aws.amazon.com/fargate/) container with [Amazon ECS](https://aws.amazon.com/ecs/). Update your `sst.config.ts`.
+
+```js title="sst.config.ts" {9-11}
+async run() {
+  const vpc = new sst.aws.Vpc("MyVpc");
+  const cluster = new sst.aws.Cluster("MyCluster", { vpc });
+
+  cluster.addService("MyService", {
+    loadBalancer: {
+      ports: [{ listen: "80/http", forward: "3000/http" }],
+    },
+    dev: {
+      command: "npm run start:dev",
+    },
+  });
+}
+```
+
+This creates a VPC with an ECS Cluster, and adds a Fargate service to it.
+
+:::note
+By default, your service in not deployed when running in _dev_.
+:::
+
+The `dev.command` tells SST to instead run our Nest app locally in dev mode.
+
+---
+
+#### Start dev mode
+
+Run the following to start dev mode. This'll start SST and your Nest app.
+
+```bash
+npx sst dev
+```
+
+Once complete, click on **MyService** in the sidebar and open your Nest app in your browser.
+
+---
+
+## 3. Add an S3 Bucket
+
+Let's add an S3 Bucket for file uploads. Add this to your `sst.config.ts` below the `Vpc` component.
+
+```ts title="sst.config.ts"
+const bucket = new sst.aws.Bucket("MyBucket");
+```
+
+---
+
+#### Link the bucket
+
+Now, link the bucket to the container.
+
+```ts title="sst.config.ts" {3}
+cluster.addService("MyService", {
+  // ...
+  link: [bucket],
+});
+```
+
+This will allow us to reference the bucket in our Nest app.
+
+---
+
+## 4. Upload a file
+
+We want a `POST` request made to the `/` route to upload a file to our S3 bucket. Let's add this below our `getHello` method in our `src/app.controller.ts`.
+
+```ts title="src/app.controller.ts" {5}
+@Post()
+@UseInterceptors(FileInterceptor('file'))
+async uploadFile(@UploadedFile() file: Express.Multer.File): Promise<string> {
+  const params = {
+    Bucket: Resource.MyBucket.name,
+    ContentType: file.mimetype,
+    Key: file.originalname,
+    Body: file.buffer,
+  };
+
+  const upload = new Upload({
+    params,
+    client: s3,
+  });
+
+  await upload.done();
+
+  return 'File uploaded successfully.';
+}
+```
+
+:::tip
+We are directly accessing our S3 bucket with `Resource.MyBucket.name`.
+:::
+
+Add the imports. We'll use the extra ones below.
+
+```ts title="src/app.controller.ts"
+import {
+  S3Client,
+  GetObjectCommand,
+  ListObjectsV2Command,
+} from '@aws-sdk/client-s3';
+import { Resource } from 'sst';
+import { Express } from 'express';
+import { Upload } from '@aws-sdk/lib-storage';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { Post, Redirect, UploadedFile, UseInterceptors } from '@nestjs/common';
+
+const s3 = new S3Client({});
+```
+
+And install the npm packages.
+
+```bash
+npm install -D @types/multer
+npm install @aws-sdk/client-s3 @aws-sdk/lib-storage @aws-sdk/s3-request-presigner
+```
+
+---
+
+## 5. Download the file
+
+We'll add a `/latest` route that'll download the latest file in our S3 bucket. Let's add this below our `uploadFile` method in `src/app.controller.ts`.
+
+```ts title="src/app.controller.ts"
+@Get('latest')
+@Redirect('/', 302)
+async getLatestFile() {
+  const objects = await s3.send(
+    new ListObjectsV2Command({
+      Bucket: Resource.MyBucket.name,
+    }),
+  );
+
+  const latestFile = objects.Contents.sort(
+    (a, b) => b.LastModified.getTime() - a.LastModified.getTime(),
+  )[0];
+
+  const command = new GetObjectCommand({
+    Key: latestFile.Key,
+    Bucket: Resource.MyBucket.name,
+  });
+  const url = await getSignedUrl(s3, command);
+
+  return { url };
+}
+```
+
+---
+
+#### Test your app
+
+To upload a file run the following from your project root.
+
+```bash
+curl -F file=@package.json http://localhost:3000/
+```
+
+This should upload the `package.json`. Now head over to `http://localhost:3000/latest` in your browser and it'll download you what you just uploaded.
+
+---
+
+## 5. Deploy your app
+
+To deploy our app we'll first add a `Dockerfile`.
+
+```dockerfile title="Dockerfile"
+FROM node:22
+
+WORKDIR /usr/src/app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+
+EXPOSE 3000
+CMD ["node", "dist/main"]
+```
+
+This just builds our Nest app in a Docker image.
+
+:::tip
+You need to be running [Docker Desktop](https://www.docker.com/products/docker-desktop/) to deploy your app.
+:::
+
+Let's also add a `.dockerignore` file in the root.
+
+```bash title=".dockerignore"
+dist
+node_modules
+```
+
+Now to build our Docker image and deploy we run:
+
+```bash
+npx sst deploy --stage production
+```
+
+You can use any stage name here but it's good to create a new stage for production. This'll give the URL of your Nest app deployed as a Fargate service.
+
+```bash
+✓  Complete
+   MyService: http://jayair-MyServiceLoadBala-592628062.us-east-1.elb.amazonaws.com
+```
+
+---
+
+## Connect the console
+
+As a next step, you can setup the [SST Console](/docs/console/) to _**git push to deploy**_ your app and monitor it for any issues. 
+
+![SST Console Autodeploy](../../../../../assets/docs/start/sst-console-autodeploy.png)
+
+You can [create a free account](https://console.sst.dev) and connect it to your AWS account.
+

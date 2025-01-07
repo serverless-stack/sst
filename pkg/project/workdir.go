@@ -1,12 +1,13 @@
 package project
 
 import (
+	"encoding/json"
 	"fmt"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
+	"github.com/sst/sst/v3/pkg/id"
+	"github.com/sst/sst/v3/pkg/project/provider"
 	"os"
 	"path/filepath"
-
-	"github.com/sst/ion/pkg/id"
-	"github.com/sst/ion/pkg/project/provider"
 )
 
 type PulumiWorkdir struct {
@@ -64,4 +65,52 @@ func (w *PulumiWorkdir) Pull() (string, error) {
 
 func (w *PulumiWorkdir) Backend() string {
 	return w.path
+}
+
+func (w *PulumiWorkdir) state() string {
+	appDir := filepath.Join(w.path, ".pulumi", "stacks", w.project.app.Name)
+	path := filepath.Join(appDir, fmt.Sprintf("%v.json", w.project.app.Stage))
+	return path
+}
+
+func (w *PulumiWorkdir) Export() (*apitype.CheckpointV3, error) {
+	var untyped apitype.VersionedCheckpoint
+	file, err := os.Open(w.state())
+	if err != nil {
+		return nil, err
+	}
+	err = json.NewDecoder(file).Decode(&untyped)
+	if err != nil {
+		return nil, err
+	}
+
+	var result apitype.CheckpointV3
+	err = json.Unmarshal(untyped.Checkpoint, &result)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (w *PulumiWorkdir) Import(checkpoint *apitype.CheckpointV3) error {
+	raw, err := json.MarshalIndent(checkpoint, "", "  ")
+	if err != nil {
+		return err
+	}
+	result := apitype.VersionedCheckpoint{
+		Version:    3,
+		Checkpoint: raw,
+	}
+	file, err := os.Create(w.state())
+	if err != nil {
+		return err
+	}
+	enc := json.NewEncoder(file)
+	enc.SetIndent("", "  ")
+	err = enc.Encode(result)
+	if err != nil {
+		return err
+	}
+	return nil
 }

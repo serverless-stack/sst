@@ -12,7 +12,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/sst/ion/pkg/flag"
+	"github.com/sst/sst/v3/pkg/flag"
 	"golang.org/x/exp/slog"
 	"golang.org/x/sync/errgroup"
 )

@@ -14,7 +14,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/sst/ion/pkg/npm"
+	"github.com/sst/sst/v3/pkg/npm"
 )
 
 func Upgrade(existingVersion string, nextVersion string) (string, error) {

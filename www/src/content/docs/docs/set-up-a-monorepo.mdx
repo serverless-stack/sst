@@ -104,6 +104,12 @@ The `packages/` directory  includes the following:
 
   We recommend creating new modules for the various _domains_ in your project. This roughly follows Domain Driven Design.
 
+   We also have [Vitest](https://vitest.dev/) configured for testing this package with the `sst shell` CLI.
+
+   ```bash
+   npm test
+   ```
+
 - `functions/`
 
   This directory includes our Lambda functions. It imports from the `core/`
@@ -137,11 +143,11 @@ We then dynamically import them in the `sst.config.ts`.
 
 ```ts title="sst.config.ts"
 async run() {
-  await import("./infra/storage");
-  const api = await import("./infra/api");
+  const storage = await import("./infra/storage");
+  await import("./infra/api");
 
   return {
-    api: api.myApi.url
+    MyBucket: storage.bucket.name
   };
 }
 ```

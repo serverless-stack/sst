@@ -278,6 +278,7 @@ export class Component extends ComponentResource {
             {
               types: [
                 "aws:elasticache/subnetGroup:SubnetGroup",
+                "aws:rds/clusterParameterGroup:ClusterParameterGroup",
                 "aws:rds/parameterGroup:ParameterGroup",
                 "aws:rds/subnetGroup:SubnetGroup",
               ],

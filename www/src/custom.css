@@ -281,6 +281,9 @@ nav.sidebar .sidebar-pane > .sidebar-content {
 nav.sidebar .sidebar-pane > .sidebar-content::-webkit-scrollbar {
   display: none;
 }
+nav.sidebar ul {
+  --sl-sidebar-item-padding-inline: 0.3125rem;
+}
 nav.sidebar ul > li {
   border-inline-start: none;
 }

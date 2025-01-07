@@ -3,7 +3,6 @@ project_name: sst
 before:
   hooks:
     - go mod tidy
-    - bash -c "cd ./platform && bun run build"
     - go test ./cmd/... ./pkg/...
 builds:
   - env:

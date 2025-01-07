@@ -151,7 +151,9 @@ export function buildApp(
         return "pnpm run build";
       if (
         fs.existsSync(path.join(sitePath, "bun.lockb")) ||
-        fs.existsSync(path.join($cli.paths.root, "bun.lockb"))
+        fs.existsSync(path.join($cli.paths.root, "bun.lockb")) ||
+        fs.existsSync(path.join(sitePath, "bun.lock")) ||
+        fs.existsSync(path.join($cli.paths.root, "bun.lock"))
       )
         return "bun run build";
 

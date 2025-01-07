@@ -1,16 +1,44 @@
-import { ComponentResourceOptions } from "@pulumi/pulumi";
-import { Component, Transform, transform } from "../component";
+import fs from "fs";
+import path from "path";
+import {
+  all,
+  ComponentResourceOptions,
+  interpolate,
+  Output,
+  output,
+  secret,
+} from "@pulumi/pulumi";
+import { Component, Prettify, Transform, transform } from "../component";
 import { Input } from "../input";
 import { Dns } from "../dns";
 import { FunctionArgs } from "./function";
-import { Service } from "./service";
+import { Service, ServiceArgs } from "./service";
 import { RETENTION } from "./logging.js";
-import { appautoscaling, cloudwatch, ec2, ecs, iam, lb } from "@pulumi/aws";
-import { ImageArgs } from "@pulumi/docker-build";
+import {
+  appautoscaling,
+  cloudwatch,
+  ec2,
+  ecs,
+  iam,
+  lb,
+  getPartitionOutput,
+  getRegionOutput,
+  ecr,
+} from "@pulumi/aws";
+import { ImageArgs, Platform } from "@pulumi/docker-build";
 import { Cluster as ClusterV1 } from "./cluster-v1";
 import { Vpc } from "./vpc";
+import { Vpc as VpcV1 } from "./vpc-v1.js";
 import { Efs } from "./efs";
-import { DurationMinutes } from "../duration";
+import { DurationMinutes, toSeconds } from "../duration";
+import { Task } from "./task";
+import { VisibleError } from "../error";
+import { toGBs, toMBs } from "../size";
+import { Link } from "../link";
+import { Permission } from "./permission";
+import { imageBuilder } from "./helpers/container-builder";
+import { bootstrap } from "./helpers/bootstrap";
+import { toNumber } from "../cpu";
 export type { ClusterArgs as ClusterV1Args } from "./cluster-v1";
 
 export const supportedCpus = {
@@ -116,6 +144,679 @@ export const supportedMemories = {
 
 type Port = `${number}/${"http" | "https" | "tcp" | "udp" | "tcp_udp" | "tls"}`;
 
+type ClusterVpcArgs = {
+  /**
+   * The ID of the VPC.
+   */
+  id: Input<string>;
+  /**
+   * A list of VPC security group IDs for the service.
+   */
+  securityGroups: Input<Input<string>[]>;
+  /**
+   * A list of subnet IDs in the VPC to place the services in.
+   * @deprecated Use `containerSubnets` instead.
+   */
+  serviceSubnets?: Input<Input<string>[]>;
+  /**
+   * A list of subnet IDs in the VPC to place the containers in.
+   */
+  containerSubnets?: Input<Input<string>[]>;
+  /**
+   * A list of subnet IDs in the VPC to place the load balancer in.
+   */
+  loadBalancerSubnets: Input<Input<string>[]>;
+  /**
+   * The ID of the Cloud Map namespace to use for the service.
+   */
+  cloudmapNamespaceId: Input<string>;
+  /**
+   * The name of the Cloud Map namespace to use for the service.
+   */
+  cloudmapNamespaceName: Input<string>;
+};
+
+export type ClusterVpcsNormalizedArgs = Required<
+  Pick<ClusterVpcArgs, "containerSubnets">
+> &
+  Omit<ClusterVpcArgs, "containerSubnets" | "serviceSubnets">;
+
+interface ServiceRules {
+  /**
+   * The port and protocol the service listens on. Uses the format `{port}/{protocol}`.
+   */
+  listen: Input<Port>;
+  /**
+   * The port and protocol of the container the service forwards the traffic to. Uses the
+   * format `{port}/{protocol}`.
+   * @default The same port and protocol as `listen`.
+   */
+  forward?: Input<Port>;
+  /**
+   * The name of the container to forward the traffic to.
+   *
+   * You need this if there's more than one container.
+   *
+   * If there is only one container, the traffic is automatically forwarded to that
+   * container.
+   */
+  container?: Input<string>;
+  /**
+   * The port and protocol to redirect the traffic to. Uses the format `{port}/{protocol}`.
+   */
+  redirect?: Input<Port>;
+  /**
+   * @deprecated Use `conditions.path` instead.
+   */
+  path?: Input<string>;
+  /**
+   * The conditions for the redirect. Only applicable to "http" protocols.
+   */
+  conditions?: Input<{
+    /**
+     * Configure path-based routing. Only requests matching the path are forwarded to
+     * the container.
+     *
+     * The path pattern is case-sensitive, supports wildcards, and can be up to 128
+     * characters.
+     * - `*` matches 0 or more characters.
+     * - `?` matches exactly 1 character.
+     *
+     * For example:
+     * - `/api/*`
+     * - `/api/*.png
+     *
+     * @default Requests to all paths are forwarded.
+     */
+    path?: Input<string>;
+    /**
+     * Configure query string based routing. Only requests matching one of the query
+     * string conditions are forwarded to the container.
+     *
+     * @example
+     *
+     * Matching requests with query string `version=v1`.
+     *
+     * ```js
+     * {
+     *   query: [
+     *     { key: "version", value: "v1" }
+     *   ]
+     * }
+     * ```
+     *
+     * Matching requests with query string matching `env=test*`.
+     *
+     * ```js
+     * {
+     *   query: [
+     *     { key: "env", value: "test*" }
+     *   ]
+     * }
+     * ```
+     *
+     * Matching requests with query string `version=v1` or `env=test*`.
+     *
+     * ```js
+     * {
+     *   query: [
+     *     { key: "version", value: "v1" },
+     *     { key: "env", value: "test*" }
+     *   ]
+     * }
+     * ```
+     *
+     * Matching requests with any query string key with value `example`.
+     *
+     * ```js
+     * {
+     *   query: [
+     *     { value: "example" }
+     *   ]
+     * }
+     * ```
+     *
+     * @default Query string is not checked when forwarding requests.
+     */
+    query?: Input<
+      Input<{
+        key?: Input<string>;
+        value: Input<string>;
+      }>[]
+    >;
+  }>;
+}
+
+interface TaskContainerArgs {
+  /**
+   * The name of the container.
+   *
+   * This is used as the `--name` option in the Docker run command.
+   */
+  name: Input<string>;
+  /**
+   * The amount of CPU allocated to the container.
+   *
+   * By default, a container can use up to all the CPU allocated to all the containers. If set,
+   * this container is capped at this allocation even if more idle CPU is available.
+   *
+   * The sum of all the containers' CPU must be less than or equal to the total available CPU.
+   *
+   * @example
+   * ```js
+   * {
+   *   cpu: "0.25 vCPU"
+   * }
+   * ```
+   */
+  cpu?: `${number} vCPU`;
+  /**
+   * The amount of memory allocated to the container.
+   *
+   * By default, a container can use up to all the memory allocated to all the containers. If
+   * set, the container is capped at this allocation. If exceeded, the container will be killed
+   * even if there is idle memory available.
+   *
+   * The sum of all the containers' memory must be less than or equal to the total available
+   * memory.
+   *
+   * @example
+   * ```js
+   * {
+   *   memory: "0.5 GB"
+   * }
+   * ```
+   */
+  memory?: `${number} GB`;
+  /**
+   * Configure the Docker image for the container. Same as the top-level [`image`](#image).
+   */
+  image?: Input<
+    | string
+    | {
+        /**
+         * The path to the Docker build context. Same as the top-level
+         * [`image.context`](#image-context).
+         */
+        context?: Input<string>;
+        /**
+         * The path to the Dockerfile. Same as the top-level
+         * [`image.dockerfile`](#image-dockerfile).
+         */
+        dockerfile?: Input<string>;
+        /**
+         * Key-value pairs of build args. Same as the top-level [`image.args`](#image-args).
+         */
+        args?: Input<Record<string, Input<string>>>;
+        /**
+         * The stage to build up to. Same as the top-level [`image.target`](#image-target).
+         */
+        target?: Input<string>;
+      }
+  >;
+  /**
+   * The command to override the default command in the container. Same as the top-level
+   * [`command`](#command).
+   */
+  command?: Input<string[]>;
+  /**
+   * The entrypoint to override the default entrypoint in the container. Same as the top-level
+   * [`entrypoint`](#entrypoint).
+   */
+  entrypoint?: Input<string[]>;
+  /**
+   * Key-value pairs of values that are set as container environment variables. Same as the
+   * top-level [`environment`](#environment).
+   */
+  environment?: FunctionArgs["environment"];
+  /**
+   * Configure the logs in CloudWatch. Same as the top-level [`logging`](#logging).
+   */
+  logging?: Input<{
+    /**
+     * The duration the logs are kept in CloudWatch. Same as the top-level
+     * [`logging.retention`](#logging-retention).
+     */
+    retention?: Input<keyof typeof RETENTION>;
+  }>;
+  /**
+   * Key-value pairs of AWS Systems Manager Parameter Store parameter ARNs or AWS Secrets
+   * Manager secret ARNs. The values will be loaded into the container as environment
+   * variables. Same as the top-level [`ssm`](#ssm).
+   */
+  ssm?: ClusterServiceArgs["ssm"];
+  /**
+   * Mount Amazon EFS file systems into the container. Same as the top-level
+   * [`efs`](#efs).
+   */
+  volumes?: ClusterServiceArgs["volumes"];
+}
+
+interface ServiceContainerArgs extends TaskContainerArgs {
+  /**
+   * Configure the health check for the container. Same as the top-level
+   * [`health`](#health).
+   */
+  health?: ClusterServiceArgs["health"];
+  /**
+   * Configure how this container works in `sst dev`. Same as the top-level
+   * [`dev`](#dev).
+   */
+  dev?: {
+    /**
+     * The command that `sst dev` runs to start this in dev mode. Same as the top-level
+     * [`dev.command`](#dev-command).
+     */
+    command: Input<string>;
+    /**
+     * Configure if you want to automatically start this when `sst dev` starts. Same as the
+     * top-level [`dev.autostart`](#dev-autostart).
+     */
+    autostart?: Input<boolean>;
+    /**
+     * Change the directory from where the `command` is run. Same as the top-level
+     * [`dev.directory`](#dev-directory).
+     */
+    directory?: Input<string>;
+  };
+}
+
+interface ClusterBaseArgs {
+  /**
+   * The CPU architecture of the container.
+   * @default `"x86_64"`
+   * @example
+   * ```js
+   * {
+   *   architecture: "arm64"
+   * }
+   * ```
+   */
+  architecture?: Input<"x86_64" | "arm64">;
+  /**
+   * The amount of CPU allocated to the container. If there are multiple containers, this is
+   * the total amount of CPU shared across all the containers.
+   *
+   * :::note
+   * [View the valid combinations](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-tasks-services.html#fargate-tasks-size) of CPU and memory.
+   * :::
+   *
+   * @default `"0.25 vCPU"`
+   * @example
+   * ```js
+   * {
+   *   cpu: "1 vCPU"
+   * }
+   * ```
+   */
+  cpu?: keyof typeof supportedCpus;
+  /**
+   * The amount of memory allocated to the container. If there are multiple containers, this is
+   * the total amount of memory shared across all the containers.
+   *
+   * :::note
+   * [View the valid combinations](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-tasks-services.html#fargate-tasks-size) of CPU and memory.
+   * :::
+   *
+   * @default `"0.5 GB"`
+   *
+   * @example
+   * ```js
+   * {
+   *   memory: "2 GB"
+   * }
+   * ```
+   */
+  memory?: `${number} GB`;
+  /**
+   * The amount of ephemeral storage (in GB) allocated to the container.
+   *
+   * @default `"20 GB"`
+   *
+   * @example
+   * ```js
+   * {
+   *   storage: "100 GB"
+   * }
+   * ```
+   */
+  storage?: `${number} GB`;
+  /**
+   * [Link resources](/docs/linking/) to your containers. This will:
+   *
+   * 1. Grant the permissions needed to access the resources.
+   * 2. Allow you to access it in your app using the [SDK](/docs/reference/sdk/).
+   *
+   * @example
+   *
+   * Takes a list of components to link to the containers.
+   *
+   * ```js
+   * {
+   *   link: [bucket, stripeKey]
+   * }
+   * ```
+   */
+  link?: FunctionArgs["link"];
+  /**
+   * Permissions and the resources that you need to access. These permissions are
+   * used to create the [task role](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-iam-roles.html).
+   *
+   * :::tip
+   * If you `link` the service to a resource, the permissions to access it are
+   * automatically added.
+   * :::
+   *
+   * @example
+   * Allow the container to read and write to an S3 bucket called `my-bucket`.
+   *
+   * ```js
+   * {
+   *   permissions: [
+   *     {
+   *       actions: ["s3:GetObject", "s3:PutObject"],
+   *       resources: ["arn:aws:s3:::my-bucket/*"]
+   *     },
+   *   ]
+   * }
+   * ```
+   *
+   * Allow the container to perform all actions on an S3 bucket called `my-bucket`.
+   *
+   * ```js
+   * {
+   *   permissions: [
+   *     {
+   *       actions: ["s3:*"],
+   *       resources: ["arn:aws:s3:::my-bucket/*"]
+   *     },
+   *   ]
+   * }
+   * ```
+   *
+   * Granting the container permissions to access all resources.
+   *
+   * ```js
+   * {
+   *   permissions: [
+   *     {
+   *       actions: ["*"],
+   *       resources: ["*"]
+   *     },
+   *   ]
+   * }
+   * ```
+   */
+  permissions?: FunctionArgs["permissions"];
+  /**
+   * Configure the Docker build command for building the image or specify a pre-built image.
+   *
+   * @default Build a Docker image from the Dockerfile in the root directory.
+   * @example
+   *
+   * Building a Docker image.
+   *
+   * Prior to building the image, SST will automatically add the `.sst` directory
+   * to the `.dockerignore` if not already present.
+   *
+   * ```js
+   * {
+   *   image: {
+   *     context: "./app",
+   *     dockerfile: "Dockerfile",
+   *     args: {
+   *       MY_VAR: "value"
+   *     }
+   *   }
+   * }
+   * ```
+   *
+   * Alternatively, you can pass in a pre-built image.
+   *
+   * ```js
+   * {
+   *   image: "nginxdemos/hello:plain-text"
+   * }
+   * ```
+   */
+  image?: Input<
+    | string
+    | {
+        /**
+         * The path to the [Docker build context](https://docs.docker.com/build/building/context/#local-context). The path is relative to your project's `sst.config.ts`.
+         * @default `"."`
+         * @example
+         *
+         * To change where the Docker build context is located.
+         *
+         * ```js
+         * {
+         *   context: "./app"
+         * }
+         * ```
+         */
+        context?: Input<string>;
+        /**
+         * The path to the [Dockerfile](https://docs.docker.com/reference/cli/docker/image/build/#file).
+         * The path is relative to the build `context`.
+         * @default `"Dockerfile"`
+         * @example
+         * To use a different Dockerfile.
+         * ```js
+         * {
+         *   dockerfile: "Dockerfile.prod"
+         * }
+         * ```
+         */
+        dockerfile?: Input<string>;
+        /**
+         * Key-value pairs of [build args](https://docs.docker.com/build/guide/build-args/) to pass to the Docker build command.
+         * @example
+         * ```js
+         * {
+         *   args: {
+         *     MY_VAR: "value"
+         *   }
+         * }
+         * ```
+         */
+        args?: Input<Record<string, Input<string>>>;
+        /**
+         * Tags to apply to the Docker image.
+         * @example
+         * ```js
+         * {
+         *   tags: ["v1.0.0", "commit-613c1b2"]
+         * }
+         * ```
+         */
+        tags?: Input<Input<string>[]>;
+        /**
+         * The stage to build up to in a [multi-stage Dockerfile](https://docs.docker.com/build/building/multi-stage/#stop-at-a-specific-build-stage).
+         * @example
+         * ```js
+         * {
+         *   target: "stage1"
+         * }
+         * ```
+         */
+        target?: Input<string>;
+      }
+  >;
+  /**
+   * The command to override the default command in the container.
+   * @example
+   * ```js
+   * {
+   *   command: ["npm", "run", "start"]
+   * }
+   * ```
+   */
+  command?: Input<Input<string>[]>;
+  /**
+   * The entrypoint that overrides the default entrypoint in the container.
+   * @example
+   * ```js
+   * {
+   *   entrypoint: ["/usr/bin/my-entrypoint"]
+   * }
+   * ```
+   */
+  entrypoint?: Input<string[]>;
+  /**
+   * Key-value pairs of values that are set as [container environment variables](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/taskdef-envfiles.html).
+   * The keys need to:
+   *
+   * 1. Start with a letter.
+   * 2. Be at least 2 characters long.
+   * 3. Contain only letters, numbers, or underscores.
+   *
+   * @example
+   *
+   * ```js
+   * {
+   *   environment: {
+   *     DEBUG: "true"
+   *   }
+   * }
+   * ```
+   */
+  environment?: FunctionArgs["environment"];
+  /**
+   * Key-value pairs of AWS Systems Manager Parameter Store parameter ARNs or AWS Secrets
+   * Manager secret ARNs. The values will be loaded into the container as environment
+   * variables.
+   * @example
+   * ```js
+   * {
+   *   ssm: {
+   *     DATABASE_PASSWORD: "arn:aws:secretsmanager:us-east-1:123456789012:secret:my-secret-123abc"
+   *   }
+   * }
+   * ```
+   */
+  ssm?: Input<Record<string, Input<string>>>;
+  /**
+   * Configure the logs in CloudWatch.
+   * @default `{ retention: "1 month" }`
+   * @example
+   * ```js
+   * {
+   *   logging: {
+   *     retention: "forever"
+   *   }
+   * }
+   * ```
+   */
+  logging?: Input<{
+    /**
+     * The duration the logs are kept in CloudWatch.
+     * @default `"1 month"`
+     */
+    retention?: Input<keyof typeof RETENTION>;
+  }>;
+  /**
+   * Mount Amazon EFS file systems into the container.
+   *
+   * @example
+   * Create an EFS file system.
+   *
+   * ```ts title="sst.config.ts"
+   * const vpc = new sst.aws.Vpc("MyVpc");
+   * const fileSystem = new sst.aws.Efs("MyFileSystem", { vpc });
+   * ```
+   *
+   * And pass it in.
+   *
+   * ```js
+   * {
+   *   volumes: [
+   *     {
+   *       efs: fileSystem,
+   *       path: "/mnt/efs"
+   *     }
+   *   ]
+   * }
+   * ```
+   *
+   * Or pass in a the EFS file system ID.
+   *
+   * ```js
+   * {
+   *   volumes: [
+   *     {
+   *       efs: {
+   *         fileSystem: "fs-12345678",
+   *         accessPoint: "fsap-12345678"
+   *       },
+   *       path: "/mnt/efs"
+   *     }
+   *   ]
+   * }
+   * ```
+   */
+  volumes?: Input<{
+    /**
+     * The Amazon EFS file system to mount.
+     */
+    efs: Input<
+      | Efs
+      | {
+          /**
+           * The ID of the EFS file system.
+           */
+          fileSystem: Input<string>;
+          /**
+           * The ID of the EFS access point.
+           */
+          accessPoint: Input<string>;
+        }
+    >;
+    /**
+     * The path to mount the volume.
+     */
+    path: Input<string>;
+  }>[];
+  /**
+   * Assigns the given IAM role name to the containers. This allows you to pass in a previously
+   * created role.
+   *
+   * :::caution
+   * When you pass in a role, it will not update it if you add `permissions` or `link` resources.
+   * :::
+   *
+   * By default, a new IAM role is created. It'll update this role if you add `permissions` or
+   * `link` resources.
+   *
+   * However, if you pass in a role, you'll need to update it manually if you add `permissions`
+   * or `link` resources.
+   *
+   * @default Creates a new role
+   * @example
+   * ```js
+   * {
+   *   taskRole: "my-task-role"
+   * }
+   * ```
+   */
+  taskRole?: Input<string>;
+  /**
+   * Assigns the given IAM role name to AWS ECS to launch and manage the containers. This
+   * allows you to pass in a previously created role.
+   *
+   * By default, a new IAM role is created.
+   *
+   * @default Creates a new role
+   * @example
+   * ```js
+   * {
+   *   executionRole: "my-execution-role"
+   * }
+   * ```
+   */
+  executionRole?: Input<string>;
+}
+
 export interface ClusterArgs {
   /**
    * The VPC to use for the cluster.
@@ -142,43 +843,16 @@ export interface ClusterArgs {
    * {
    *   vpc: {
    *     id: myVpc.id,
-   *     loadBalancerSubnets: myVpc.publicSubnets,
-   *     serviceSubnets: myVpc.publicSubnets,
    *     securityGroups: myVpc.securityGroups,
+   *     containerSubnets: myVpc.publicSubnets,
+   *     loadBalancerSubnets: myVpc.publicSubnets,
    *     cloudmapNamespaceId: myVpc.nodes.cloudmapNamespace.id,
    *     cloudmapNamespaceName: myVpc.nodes.cloudmapNamespace.name,
    *   }
    * }
    * ```
    */
-  vpc:
-    | Vpc
-    | Input<{
-        /**
-         * The ID of the VPC.
-         */
-        id: Input<string>;
-        /**
-         * A list of subnet IDs in the VPC to place the load balancer in.
-         */
-        loadBalancerSubnets: Input<Input<string>[]>;
-        /**
-         * A list of private subnet IDs in the VPC to place the services in.
-         */
-        serviceSubnets: Input<Input<string>[]>;
-        /**
-         * A list of VPC security group IDs for the service.
-         */
-        securityGroups: Input<Input<string>[]>;
-        /**
-         * The ID of the Cloud Map namespace to use for the service.
-         */
-        cloudmapNamespaceId: Input<string>;
-        /**
-         * The name of the Cloud Map namespace to use for the service.
-         */
-        cloudmapNamespaceName: Input<string>;
-      }>;
+  vpc: Vpc | Input<Prettify<ClusterVpcArgs>>;
   /** @internal */
   forceUpgrade?: "v2";
   /**
@@ -193,7 +867,7 @@ export interface ClusterArgs {
   };
 }
 
-export interface ClusterServiceArgs {
+export interface ClusterServiceArgs extends ClusterBaseArgs {
   /**
    * Configure how this component works in `sst dev`.
    *
@@ -201,11 +875,12 @@ export interface ClusterServiceArgs {
    * In `sst dev` your service is not deployed.
    * :::
    *
-   *  By default, your service in not deployed in `sst dev`. Instead, you can use the
-   * `dev.command` to start your app locally. It'll be run as a separate process in the
+   * By default, your service in not deployed in `sst dev`. Instead, you can set the
+   * `dev.command` and it'll be started locally in a separate tab in the
    * `sst dev` multiplexer. Read more about [`sst dev`](/docs/reference/cli/#dev).
    *
-   * To disable dev mode and deploy your service, pass in `false`.
+   * This makes it so that the container doesn't have to be redeployed on every change. To
+   * disable this and deploy your service in `sst dev`, pass in `false`.
    */
   dev?:
     | false
@@ -249,7 +924,7 @@ export interface ClusterServiceArgs {
    * {
    *   public: {
    *     domain: "example.com",
-   *     ports: [
+   *     rules: [
    *       { listen: "80/http" },
    *       { listen: "443/https", forward: "80/http" }
    *     ]
@@ -408,6 +1083,8 @@ export interface ClusterServiceArgs {
           dns?: Input<false | (Dns & {})>;
         }
     >;
+    /** @deprecated Use `rules` instead. */
+    ports?: Input<Prettify<ServiceRules>[]>;
     /**
      * Configure the mapping for the ports the public endpoint listens to and forwards to
      * the service.
@@ -428,7 +1105,7 @@ export interface ClusterServiceArgs {
      * ```js
      * {
      *   public: {
-     *     ports: [
+     *     rules: [
      *       { listen: "80/http", forward: "8080/http" }
      *     ]
      *   }
@@ -441,7 +1118,7 @@ export interface ClusterServiceArgs {
      * ```js
      * {
      *   public: {
-     *     ports: [
+     *     rules: [
      *       { listen: "80/http" }
      *     ]
      *   }
@@ -454,7 +1131,7 @@ export interface ClusterServiceArgs {
      * ```js
      * {
      *   public: {
-     *     ports: [
+     *     rules: [
      *       { listen: "80/http", container: "app" },
      *       { listen: "8000/http", container: "admin" },
      *     ]
@@ -462,42 +1139,7 @@ export interface ClusterServiceArgs {
      * }
      * ```
      */
-    ports: Input<
-      {
-        /**
-         * The port and protocol the service listens on. Uses the format `{port}/{protocol}`.
-         */
-        listen: Input<Port>;
-        /**
-         * The port and protocol of the container the service forwards the traffic to. Uses the
-         * format `{port}/{protocol}`.
-         * @default The same port and protocol as `listen`.
-         */
-        forward?: Input<Port>;
-        /**
-         * Configure path-based routing. Only requests matching the path are forwarded to
-         * the container. Only applicable to "http" protocols.
-         *
-         * @default Requests to all paths are forwarded.
-         */
-        path?: Input<string>;
-        /**
-         * The name of the container to forward the traffic to.
-         *
-         * If there is only one container, this is not needed. The traffic is automatically
-         * forwarded to the container.
-         *
-         * If there is more than one container, this is required.
-         *
-         * @default The container name when there is only one container.
-         */
-        container?: Input<string>;
-        /**
-         * The port and protocol to redirect the traffic to. Uses the format `{port}/{protocol}`.
-         */
-        redirect?: Input<Port>;
-      }[]
-    >;
+    rules?: Input<Prettify<ServiceRules>[]>;
   }>;
   /**
    * Configure a load balancer to route traffic to the containers.
@@ -519,7 +1161,7 @@ export interface ClusterServiceArgs {
    * {
    *   loadBalancer: {
    *     domain: "example.com",
-   *     ports: [
+   *     rules: [
    *       { listen: "80/http", redirect: "443/https" },
    *       { listen: "443/https", forward: "80/http" }
    *     ]
@@ -531,7 +1173,7 @@ export interface ClusterServiceArgs {
     /**
      * Configure if the load balancer should be public or private.
      *
-     * When set to `false`, the load balancer enpoint will only be accessible within the
+     * When set to `false`, the load balancer endpoint will only be accessible within the
      * VPC.
      *
      * @default `true`
@@ -697,6 +1339,8 @@ export interface ClusterServiceArgs {
           dns?: Input<false | (Dns & {})>;
         }
     >;
+    /** @deprecated Use `rules` instead. */
+    ports?: Input<Prettify<ServiceRules>[]>;
     /**
      * Configure the mapping for the ports the load balancer listens to, forwards, or redirects to
      * the service.
@@ -717,7 +1361,7 @@ export interface ClusterServiceArgs {
      * Here we are listening on port `80` and forwarding it to the service on port `8080`.
      * ```js
      * {
-     *   ports: [
+     *   rules: [
      *     { listen: "80/http", forward: "8080/http" }
      *   ]
      * }
@@ -728,7 +1372,7 @@ export interface ClusterServiceArgs {
      *
      * ```js
      * {
-     *   ports: [
+     *   rules: [
      *     { listen: "80/http" }
      *   ]
      * }
@@ -739,7 +1383,7 @@ export interface ClusterServiceArgs {
      *
      * ```js
      * {
-     *   ports: [
+     *   rules: [
      *     { listen: "80/http", container: "app" },
      *     { listen: "8000/http", container: "admin" }
      *   ]
@@ -750,9 +1394,17 @@ export interface ClusterServiceArgs {
      *
      * ```js
      * {
-     *   ports: [
-     *     { listen: "80/http", container: "app", path: "/api/*" },
-     *     { listen: "80/http", container: "admin", path: "/admin/*" }
+     *   rules: [
+     *     {
+     *       listen: "80/http",
+     *       container: "app",
+     *       conditions: { path: "/api/*" }
+     *     },
+     *     {
+     *       listen: "80/http",
+     *       container: "admin",
+     *       conditions: { path: "/admin/*" }
+     *     }
      *   ]
      * }
      * ```
@@ -762,56 +1414,14 @@ export interface ClusterServiceArgs {
      *
      * ```js
      * {
-     *   ports: [
+     *   rules: [
      *     { listen: "80/http", redirect: "443/https" },
      *     { listen: "443/https", forward: "80/http" }
      *   ]
      * }
      * ```
      */
-    ports: Input<
-      {
-        /**
-         * The port and protocol the service listens on. Uses the format `{port}/{protocol}`.
-         */
-        listen: Input<Port>;
-        /**
-         * The port and protocol of the container the service forwards the traffic to. Uses the
-         * format `{port}/{protocol}`.
-         * @default The same port and protocol as `listen`.
-         */
-        forward?: Input<Port>;
-        /**
-         * Configure path-based routing. Only requests matching the path are forwarded to
-         * the container. Only applicable to "http" protocols.
-         *
-         * The path pattern is case-sensitive, supports wildcards, and can be up to 128
-         * characters.
-         * - `*` matches 0 or more characters.
-         * - `?` matches exactly 1 character.
-         *
-         * For example:
-         * - `/api/*`
-         * - `/api/*.png
-         *
-         * @default Requests to all paths are forwarded.
-         */
-        path?: Input<string>;
-        /**
-         * The name of the container to forward the traffic to.
-         *
-         * You need this if there's more than one container.
-         *
-         * If there is only one container, the traffic is automatically forwarded to that
-         * container.
-         */
-        container?: Input<string>;
-        /**
-         * The port and protocol to redirect the traffic to. Uses the format `{port}/{protocol}`.
-         */
-        redirect?: Input<Port>;
-      }[]
-    >;
+    rules?: Input<Prettify<ServiceRules>[]>;
     /**
      * Configure the health check that the load balancer runs on your containers.
      *
@@ -883,7 +1493,7 @@ export interface ClusterServiceArgs {
      *
      * ```js
      * {
-     *   ports: [
+     *   rules: [
      *     { listen: "80/http", forward: "8080/http" }
      *   ],
      *   health: {
@@ -971,134 +1581,6 @@ export interface ClusterServiceArgs {
     port: number;
   }>;
   /**
-   * The CPU architecture of the container in this service.
-   * @default `"x86_64"`
-   * @example
-   * ```js
-   * {
-   *   architecture: "arm64"
-   * }
-   * ```
-   */
-  architecture?: Input<"x86_64" | "arm64">;
-  /**
-   * The amount of CPU allocated to the container in this service. If there are multiple
-   * containers in the service, this is the total amount of CPU shared across all the
-   * containers.
-   *
-   * :::note
-   * [View the valid combinations](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-tasks-services.html#fargate-tasks-size) of CPU and memory.
-   * :::
-   *
-   * @default `"0.25 vCPU"`
-   * @example
-   * ```js
-   * {
-   *   cpu: "1 vCPU"
-   * }
-   * ```
-   */
-  cpu?: keyof typeof supportedCpus;
-  /**
-   * The amount of memory allocated to the container in this service. If there are multiple
-   * containers in the service, this is the total amount of memory shared across all the
-   * containers.
-   *
-   * :::note
-   * [View the valid combinations](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-tasks-services.html#fargate-tasks-size) of CPU and memory.
-   * :::
-   *
-   * @default `"0.5 GB"`
-   *
-   * @example
-   * ```js
-   * {
-   *   memory: "2 GB"
-   * }
-   * ```
-   */
-  memory?: `${number} GB`;
-  /**
-   * The amount of ephemeral storage (in GB) allocated to the container in this service.
-   *
-   * @default `"20 GB"`
-   *
-   * @example
-   * ```js
-   * {
-   *   storage: "100 GB"
-   * }
-   * ```
-   */
-  storage?: `${number} GB`;
-  /**
-   * [Link resources](/docs/linking/) to your service. This will:
-   *
-   * 1. Grant the permissions needed to access the resources.
-   * 2. Allow you to access it in your app using the [SDK](/docs/reference/sdk/).
-   *
-   * @example
-   *
-   * Takes a list of components to link to the service.
-   *
-   * ```js
-   * {
-   *   link: [bucket, stripeKey]
-   * }
-   * ```
-   */
-  link?: FunctionArgs["link"];
-  /**
-   * Permissions and the resources that the service needs to access. These permissions are
-   * used to create the service's [task role](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-iam-roles.html).
-   *
-   * :::tip
-   * If you `link` the service to a resource, the permissions to access it are
-   * automatically added.
-   * :::
-   *
-   * @example
-   * Allow the service to read and write to an S3 bucket called `my-bucket`.
-   *
-   * ```js
-   * {
-   *   permissions: [
-   *     {
-   *       actions: ["s3:GetObject", "s3:PutObject"],
-   *       resources: ["arn:aws:s3:::my-bucket/*"]
-   *     },
-   *   ]
-   * }
-   * ```
-   *
-   * Allow the service to perform all actions on an S3 bucket called `my-bucket`.
-   *
-   * ```js
-   * {
-   *   permissions: [
-   *     {
-   *       actions: ["s3:*"],
-   *       resources: ["arn:aws:s3:::my-bucket/*"]
-   *     },
-   *   ]
-   * }
-   * ```
-   *
-   * Granting the service permissions to access all resources.
-   *
-   * ```js
-   * {
-   *   permissions: [
-   *     {
-   *       actions: ["*"],
-   *       resources: ["*"]
-   *     },
-   *   ]
-   * }
-   * ```
-   */
-  permissions?: FunctionArgs["permissions"];
-  /**
    * Configure the service to automatically scale up or down based on the CPU or memory
    * utilization of a container. By default, scaling is disabled and the service will run
    * in a single container.
@@ -1172,225 +1654,66 @@ export interface ClusterServiceArgs {
      * ```
      */
     memoryUtilization?: Input<false | number>;
+    /**
+     * The target request count to scale up or down. It'll scale up when the request count is
+     * above the target and scale down when it's below the target.
+     * @default `false`
+     * @example
+     * ```js
+     * {
+     *   scaling: {
+     *     requestCount: 1500
+     *   }
+     * }
+     * ```
+     */
+    requestCount?: Input<false | number>;
   }>;
   /**
-   * Configure the Docker build command for building the image or specify a pre-built image.
+   * Configure the service to use Fargate Spot capacity provider.
    *
-   * @default Build a Docker image from the Dockerfile in the root directory.
+   * Fargate Spot allows you to run containers on spare AWS compute capacity at a discounted
+   * rate compared to regular Fargate pricing. AWS may reclaim this capacity with a two-minute
+   * warning when needed.
+   *
+   * :::caution
+   * Setting or unsetting the `capacity` property requires recreating the ECS service,
+   * which can cause temporary downtime.
+   * :::
+   *
+   * @default Regular Fargate (no spot instances)
    * @example
    *
-   * Building a Docker image.
-   *
-   * Prior to building the image, SST will automatically add the `.sst` directory
-   * to the `.dockerignore` if not already present.
-   *
+   * Use only Fargate Spot.
    * ```js
    * {
-   *   image: {
-   *     context: "./app",
-   *     dockerfile: "Dockerfile",
-   *     args: {
-   *       MY_VAR: "value"
-   *     }
+   *   capacity: "spot"
+   * }
+   * ```
+   *
+   * Use 50% Fargate and 50% Fargate Spot. And ensure that the first 2 tasks use Fargate.
+   * ```js
+   * {
+   *   capacity: {
+   *     fargate: { weight: 1, base: 2 },
+   *     spot: { weight: 1 }
    *   }
    * }
    * ```
-   *
-   * Alternatively, you can pass in a pre-built image.
-   *
-   * ```js
-   * {
-   *   image: "nginxdemos/hello:plain-text"
-   * }
-   * ```
    */
-  image?: Input<
-    | string
+  capacity?: Input<
+    | "spot"
     | {
-        /**
-         * The path to the [Docker build context](https://docs.docker.com/build/building/context/#local-context). The path is relative to your project's `sst.config.ts`.
-         * @default `"."`
-         * @example
-         *
-         * To change where the Docker build context is located.
-         *
-         * ```js
-         * {
-         *   context: "./app"
-         * }
-         * ```
-         */
-        context?: Input<string>;
-        /**
-         * The path to the [Dockerfile](https://docs.docker.com/reference/cli/docker/image/build/#file).
-         * The path is relative to the build `context`.
-         * @default `"Dockerfile"`
-         * @example
-         * To use a different Dockerfile.
-         * ```js
-         * {
-         *   dockerfile: "Dockerfile.prod"
-         * }
-         * ```
-         */
-        dockerfile?: Input<string>;
-        /**
-         * Key-value pairs of [build args](https://docs.docker.com/build/guide/build-args/) to pass to the Docker build command.
-         * @example
-         * ```js
-         * {
-         *   args: {
-         *     MY_VAR: "value"
-         *   }
-         * }
-         * ```
-         */
-        args?: Input<Record<string, Input<string>>>;
-        /**
-         * Tags to apply to the Docker image.
-         * @example
-         * ```js
-         * {
-         *   tags: ["v1.0.0", "commit-613c1b2"]
-         * }
-         * ```
-         */
-        tags?: Input<Input<string>[]>;
+        fargate?: Input<{
+          base?: Input<number>;
+          weight: Input<number>;
+        }>;
+        spot?: Input<{
+          base?: Input<number>;
+          weight: Input<number>;
+        }>;
       }
   >;
-  /**
-   * The command to override the default command in the container.
-   * @example
-   * ```js
-   * {
-   *   command: ["npm", "run", "start"]
-   * }
-   * ```
-   */
-  command?: Input<Input<string>[]>;
-  /**
-   * The entrypoint to override the default entrypoint in the container.
-   * @example
-   * ```js
-   * {
-   *   entrypoint: ["/usr/bin/my-entrypoint"]
-   * }
-   * ```
-   */
-  entrypoint?: Input<string[]>;
-  /**
-   * Key-value pairs of values that are set as [container environment variables](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/taskdef-envfiles.html).
-   * The keys need to:
-   * - Start with a letter
-   * - Be at least 2 characters long
-   * - Contain only letters, numbers, or underscores
-   *
-   * @example
-   *
-   * ```js
-   * {
-   *   environment: {
-   *     DEBUG: "true"
-   *   }
-   * }
-   * ```
-   */
-  environment?: FunctionArgs["environment"];
-  /**
-   * Key-value pairs of AWS Systems Manager Parameter Store parameter ARNs or AWS Secrets
-   * Manager secret ARNs. The values will be loaded into the container as environment
-   * variables.
-   * @example
-   * ```js
-   * {
-   *   ssm: {
-   *     DATABASE_PASSWORD: "arn:aws:secretsmanager:us-east-1:123456789012:secret:my-secret-123abc"
-   *   }
-   * }
-   * ```
-   */
-  ssm?: Input<Record<string, Input<string>>>;
-  /**
-   * Configure the service's logs in CloudWatch.
-   * @default `{ retention: "1 month" }`
-   * @example
-   * ```js
-   * {
-   *   logging: {
-   *     retention: "forever"
-   *   }
-   * }
-   * ```
-   */
-  logging?: Input<{
-    /**
-     * The duration the logs are kept in CloudWatch.
-     * @default `"1 month"`
-     */
-    retention?: Input<keyof typeof RETENTION>;
-  }>;
-  /**
-   * Mount Amazon EFS file systems into the container.
-   *
-   * @example
-   * Create an EFS file system.
-   *
-   * ```ts title="sst.config.ts"
-   * const vpc = new sst.aws.Vpc("MyVpc");
-   * const fileSystem = new sst.aws.Efs("MyFileSystem", { vpc });
-   * ```
-   *
-   * And pass it in.
-   *
-   * ```js
-   * {
-   *   volumes: [
-   *     {
-   *       efs: fileSystem,
-   *       path: "/mnt/efs"
-   *     }
-   *   ]
-   * }
-   * ```
-   *
-   * Or pass in a the EFS file system ID.
-   *
-   * ```js
-   * {
-   *   volumes: [
-   *     {
-   *       efs: {
-   *         fileSystem: "fs-12345678",
-   *         accessPoint: "fsap-12345678"
-   *       },
-   *       path: "/mnt/efs"
-   *     }
-   *   ]
-   * }
-   * ```
-   */
-  volumes?: Input<{
-    /**
-     * The Amazon EFS file system to mount.
-     */
-    efs: Input<
-      | Efs
-      | {
-          /**
-           * The ID of the EFS file system.
-           */
-          fileSystem: Input<string>;
-          /**
-           * The ID of the EFS access point.
-           */
-          accessPoint: Input<string>;
-        }
-    >;
-    /**
-     * The path to mount the volume.
-     */
-    path: Input<string>;
-  }>[];
   /**
    * Configure the health check that ECS runs on your containers.
    *
@@ -1411,7 +1734,7 @@ export interface ClusterServiceArgs {
    * {
    *   health: {
    *     command: ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"],
-   *     startPeriod: "60 seconds"
+   *     startPeriod: "60 seconds",
    *     timeout: "5 seconds",
    *     interval: "30 seconds",
    *     retries: 3
@@ -1465,7 +1788,7 @@ export interface ClusterServiceArgs {
    * The containers to run in the service.
    *
    * :::tip
-   * You can optiionally run multiple containers in a service.
+   * You can optionally run multiple containers in a service.
    * :::
    *
    * By default this starts a single container. To add multiple containers in the service, pass
@@ -1489,7 +1812,7 @@ export interface ClusterServiceArgs {
    * }
    * ```
    *
-   * If you sepcify `containers`, you cannot list the above args at the top-level. For example,
+   * If you specify `containers`, you cannot list the above args at the top-level. For example,
    * you **cannot** pass in `image` at the top level.
    *
    * ```diff lang="ts"
@@ -1510,167 +1833,7 @@ export interface ClusterServiceArgs {
    *
    * You will need to pass in `image` as a part of the `containers`.
    */
-  containers?: Input<{
-    /**
-     * The name of the container.
-     *
-     * This is used as the `--name` option in the Docker run command.
-     */
-    name: Input<string>;
-    /**
-     * The amount of CPU allocated to the container.
-     *
-     * By default, a container can use up to all the CPU allocated to the service. If set,
-     * the container is capped at this allocation even if the service has idle CPU available.
-     *
-     * Note that the sum of all the containers' CPU must be less than or equal to the
-     * service's CPU.
-     *
-     * @example
-     * ```js
-     * {
-     *   cpu: "0.25 vCPU"
-     * }
-     * ```
-     */
-    cpu?: `${number} vCPU`;
-    /**
-     * The amount of memory allocated to the container.
-     *
-     * By default, a container can use up to all the memory allocated to the service. If set,
-     * the container is capped at this allocation. If exceeded, the container will be killed
-     * even if the service has idle memory available.
-     *
-     * Note that the sum of all the containers' memory must be less than or equal to the
-     * service's memory.
-     *
-     * @example
-     * ```js
-     * {
-     *   memory: "0.5 GB"
-     * }
-     * ```
-     */
-    memory?: `${number} GB`;
-    /**
-     * Configure the Docker image for the container. Same as the top-level [`image`](#image).
-     */
-    image?: Input<
-      | string
-      | {
-          /**
-           * The path to the Docker build context. Same as the top-level
-           * [`image.context`](#image-context).
-           */
-          context?: Input<string>;
-          /**
-           * The path to the Dockerfile. Same as the top-level
-           * [`image.dockerfile`](#image-dockerfile).
-           */
-          dockerfile?: Input<string>;
-          /**
-           * Key-value pairs of build args. Same as the top-level [`image.args`](#image-args).
-           */
-          args?: Input<Record<string, Input<string>>>;
-        }
-    >;
-    /**
-     * The command to override the default command in the container. Same as the top-level
-     * [`command`](#command).
-     */
-    command?: Input<string[]>;
-    /**
-     * The entrypoint to override the default entrypoint in the container. Same as the top-level
-     * [`entrypoint`](#entrypoint).
-     */
-    entrypoint?: Input<string[]>;
-    /**
-     * Key-value pairs of values that are set as container environment variables. Same as the
-     * top-level [`environment`](#environment).
-     */
-    environment?: FunctionArgs["environment"];
-    /**
-     * Configure the service's logs in CloudWatch. Same as the top-level [`logging`](#logging).
-     */
-    logging?: Input<{
-      /**
-       * The duration the logs are kept in CloudWatch. Same as the top-level
-       * [`logging.retention`](#logging-retention).
-       */
-      retention?: Input<keyof typeof RETENTION>;
-    }>;
-    /**
-     * Key-value pairs of AWS Systems Manager Parameter Store parameter ARNs or AWS Secrets
-     * Manager secret ARNs. The values will be loaded into the container as environment
-     * variables. Same as the top-level [`ssm`](#ssm).
-     */
-    ssm?: ClusterServiceArgs["ssm"];
-    /**
-     * Mount Amazon EFS file systems into the container. Same as the top-level
-     * [`efs`](#efs).
-     */
-    volumes?: ClusterServiceArgs["volumes"];
-    /**
-     * Configure the health check for the container. Same as the top-level
-     * [`health`](#health).
-     */
-    health?: ClusterServiceArgs["health"];
-    /**
-     * Configure how this container works in `sst dev`. Same as the top-level
-     * [`dev`](#dev).
-     */
-    dev?: {
-      /**
-       * The command that `sst dev` runs to start this in dev mode. Same as the top-level
-       * [`dev.command`](#dev-command).
-       */
-      command: Input<string>;
-      /**
-       * Configure if you want to automatically start this when `sst dev` starts. Same as the
-       * top-level [`dev.autostart`](#dev-autostart).
-       */
-      autostart?: Input<boolean>;
-      /**
-       * Change the directory from where the `command` is run. Same as the top-level
-       * [`dev.directory`](#dev-directory).
-       */
-      directory?: Input<string>;
-    };
-  }>[];
-  /**
-   * Assigns the given IAM role name to the containers running in the service. This allows you to pass in a previously created role.
-   *
-   * :::caution
-   * When you pass in a role, the service will not update it if you add `permissions` or `link` resources.
-   * :::
-   *
-   * By default, the service creates a new IAM role when it's created. It'll update this role if you add `permissions` or `link` resources.
-   *
-   * However, if you pass in a role, you'll need to update it manually if you add `permissions` or `link` resources.
-   *
-   * @default Creates a new role
-   * @example
-   * ```js
-   * {
-   *   taskRole: "my-task-role"
-   * }
-   * ```
-   */
-  taskRole?: Input<string>;
-  /**
-   * Assigns the given IAM role name to AWS ECS to launch and manage the containers in the service. This allows you to pass in a previously created role.
-   *
-   * By default, the service creates a new IAM role when it's created.
-   *
-   * @default Creates a new role
-   * @example
-   * ```js
-   * {
-   *   executionRole: "my-execution-role"
-   * }
-   * ```
-   */
-  executionRole?: Input<string>;
+  containers?: Input<Prettify<ServiceContainerArgs>>[];
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.
@@ -1680,10 +1843,6 @@ export interface ClusterServiceArgs {
      * Transform the Docker Image resource.
      */
     image?: Transform<ImageArgs>;
-    /**
-     * Transform the ECS Service resource.
-     */
-    service?: Transform<ecs.ServiceArgs>;
     /**
      * Transform the ECS Execution IAM Role resource.
      */
@@ -1696,6 +1855,14 @@ export interface ClusterServiceArgs {
      * Transform the ECS Task Definition resource.
      */
     taskDefinition?: Transform<ecs.TaskDefinitionArgs>;
+    /**
+     * Transform the CloudWatch log group resource.
+     */
+    logGroup?: Transform<cloudwatch.LogGroupArgs>;
+    /**
+     * Transform the ECS Service resource.
+     */
+    service?: Transform<ecs.ServiceArgs>;
     /**
      * Transform the AWS Load Balancer resource.
      */
@@ -1716,6 +1883,128 @@ export interface ClusterServiceArgs {
      * Transform the AWS Application Auto Scaling target resource.
      */
     autoScalingTarget?: Transform<appautoscaling.TargetArgs>;
+  };
+}
+
+export interface ClusterTaskArgs extends ClusterBaseArgs {
+  /**
+   * The containers to run in the task.
+   *
+   * :::tip
+   * You can optionally run multiple containers in a task.
+   * :::
+   *
+   * By default this starts a single container. To add multiple containers in the task, pass
+   * in an array of containers args.
+   *
+   * ```ts
+   * {
+   *   containers: [
+   *     {
+   *       name: "app",
+   *       image: "nginxdemos/hello:plain-text"
+   *     },
+   *     {
+   *       name: "admin",
+   *       image: {
+   *         context: "./admin",
+   *         dockerfile: "Dockerfile"
+   *       }
+   *     }
+   *   ]
+   * }
+   * ```
+   *
+   * If you specify `containers`, you cannot list the above args at the top-level. For example,
+   * you **cannot** pass in `image` at the top level.
+   *
+   * ```diff lang="ts"
+   * {
+   * -  image: "nginxdemos/hello:plain-text",
+   *   containers: [
+   *     {
+   *       name: "app",
+   *       image: "nginxdemos/hello:plain-text"
+   *     },
+   *     {
+   *       name: "admin",
+   *       image: "nginxdemos/hello:plain-text"
+   *     }
+   *   ]
+   * }
+   * ```
+   *
+   * You will need to pass in `image` as a part of the `containers`.
+   */
+  containers?: Input<Prettify<TaskContainerArgs>>[];
+  /**
+   * Configure how this component works in `sst dev`.
+   *
+   * :::note
+   * In `sst dev` a _stub_ version of your task is deployed.
+   * :::
+   *
+   * By default, your task in not deployed in `sst dev`. Instead, you can set the `dev.command`
+   * and it'll run locally in a **Tasks** tab in the `sst dev` multiplexer.
+   *
+   * Here's what happens when you run `sst dev`:
+   *
+   * 1. A _stub_ version of your task is deployed. This is a minimal image that starts up
+   *    faster.
+   * 2. When your task is started through the SDK, the stub version is provisioned. This can
+   *    take roughly **10 - 20 seconds**.
+   * 3. The stub version proxies the payload to your local machine using the same events
+   *    system used by [Live](/docs/live/).
+   * 4. The `dev.command` is called to run your task locally. Once complete, the stub version
+   *    of your task is stopped as well.
+   *
+   * The advantage with this approach is that you can test your task locally even it's invoked
+   * remotely, or through a cron job.
+   *
+   * :::note
+   * You are charged for the time it takes to run the stub version of your task.
+   * :::
+   *
+   * Since the stub version runs while your task is running, you are charged for the time it
+   * takes to run. This is roughly **$0.02 per hour**.
+   *
+   * To disable this and deploy your task in `sst dev`, pass in `false`. Read more about
+   * [Live](/docs/live/) and [`sst dev`](/docs/reference/cli/#dev).
+   */
+  dev?:
+    | false
+    | {
+        /**
+         * The command that `sst dev` runs in dev mode.
+         */
+        command?: Input<string>;
+        /**
+         * Change the directory from where the `command` is run.
+         * @default Uses the `image.dockerfile` path
+         */
+        directory?: Input<string>;
+      };
+  /**
+   * [Transform](/docs/components#transform) how this component creates its underlying
+   * resources.
+   */
+  transform?: {
+    /**
+     * Transform the Docker Image resource.
+     */
+    image?: Transform<ImageArgs>;
+    /**
+     * Transform the ECS Execution IAM Role resource.
+     */
+    executionRole?: Transform<iam.RoleArgs>;
+    /**
+     * Transform the ECS Task IAM Role resource.
+     */
+    taskRole?: Transform<iam.RoleArgs>;
+    /**
+     * Transform the ECS Task Definition resource.
+     */
+    taskDefinition?: Transform<ecs.TaskDefinitionArgs>;
     /**
      * Transform the CloudWatch log group resource.
      */
@@ -1724,8 +2013,8 @@ export interface ClusterServiceArgs {
 }
 
 /**
- * The `Cluster` component lets you create a cluster of containers and add services to them.
- * It uses [Amazon ECS](https://aws.amazon.com/ecs/) on [AWS Fargate](https://aws.amazon.com/fargate/).
+ * The `Cluster` component lets you create a cluster of containers to your app. It uses
+ * [Amazon ECS](https://aws.amazon.com/ecs/) on [AWS Fargate](https://aws.amazon.com/fargate/).
  *
  * @example
  *
@@ -1736,10 +2025,35 @@ export interface ClusterServiceArgs {
  * const cluster = new sst.aws.Cluster("MyCluster", { vpc });
  * ```
  *
- * #### Add a service
+ * Once created, you can add the following to your cluster:
+ *
+ * - Services: These are containers that are always running, like web or application servers.
+ *   They automatically restart if they fail.
+ * - Tasks: These are containers that are used for long running asynchronous work, like data
+ *   processing.
+ *
+ * ---
+ *
+ * ### Services
+ *
+ * Add a service to your cluster.
  *
  * ```ts title="sst.config.ts"
  * cluster.addService("MyService");
+ * ```
+ *
+ * #### Configure the container image
+ *
+ * By default, the service will look for a Dockerfile in the root directory. Optionally
+ * configure the image context and dockerfile.
+ *
+ * ```ts title="sst.config.ts"
+ * cluster.addService("MyService", {
+ *   image: {
+ *     context: "./app",
+ *     dockerfile: "Dockerfile"
+ *   }
+ * });
  * ```
  *
  * #### Enable auto-scaling
@@ -1783,7 +2097,7 @@ export interface ClusterServiceArgs {
  * cluster.addService("MyService", {
  *   loadBalancer: {
  *     domain: "example.com",
- *     ports: [
+ *     rules: [
  *       { listen: "80/http" },
  *       { listen: "443/https", forward: "80/http" },
  *     ]
@@ -1804,14 +2118,85 @@ export interface ClusterServiceArgs {
  * });
  * ```
  *
- * If your service is written in Node.js, you can use the [SDK](/docs/reference/sdk/)
- * to access the linked resources.
+ * You can use the [SDK](/docs/reference/sdk/) to access the linked resources in your service.
  *
  * ```ts title="app.ts"
  * import { Resource } from "sst";
  *
  * console.log(Resource.MyBucket.name);
  * ```
+ *
+ * ---
+ *
+ * ### Tasks
+ *
+ * Add a task to your cluster.
+ *
+ * ```ts title="sst.config.ts"
+ * const task = cluster.addTask("MyTask");
+ * ```
+ *
+ * #### Configure the container image
+ *
+ * By default, the task will look for a Dockerfile in the root directory. Optionally
+ * configure the image context and dockerfile.
+ *
+ * ```ts title="sst.config.ts"
+ * cluster.addTask("MyTask", {
+ *   image: {
+ *     context: "./app",
+ *     dockerfile: "Dockerfile"
+ *   }
+ * });
+ * ```
+ *
+ * #### Link resources
+ *
+ * [Link resources](/docs/linking/) to your task. This will grant permissions
+ * to the resources and allow you to access it in your app.
+ *
+ * ```ts {4} title="sst.config.ts"
+ * const bucket = new sst.aws.Bucket("MyBucket");
+ *
+ * cluster.addTask("MyTask", {
+ *   link: [bucket]
+ * });
+ * ```
+ *
+ * You can use the [SDK](/docs/reference/sdk/) to access the linked resources in your task.
+ *
+ * ```ts title="app.ts"
+ * import { Resource } from "sst";
+ *
+ * console.log(Resource.MyBucket.name);
+ * ```
+ *
+ * #### Task SDK
+ *
+ * With the [Task JS SDK](/docs/component/aws/task#sdk), you can run your tasks, stop your
+ * tasks, and get the status of your tasks.
+ *
+ * For example, you can link the task to a function in your app.
+ *
+ * ```ts title="sst.config.ts" {3}
+ * new sst.aws.Function("MyFunction", {
+ *   handler: "src/lambda.handler",
+ *   link: [task]
+ * });
+ * ```
+ *
+ * Then from your function start the task.
+ *
+ * ```ts title="src/lambda.ts"
+ * import { Resource } from "sst";
+ * import { task } from "sst/aws/task";
+ *
+ * const runRet = await task.run(Resource.MyTask);
+ * const taskArn = runRet.tasks[0].taskArn;
+ * ```
+ *
+ * If you are not using Node.js, you can use the AWS SDK instead. Here's
+ * [how to run a task](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_RunTask.html).
  *
  * ---
  *
@@ -1822,8 +2207,11 @@ export interface ClusterServiceArgs {
  * _Ephemeral Storage_ for free with additional storage at $0.000111 per GB per hour. Each
  * container also gets a public IPv4 address at $0.005 per hour.
  *
- * That works out to $0.04048 x 0.25 x 24 x 30 + $0.004445 x 0.5 x 24 x 30 + $0.005 x 24 x 30
- * or **$13 per month**.
+ * For a service, works out to $0.04048 x 0.25 x 24 x 30 + $0.004445 x 0.5 x 24 x 30 + $0.005
+ * x 24 x 30 or **$13 per month**.
+ *
+ * For a task, it works out to $0.04048 x 0.25 + $0.004445 x 0.5 + $0.005. Or **$0.02 per hour**
+ * your task runs for.
  *
  * Adjust this for the `cpu`, `memory` and `storage` you are using. And
  * check the prices for _Linux/ARM_ if you are using `arm64` as your `architecture`.
@@ -1835,6 +2223,8 @@ export interface ClusterServiceArgs {
  * #### Scaling
  *
  * By default, `scaling` is disabled. If enabled, adjust the above for the number of containers.
+ *
+ * Scaling doesn't apply to tasks.
  *
  * #### API Gateway
  *
@@ -1848,7 +2238,7 @@ export interface ClusterServiceArgs {
  *
  * #### Application Load Balancer
  *
- * If you add `loadBalancer` _HTTP_ or _HTTPS_ `ports`, an ALB is created at $0.0225 per hour,
+ * If you add `loadBalancer` _HTTP_ or _HTTPS_ `rules`, an ALB is created at $0.0225 per hour,
  * $0.008 per LCU-hour, and $0.005 per hour if HTTPS with a custom domain is used. Where LCU
  * is a measure of how much traffic is processed.
  *
@@ -1861,7 +2251,7 @@ export interface ClusterServiceArgs {
  *
  * #### Network Load Balancer
  *
- * If you add `loadBalancer` _TCP_, _UDP_, or _TLS_ `ports`, an NLB is created at $0.0225 per hour and
+ * If you add `loadBalancer` _TCP_, _UDP_, or _TLS_ `rules`, an NLB is created at $0.0225 per hour and
  * $0.006 per NLCU-hour. Where NCLU is a measure of how much traffic is processed.
  *
  * That works out to $0.0225 x 24 x 30 or **$16 per month**. Also add the NLCU-hour used.
@@ -1871,9 +2261,9 @@ export interface ClusterServiceArgs {
  * for more details.
  */
 export class Cluster extends Component {
-  private constructorArgs: ClusterArgs;
   private constructorOpts: ComponentResourceOptions;
   private cluster: ecs.Cluster;
+  private vpc: Vpc | Output<Prettify<ClusterVpcsNormalizedArgs>>;
   public static v1 = ClusterV1;
 
   constructor(
@@ -1904,11 +2294,44 @@ export class Cluster extends Component {
       forceUpgrade: args.forceUpgrade,
     });
 
+    const vpc = normalizeVpc();
     const cluster = createCluster();
 
-    this.constructorArgs = args;
     this.constructorOpts = opts;
     this.cluster = cluster;
+    this.vpc = vpc;
+
+    function normalizeVpc() {
+      // "vpc" is a Vpc.v1 component
+      if (args.vpc instanceof VpcV1) {
+        throw new VisibleError(
+          `You are using the "Vpc.v1" component. Please migrate to the latest "Vpc" component.`,
+        );
+      }
+
+      // "vpc" is a Vpc component
+      if (args.vpc instanceof Vpc) {
+        return args.vpc;
+      }
+
+      // "vpc" is object
+      return output(args.vpc).apply((vpc) => {
+        if (vpc.containerSubnets && vpc.serviceSubnets)
+          throw new VisibleError(
+            `You cannot provide both "vpc.containerSubnets" and "vpc.serviceSubnets" in the "${name}" Cluster component. The "serviceSubnets" property has been deprecated. Use "containerSubnets" instead.`,
+          );
+        if (!vpc.containerSubnets && !vpc.serviceSubnets)
+          throw new VisibleError(
+            `Missing "vpc.containerSubnets" for the "${name}" Cluster component.`,
+          );
+
+        return {
+          ...vpc,
+          containerSubnets: (vpc.containerSubnets ?? vpc.serviceSubnets)!,
+          serviceSubnets: undefined,
+        };
+      });
+    }
 
     function createCluster() {
       return new ecs.Cluster(
@@ -1995,16 +2418,505 @@ export class Cluster extends Component {
     return new Service(
       name,
       {
-        cluster: {
-          name: this.cluster.name,
-          arn: this.cluster.arn,
-        },
-        vpc: this.constructorArgs.vpc,
+        cluster: this,
+        vpc: this.vpc,
         ...args,
       },
       { provider: this.constructorOpts.provider },
     );
   }
+
+  /**
+   * Add a task to the cluster.
+   *
+   * @param name Name of the task.
+   * @param args Configure the task.
+   *
+   * @example
+   *
+   * ```ts title="sst.config.ts"
+   * cluster.addTask("MyTask");
+   * ```
+   *
+   * You can also configure the task. By default this starts a single container.
+   * To add multiple containers in the task, pass in an array of containers args.
+   *
+   * ```ts title="sst.config.ts"
+   * cluster.addTask("MyTask", {
+   *   architecture: "arm64",
+   *   containers: [
+   *     {
+   *       name: "app",
+   *       image: "nginxdemos/hello:plain-text"
+   *     },
+   *     {
+   *       name: "admin",
+   *       image: {
+   *         context: "./admin",
+   *         dockerfile: "Dockerfile"
+   *       }
+   *     }
+   *   ]
+   * });
+   * ```
+   *
+   * This is useful for running sidecar containers.
+   */
+  public addTask(name: string, args?: ClusterTaskArgs) {
+    // Do not prefix the task to allow `Resource.MyTask` to work.
+    return new Task(
+      name,
+      {
+        cluster: this,
+        vpc: this.vpc,
+        ...args,
+      },
+      { provider: this.constructorOpts.provider },
+    );
+  }
+}
+
+export function normalizeArchitecture(args: ClusterTaskArgs) {
+  return output(args.architecture ?? "x86_64").apply((v) => v);
+}
+
+export function normalizeCpu(args: ClusterTaskArgs) {
+  return output(args.cpu ?? "0.25 vCPU").apply((v) => {
+    if (!supportedCpus[v]) {
+      throw new Error(
+        `Unsupported CPU: ${v}. The supported values for CPU are ${Object.keys(
+          supportedCpus,
+        ).join(", ")}`,
+      );
+    }
+    return v;
+  });
+}
+
+export function normalizeMemory(
+  cpu: ReturnType<typeof normalizeCpu>,
+  args: ClusterTaskArgs,
+) {
+  return all([cpu, args.memory ?? "0.5 GB"]).apply(([cpu, v]) => {
+    if (!(v in supportedMemories[cpu])) {
+      throw new Error(
+        `Unsupported memory: ${v}. The supported values for memory for a ${cpu} CPU are ${Object.keys(
+          supportedMemories[cpu],
+        ).join(", ")}`,
+      );
+    }
+    return v;
+  });
+}
+
+export function normalizeStorage(args: ClusterTaskArgs) {
+  return output(args.storage ?? "20 GB").apply((v) => {
+    const storage = toGBs(v);
+    if (storage < 20 || storage > 200)
+      throw new Error(
+        `Unsupported storage: ${v}. The supported value for storage is between "20 GB" and "200 GB"`,
+      );
+    return v;
+  });
+}
+
+export function normalizeContainers(
+  type: "service" | "task",
+  args: ClusterServiceArgs,
+  name: string,
+  architecture: ReturnType<typeof normalizeArchitecture>,
+) {
+  if (
+    args.containers &&
+    (args.image ||
+      args.logging ||
+      args.environment ||
+      args.volumes ||
+      args.health ||
+      args.ssm)
+  ) {
+    throw new VisibleError(
+      type === "service"
+        ? `You cannot provide both "containers" and "image", "logging", "environment", "volumes", "health" or "ssm".`
+        : `You cannot provide both "containers" and "image", "logging", "environment", "volumes" or "ssm".`,
+    );
+  }
+
+  // Standardize containers
+  const containers = args.containers ?? [
+    {
+      name: name,
+      cpu: undefined,
+      memory: undefined,
+      image: args.image,
+      logging: args.logging,
+      environment: args.environment,
+      ssm: args.ssm,
+      volumes: args.volumes,
+      command: args.command,
+      entrypoint: args.entrypoint,
+      health: type === "service" ? args.health : undefined,
+      dev: type === "service" ? args.dev : undefined,
+    },
+  ];
+
+  // Normalize container props
+  return output(containers).apply((containers) =>
+    containers.map((v) => {
+      return {
+        ...v,
+        volumes: normalizeVolumes(),
+        image: normalizeImage(),
+        logging: normalizeLogging(),
+      };
+
+      function normalizeVolumes() {
+        return output(v.volumes).apply(
+          (volumes) =>
+            volumes?.map((volume) => ({
+              path: volume.path,
+              efs:
+                volume.efs instanceof Efs
+                  ? {
+                      fileSystem: volume.efs.id,
+                      accessPoint: volume.efs.accessPoint,
+                    }
+                  : volume.efs,
+            })),
+        );
+      }
+
+      function normalizeImage() {
+        return all([v.image, architecture]).apply(([image, architecture]) => {
+          if (typeof image === "string") return image;
+
+          return {
+            ...image,
+            context: image?.context ?? ".",
+            platform:
+              architecture === "arm64"
+                ? Platform.Linux_arm64
+                : Platform.Linux_amd64,
+          };
+        });
+      }
+
+      function normalizeLogging() {
+        return output(v.logging).apply((logging) => ({
+          ...logging,
+          retention: logging?.retention ?? "1 month",
+        }));
+      }
+    }),
+  );
+}
+
+export function createTaskRole(
+  name: string,
+  args: ClusterTaskArgs,
+  opts: ComponentResourceOptions,
+  parent: Component,
+  additionalPermissions?: FunctionArgs["permissions"],
+) {
+  if (args.taskRole)
+    return iam.Role.get(`${name}TaskRole`, args.taskRole, {}, { parent });
+
+  const policy = all([
+    args.permissions || [],
+    Link.getInclude<Permission>("aws.permission", args.link),
+    additionalPermissions,
+  ]).apply(([argsPermissions, linkPermissions, additionalPermissions]) =>
+    iam.getPolicyDocumentOutput({
+      statements: [
+        ...argsPermissions,
+        ...linkPermissions.map((item) => ({
+          actions: item.actions,
+          resources: item.resources,
+        })),
+        ...(additionalPermissions ?? []),
+        {
+          actions: [
+            "ssmmessages:CreateControlChannel",
+            "ssmmessages:CreateDataChannel",
+            "ssmmessages:OpenControlChannel",
+            "ssmmessages:OpenDataChannel",
+          ],
+          resources: ["*"],
+        },
+      ],
+    }),
+  );
+
+  return new iam.Role(
+    ...transform(
+      args.transform?.taskRole,
+      `${name}TaskRole`,
+      {
+        assumeRolePolicy: iam.assumeRolePolicyForPrincipal({
+          Service: "ecs-tasks.amazonaws.com",
+        }),
+        inlinePolicies: policy.apply(({ statements }) =>
+          statements ? [{ name: "inline", policy: policy.json }] : [],
+        ),
+      },
+      { parent },
+    ),
+  );
+}
+
+export function createExecutionRole(
+  name: string,
+  args: ClusterTaskArgs,
+  opts: ComponentResourceOptions,
+  parent: Component,
+) {
+  if (args.executionRole)
+    return iam.Role.get(
+      `${name}ExecutionRole`,
+      args.executionRole,
+      {},
+      { parent },
+    );
+
+  const partition = getPartitionOutput({}, opts).partition;
+  return new iam.Role(
+    ...transform(
+      args.transform?.executionRole,
+      `${name}ExecutionRole`,
+      {
+        assumeRolePolicy: iam.assumeRolePolicyForPrincipal({
+          Service: "ecs-tasks.amazonaws.com",
+        }),
+        managedPolicyArns: [
+          interpolate`arn:${partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy`,
+        ],
+        inlinePolicies: [
+          {
+            name: "inline",
+            policy: iam.getPolicyDocumentOutput({
+              statements: [
+                {
+                  sid: "ReadSsmAndSecrets",
+                  actions: [
+                    "ssm:GetParameters",
+                    "ssm:GetParameter",
+                    "ssm:GetParameterHistory",
+                    "secretsmanager:GetSecretValue",
+                  ],
+                  resources: ["*"],
+                },
+              ],
+            }).json,
+          },
+        ],
+      },
+      { parent },
+    ),
+  );
+}
+
+export function createTaskDefinition(
+  name: string,
+  args: ServiceArgs,
+  opts: ComponentResourceOptions,
+  parent: Component,
+  containers: ReturnType<typeof normalizeContainers>,
+  architecture: ReturnType<typeof normalizeArchitecture>,
+  cpu: ReturnType<typeof normalizeCpu>,
+  memory: ReturnType<typeof normalizeMemory>,
+  storage: ReturnType<typeof normalizeStorage>,
+  taskRole: ReturnType<typeof createTaskRole>,
+  executionRole: ReturnType<typeof createExecutionRole>,
+) {
+  const clusterName = args.cluster.nodes.cluster.name;
+  const region = getRegionOutput({}, opts).name;
+  const bootstrapData = region.apply((region) => bootstrap.forRegion(region));
+  const containerDefinitions = all([
+    containers,
+    Link.propertiesToEnv(Link.getProperties(args.link)),
+  ]).apply(([containers, linkEnvs]) =>
+    containers.map((container) => ({
+      name: container.name,
+      image: (() => {
+        if (typeof container.image === "string") return output(container.image);
+
+        const contextPath = path.join($cli.paths.root, container.image.context);
+        const dockerfile = container.image.dockerfile ?? "Dockerfile";
+        const dockerfilePath = container.image.dockerfile
+          ? path.join($cli.paths.root, container.image.dockerfile)
+          : path.join($cli.paths.root, container.image.context, "Dockerfile");
+        const dockerIgnorePath = fs.existsSync(
+          path.join(contextPath, `${dockerfile}.dockerignore`),
+        )
+          ? path.join(contextPath, `${dockerfile}.dockerignore`)
+          : path.join(contextPath, ".dockerignore");
+
+        // add .sst to .dockerignore if not exist
+        const lines = fs.existsSync(dockerIgnorePath)
+          ? fs.readFileSync(dockerIgnorePath).toString().split("\n")
+          : [];
+        if (!lines.find((line) => line === ".sst")) {
+          fs.writeFileSync(
+            dockerIgnorePath,
+            [...lines, "", "# sst", ".sst"].join("\n"),
+          );
+        }
+
+        // Build image
+        const image = imageBuilder(
+          ...transform(
+            args.transform?.image,
+            `${name}Image${container.name}`,
+            {
+              context: { location: contextPath },
+              dockerfile: { location: dockerfilePath },
+              buildArgs: {
+                ...container.image.args,
+                ...linkEnvs,
+              },
+              target: container.image.target,
+              platforms: [container.image.platform],
+              tags: [container.name, ...(container.image.tags ?? [])].map(
+                (tag) => interpolate`${bootstrapData.assetEcrUrl}:${tag}`,
+              ),
+              registries: [
+                ecr
+                  .getAuthorizationTokenOutput(
+                    {
+                      registryId: bootstrapData.assetEcrRegistryId,
+                    },
+                    { parent },
+                  )
+                  .apply((authToken) => ({
+                    address: authToken.proxyEndpoint,
+                    password: secret(authToken.password),
+                    username: authToken.userName,
+                  })),
+              ],
+              cacheFrom: [
+                {
+                  registry: {
+                    ref: interpolate`${bootstrapData.assetEcrUrl}:${container.name}-cache`,
+                  },
+                },
+              ],
+              cacheTo: [
+                {
+                  registry: {
+                    ref: interpolate`${bootstrapData.assetEcrUrl}:${container.name}-cache`,
+                    imageManifest: true,
+                    ociMediaTypes: true,
+                    mode: "max",
+                  },
+                },
+              ],
+              push: true,
+            },
+            { parent },
+          ),
+        );
+
+        return interpolate`${bootstrapData.assetEcrUrl}@${image.digest}`;
+      })(),
+      cpu: container.cpu ? toNumber(container.cpu) : undefined,
+      memory: container.memory ? toMBs(container.memory) : undefined,
+      command: container.command,
+      entrypoint: container.entrypoint,
+      healthCheck: container.health && {
+        command: container.health.command,
+        startPeriod: toSeconds(container.health.startPeriod ?? "0 seconds"),
+        timeout: toSeconds(container.health.timeout ?? "5 seconds"),
+        interval: toSeconds(container.health.interval ?? "30 seconds"),
+        retries: container.health.retries ?? 3,
+      },
+      pseudoTerminal: true,
+      portMappings: [{ containerPortRange: "1-65535" }],
+      logConfiguration: {
+        logDriver: "awslogs",
+        options: {
+          "awslogs-group": (() => {
+            return new cloudwatch.LogGroup(
+              ...transform(
+                args.transform?.logGroup,
+                `${name}LogGroup${container.name}`,
+                {
+                  name: interpolate`/sst/cluster/${clusterName}/${name}/${container.name}`,
+                  retentionInDays: RETENTION[container.logging.retention],
+                },
+                { parent },
+              ),
+            );
+          })().name,
+          "awslogs-region": region,
+          "awslogs-stream-prefix": "/service",
+        },
+      },
+      environment: Object.entries({
+        ...container.environment,
+        ...linkEnvs,
+      }).map(([name, value]) => ({ name, value })),
+      linuxParameters: {
+        initProcessEnabled: true,
+      },
+      mountPoints: container.volumes?.map((volume) => ({
+        sourceVolume: volume.efs.accessPoint,
+        containerPath: volume.path,
+      })),
+      secrets: Object.entries(container.ssm ?? {}).map(([name, valueFrom]) => ({
+        name,
+        valueFrom,
+      })),
+    })),
+  );
+
+  return storage.apply(
+    (storage) =>
+      new ecs.TaskDefinition(
+        ...transform(
+          args.transform?.taskDefinition,
+          `${name}Task`,
+          {
+            family: interpolate`${clusterName}-${name}`,
+            trackLatest: true,
+            cpu: cpu.apply((v) => toNumber(v).toString()),
+            memory: memory.apply((v) => toMBs(v).toString()),
+            networkMode: "awsvpc",
+            ephemeralStorage: (() => {
+              const sizeInGib = toGBs(storage);
+              return sizeInGib === 20 ? undefined : { sizeInGib };
+            })(),
+            requiresCompatibilities: ["FARGATE"],
+            runtimePlatform: {
+              cpuArchitecture: architecture.apply((v) => v.toUpperCase()),
+              operatingSystemFamily: "LINUX",
+            },
+            executionRoleArn: executionRole.arn,
+            taskRoleArn: taskRole.arn,
+            volumes: output(containers).apply((containers) => {
+              const uniqueAccessPoints: Set<string> = new Set();
+              return containers.flatMap((container) =>
+                (container.volumes ?? []).flatMap((volume) => {
+                  if (uniqueAccessPoints.has(volume.efs.accessPoint)) return [];
+                  uniqueAccessPoints.add(volume.efs.accessPoint);
+                  return {
+                    name: volume.efs.accessPoint,
+                    efsVolumeConfiguration: {
+                      fileSystemId: volume.efs.fileSystem,
+                      transitEncryption: "ENABLED",
+                      authorizationConfig: {
+                        accessPointId: volume.efs.accessPoint,
+                      },
+                    },
+                  };
+                }),
+              );
+            }),
+            containerDefinitions: $jsonStringify(containerDefinitions),
+          },
+          { parent },
+        ),
+      ),
+  );
 }
 
 const __pulumiType = "sst:aws:Cluster";

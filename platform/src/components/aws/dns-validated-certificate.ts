@@ -74,7 +74,7 @@ export class DnsValidatedCertificate extends Component {
                   {
                     type: "CAA",
                     name: domainName,
-                    value: "0 issue amazonaws.com",
+                    value: `0 issue "amazonaws.com"`,
                   },
                   { parent },
                 );

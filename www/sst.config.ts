@@ -71,7 +71,7 @@ export default $config({
       },
     };
 
-    // Stripe .html from /blog
+    // Strip .html from /blog
     const stripHtmlBehavior = {
       targetOriginId: "redirect",
       viewerProtocolPolicy: "redirect-to-https",
@@ -106,14 +106,14 @@ export default $config({
       domain:
         $app.stage === "production"
           ? {
-              name: domain,
-              redirects: [
-                "www.sst.dev",
-                "ion.sst.dev",
-                "serverless-stack.com",
-                "www.serverless-stack.com",
-              ],
-            }
+            name: domain,
+            redirects: [
+              "www.sst.dev",
+              "ion.sst.dev",
+              "serverless-stack.com",
+              "www.serverless-stack.com",
+            ],
+          }
           : domain,
       transform: {
         cdn: (args) => {

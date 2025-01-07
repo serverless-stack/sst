@@ -4,6 +4,7 @@ export * from "./apigatewayv2.js";
 export * from "./apigateway-websocket.js";
 export * from "./app-sync.js";
 export * from "./astro.js";
+export * from "./aurora.js";
 export * from "./auth.js";
 export * from "./bucket.js";
 export * from "./bus.js";

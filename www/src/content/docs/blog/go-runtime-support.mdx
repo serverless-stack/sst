@@ -1,0 +1,46 @@
+---
+template: splash
+title: Go runtime support
+description: SST v3 now supports the Golang runtime for Lambda functions.
+author: jay
+pagefind: false
+lastUpdated: 2024-12-20
+---
+
+import { YouTube } from '@astro-community/astro-embed-youtube';
+
+SST v3 now supports the [`go`](/docs/component/aws/function#runtime) runtime for your Lambda functions. Golang is a great option for tasks that are more compute intensive and it also has faster cold starts. We talk about it here:
+
+<YouTube id="WTAeW0wyTzA" posterQuality="high" />
+
+You can use Go in SST by setting the `runtime` prop and pointing the `handler` to the directory with your Go function.
+
+```ts title="sst.config.ts"
+new sst.aws.Function("MyFunction", {
+  runtime: "go",
+  link: [bucket],
+  handler: "./src"
+});
+```
+
+For more details, check out our [**Go example**](/docs/examples/#aws-lambda-go).
+
+---
+
+Also in this update:
+
+1. The [`sst dev`](/docs/reference/cli/#dev) CLI supports running your Go functions [_Live_](/docs/live/).
+
+2. You can use our new [Go SDK](/docs/reference/sdk/#golang) to access linked resources in your Go functions or container applications.
+
+   ```go title="src/main.go"
+   import (
+     "github.com/sst/sst/v3/sdk/golang/resource"
+   )
+   
+   resource.Get("MyBucket", "name")
+   ```
+   
+   The Go SDK does not support the [clients](/docs/reference/sdk/#clients) that are available in the JS SDK.
+
+3. You can view Go function logs in the [Console](/docs/console/). Support for [Issues](/docs/console/#issues) is coming soon.

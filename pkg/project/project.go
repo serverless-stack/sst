@@ -12,16 +12,17 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
-	"github.com/sst/ion/internal/fs"
-	"github.com/sst/ion/internal/util"
-	"github.com/sst/ion/pkg/flag"
-	"github.com/sst/ion/pkg/js"
-	"github.com/sst/ion/pkg/process"
-	"github.com/sst/ion/pkg/project/provider"
-	"github.com/sst/ion/pkg/runtime"
-	"github.com/sst/ion/pkg/runtime/node"
-	"github.com/sst/ion/pkg/runtime/python"
-	"github.com/sst/ion/pkg/runtime/worker"
+	"github.com/sst/sst/v3/internal/fs"
+	"github.com/sst/sst/v3/internal/util"
+	"github.com/sst/sst/v3/pkg/flag"
+	"github.com/sst/sst/v3/pkg/js"
+	"github.com/sst/sst/v3/pkg/process"
+	"github.com/sst/sst/v3/pkg/project/provider"
+	"github.com/sst/sst/v3/pkg/runtime"
+	"github.com/sst/sst/v3/pkg/runtime/golang"
+	"github.com/sst/sst/v3/pkg/runtime/node"
+	"github.com/sst/sst/v3/pkg/runtime/python"
+	"github.com/sst/sst/v3/pkg/runtime/worker"
 )
 
 type App struct {
@@ -112,6 +113,7 @@ func New(input *ProjectConfig) (*Project, error) {
 			node.New(input.Version),
 			worker.New(),
 			python.New(),
+			golang.New(),
 		),
 	}
 	tmp := proj.PathWorkingDir()

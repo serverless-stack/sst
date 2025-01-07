@@ -456,7 +456,7 @@ export class TanstackStart extends Component implements Link.Linkable {
             description: "Server handler for Tanstack",
             handler: "index.handler",
             bundle: path.join(outputPath, ".output", "server"),
-            streaming: nitro?.config?.streaming === true,
+            streaming: nitro?.config?.awsLambda?.streaming === true,
           };
 
           return validatePlan({

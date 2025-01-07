@@ -3,11 +3,11 @@ package main
 import (
 	"strings"
 
-	"github.com/sst/ion/cmd/sst/cli"
-	"github.com/sst/ion/cmd/sst/mosaic/ui"
-	"github.com/sst/ion/pkg/bus"
-	"github.com/sst/ion/pkg/project"
-	"github.com/sst/ion/pkg/server"
+	"github.com/sst/sst/v3/cmd/sst/cli"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/ui"
+	"github.com/sst/sst/v3/pkg/bus"
+	"github.com/sst/sst/v3/pkg/project"
+	"github.com/sst/sst/v3/pkg/server"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -79,6 +79,14 @@ var CmdDeploy = &cli.Command{
 				Long:  "Continue on error.",
 			},
 		},
+		{
+			Name: "dev",
+			Type: "bool",
+			Description: cli.Description{
+				Short: "Deploy in dev mode",
+				Long:  "Deploy in dev mode.",
+			},
+		},
 	},
 	Examples: []cli.Example{
 		{
@@ -126,6 +134,7 @@ var CmdDeploy = &cli.Command{
 		err = p.Run(c.Context, &project.StackInput{
 			Command:    "deploy",
 			Target:     target,
+			Dev:        c.Bool("dev"),
 			ServerPort: s.Port,
 			Verbose:    c.Bool("verbose"),
 			Continue:   c.Bool("continue"),

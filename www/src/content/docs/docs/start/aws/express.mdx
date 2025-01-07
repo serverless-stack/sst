@@ -3,9 +3,13 @@ title: Express on AWS with SST
 description: Create and deploy an Express app to AWS with SST.
 ---
 
-You can use SST to deploy an Express app in a container to AWS. It uses Fargate and ECS.
+We are going to build an app with Express, add an S3 Bucket for file uploads, and deploy it to AWS in a container with SST.
 
-We'll build a simple app below.
+:::tip[View source]
+You can [view the source](https://github.com/sst/sst/tree/dev/examples/aws-express) of this example in our repo.
+:::
+
+Before you get started, make sure to [configure your AWS credentials](/docs/iam-credentials#credentials).
 
 ---
 
@@ -15,16 +19,6 @@ We also have a few other Express examples that you can refer to.
 
 - [Build a hit counter with Express and Redis](/docs/examples/#aws-express-redis)
 - [Use service discovery to connect to your Express app](/docs/examples/#aws-cluster-service-discovery)
-
----
-
-We are going to build a hit counter using Express and Redis. We'll the deploy it to AWS in a container.
-
-:::tip[View source]
-You can [view the source](https://github.com/sst/sst/tree/dev/examples/aws-express) of this example in our repo.
-:::
-
-Before you get started, make sure to [configure your AWS credentials](/docs/iam-credentials#credentials).
 
 ---
 

@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/evanw/esbuild/pkg/api"
-	"github.com/sst/ion/pkg/process"
+	"github.com/sst/sst/v3/pkg/process"
 	"golang.org/x/sync/errgroup"
 )
 

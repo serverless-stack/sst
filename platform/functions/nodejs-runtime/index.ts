@@ -5,7 +5,8 @@ import type { Context as LambdaContext } from "aws-lambda";
 
 // get first arg
 const handler = process.argv[2];
-const AWS_LAMBDA_RUNTIME_API = `http://` + process.env.AWS_LAMBDA_RUNTIME_API!;
+const AWS_LAMBDA_RUNTIME_API =
+  `http://` + process.env.AWS_LAMBDA_RUNTIME_API! + "/2018-06-01";
 const parsed = path.parse(handler);
 
 const file = [".js", ".jsx", ".mjs", ".cjs"]

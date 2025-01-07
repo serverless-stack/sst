@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/pulumi/pulumi/sdk/v3"
-	"github.com/sst/ion/pkg/flag"
+	"github.com/sst/sst/v3/pkg/flag"
 )
 
 var PULUMI_VERSION = "v" + sdk.Version.String()

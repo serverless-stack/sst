@@ -11,9 +11,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/sst/ion/pkg/id"
-	"github.com/sst/ion/pkg/process"
-	"github.com/sst/ion/pkg/task"
+	"github.com/sst/sst/v3/pkg/id"
+	"github.com/sst/sst/v3/pkg/process"
+	"github.com/sst/sst/v3/pkg/task"
 )
 
 func NeedsPulumi() bool {

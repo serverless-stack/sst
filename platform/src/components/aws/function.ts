@@ -205,8 +205,21 @@ export interface FunctionArgs {
    */
   live?: Input<false>;
   /**
-   * Disable running this function [Live](/docs/live/) in `sst dev`.
-   * @default Live mode enabled in `sst dev`
+   * Disable running this function [_Live_](/docs/live/) in `sst dev`.
+   *
+   * By default, the functions in your app are run locally in `sst dev`. To do this, a _stub_
+   * version of your function is deployed, instead of the real function.
+   *
+   * :::note
+   * In `sst dev` a _stub_ version of your function is deployed.
+   * :::
+   *
+   * This shows under the **Functions** tab in the multiplexer sidebar where your invocations
+   * are logged. You can turn this off by setting `dev` to `false`.
+   *
+   * Read more about [Live](/docs/live/) and [`sst dev`](/docs/reference/cli/#dev).
+   *
+   * @default `true`
    * @example
    * ```js
    * {
@@ -252,9 +265,17 @@ export interface FunctionArgs {
    */
   description?: Input<string>;
   /**
-   * The runtime environment for the function. Support for other runtimes is on our roadmap.
+   * The language runtime for the function.
+   *
+   * :::tip
+   * Currently supports Node.js and Golang functions.
+   * :::
+   *
+   * Currently supports **Node.js** and **Golang** functions. Python is community supported
+   * and is currently a work in progress. Other runtimes are on the roadmap.
    *
    * @default `"nodejs20.x"`
+   *
    * @example
    * ```js
    * {
@@ -266,6 +287,7 @@ export interface FunctionArgs {
     | "nodejs18.x"
     | "nodejs20.x"
     | "nodejs22.x"
+    | "go"
     | "provided.al2023"
     | "python3.9"
     | "python3.10"
@@ -512,53 +534,53 @@ export interface FunctionArgs {
   logging?: Input<
     | false
     | {
-        /**
-         * The duration the function logs are kept in CloudWatch.
-         *
-         * Not application when an existing log group is provided.
-         *
-         * @default `1 month`
-         * @example
-         * ```js
-         * {
-         *   logging: {
-         *     retention: "forever"
-         *   }
-         * }
-         * ```
-         */
-        retention?: Input<keyof typeof RETENTION>;
-        /**
-         * Assigns the given CloudWatch log group name to the function. This allows you to pass in a previously created log group.
-         *
-         * By default, the function creates a new log group when it's created.
-         *
-         * @default Creates a log group
-         * @example
-         * ```js
-         * {
-         *   logging: {
-         *     logGroup: "/existing/log-group"
-         *   }
-         * }
-         * ```
-         */
-        logGroup?: Input<string>;
-        /**
-         * The [log format](https://docs.aws.amazon.com/lambda/latest/dg/monitoring-cloudwatchlogs-advanced.html)
-         * of the Lambda function.
-         * @default `"text"`
-         * @example
-         * ```js
-         * {
-         *   logging: {
-         *     format: "json"
-         *   }
-         * }
-         * ```
-         */
-        format?: Input<"text" | "json">;
-      }
+      /**
+       * The duration the function logs are kept in CloudWatch.
+       *
+       * Not application when an existing log group is provided.
+       *
+       * @default `1 month`
+       * @example
+       * ```js
+       * {
+       *   logging: {
+       *     retention: "forever"
+       *   }
+       * }
+       * ```
+       */
+      retention?: Input<keyof typeof RETENTION>;
+      /**
+       * Assigns the given CloudWatch log group name to the function. This allows you to pass in a previously created log group.
+       *
+       * By default, the function creates a new log group when it's created.
+       *
+       * @default Creates a log group
+       * @example
+       * ```js
+       * {
+       *   logging: {
+       *     logGroup: "/existing/log-group"
+       *   }
+       * }
+       * ```
+       */
+      logGroup?: Input<string>;
+      /**
+       * The [log format](https://docs.aws.amazon.com/lambda/latest/dg/monitoring-cloudwatchlogs-advanced.html)
+       * of the Lambda function.
+       * @default `"text"`
+       * @example
+       * ```js
+       * {
+       *   logging: {
+       *     format: "json"
+       *   }
+       * }
+       * ```
+       */
+      format?: Input<"text" | "json">;
+    }
   >;
   /**
    * The [architecture](https://docs.aws.amazon.com/lambda/latest/dg/foundation-arch.html)
@@ -620,45 +642,45 @@ export interface FunctionArgs {
   url?: Input<
     | boolean
     | {
-        /**
-         * The authorization used for the function URL. Supports [IAM authorization](https://docs.aws.amazon.com/lambda/latest/dg/urls-auth.html).
-         * @default `"none"`
-         * @example
-         * ```js
-         * {
-         *   url: {
-         *     authorization: "iam"
-         *   }
-         * }
-         * ```
-         */
-        authorization?: Input<"none" | "iam">;
-        /**
-         * Customize the CORS (Cross-origin resource sharing) settings for the function URL.
-         * @default `true`
-         * @example
-         * Disable CORS.
-         * ```js
-         * {
-         *   url: {
-         *     cors: false
-         *   }
-         * }
-         * ```
-         * Only enable the `GET` and `POST` methods for `https://example.com`.
-         * ```js
-         * {
-         *   url: {
-         *     cors: {
-         *       allowMethods: ["GET", "POST"],
-         *       allowOrigins: ["https://example.com"]
-         *     }
-         *   }
-         * }
-         * ```
-         */
-        cors?: Input<boolean | Prettify<FunctionUrlCorsArgs>>;
-      }
+      /**
+       * The authorization used for the function URL. Supports [IAM authorization](https://docs.aws.amazon.com/lambda/latest/dg/urls-auth.html).
+       * @default `"none"`
+       * @example
+       * ```js
+       * {
+       *   url: {
+       *     authorization: "iam"
+       *   }
+       * }
+       * ```
+       */
+      authorization?: Input<"none" | "iam">;
+      /**
+       * Customize the CORS (Cross-origin resource sharing) settings for the function URL.
+       * @default `true`
+       * @example
+       * Disable CORS.
+       * ```js
+       * {
+       *   url: {
+       *     cors: false
+       *   }
+       * }
+       * ```
+       * Only enable the `GET` and `POST` methods for `https://example.com`.
+       * ```js
+       * {
+       *   url: {
+       *     cors: {
+       *       allowMethods: ["GET", "POST"],
+       *       allowOrigins: ["https://example.com"]
+       *     }
+       *   }
+       * }
+       * ```
+       */
+      cors?: Input<boolean | Prettify<FunctionUrlCorsArgs>>;
+    }
   >;
   /**
    * Configure how your function is bundled.
@@ -1092,22 +1114,22 @@ export interface FunctionArgs {
    * ```
    */
   vpc?:
-    | Vpc
-    | Input<{
-        /**
-         * A list of VPC security group IDs.
-         */
-        securityGroups: Input<Input<string>[]>;
-        /**
-         * A list of VPC subnet IDs.
-         */
-        privateSubnets: Input<Input<string>[]>;
-        /**
-         * A list of VPC subnet IDs.
-         * @deprecated Use `privateSubnets` instead.
-         */
-        subnets?: Input<Input<string>[]>;
-      }>;
+  | Vpc
+  | Input<{
+    /**
+     * A list of VPC security group IDs.
+     */
+    securityGroups: Input<Input<string>[]>;
+    /**
+     * A list of VPC subnet IDs.
+     */
+    privateSubnets: Input<Input<string>[]>;
+    /**
+     * A list of VPC subnet IDs.
+     * @deprecated Use `privateSubnets` instead.
+     */
+    subnets?: Input<Input<string>[]>;
+  }>;
   /**
    * [Transform](/docs/components#transform) how this component creates its underlying
    * resources.
@@ -1140,21 +1162,37 @@ export interface FunctionArgs {
  * The `Function` component lets you add serverless functions to your app.
  * It uses [AWS Lambda](https://aws.amazon.com/lambda/).
  *
- * :::note
- * Currently supports Node.js functions only. Support for other runtimes is on the roadmap.
- * :::
+ * #### Supported runtimes
+ *
+ * Currently supports **Node.js** and **Golang** functions. Python is community supported and is
+ * currently a work in progress. Other runtimes are on the roadmap.
  *
  * @example
  *
  * #### Minimal example
  *
- * Pass in the path to your handler function.
  *
- * ```ts title="sst.config.ts"
- * new sst.aws.Function("MyFunction", {
- *   handler: "src/lambda.handler"
- * });
- * ```
+ * <Tabs>
+ *   <TabItem label="Node">
+ *   Pass in the path to your handler function.
+ *
+ *   ```ts title="sst.config.ts"
+ *   new sst.aws.Function("MyFunction", {
+ *     handler: "src/lambda.handler"
+ *   });
+ *   ```
+ *   </TabItem>
+ *   <TabItem label="Go">
+ *   Pass in the directory to your Go app.
+ *
+ *   ```ts title="sst.config.ts"
+ *   new sst.aws.Function("MyFunction", {
+ *     runtime: "go",
+ *     handler: "./src"
+ *   });
+ *   ```
+ *   </TabItem>
+ * </Tabs>
  *
  * #### Set additional config
  *
@@ -1185,15 +1223,29 @@ export interface FunctionArgs {
  * You can use the [SDK](/docs/reference/sdk/) to access the linked resources
  * in your handler.
  *
- * ```ts title="src/lambda.ts"
- * import { Resource } from "sst";
+ * <Tabs>
+ *   <TabItem label="Node">
+ *   ```ts title="src/lambda.ts"
+ *   import { Resource } from "sst";
  *
- * console.log(Resource.MyBucket.name);
- * ```
+ *   console.log(Resource.MyBucket.name);
+ *   ```
+ *   </TabItem>
+ *   <TabItem label="Go">
+ *   ```go title="src/main.go"
+ *   import (
+ *     "github.com/sst/sst/v3/sdk/golang/resource"
+ *   )
+ *
+ *   resource.Get("MyBucket", "name")
+ *   ```
+ *   </TabItem>
+ * </Tabs>
  *
  * #### Set environment variables
  *
- * Set environment variables for the function. Available in your handler as `process.env`.
+ * Set environment variables that you can read in your function. For example, using
+ * `process.env` in your Node.js functions.
  *
  * ```ts {4} title="sst.config.ts"
  * new sst.aws.Function("MyFunction", {
@@ -1217,8 +1269,8 @@ export interface FunctionArgs {
  *
  * #### Bundling
  *
- * Customize how SST uses [esbuild](https://esbuild.github.io/) to bundle your function code
- * with the `nodejs` property.
+ * Customize how SST uses [esbuild](https://esbuild.github.io/) to bundle your Node.js
+ * functions with the `nodejs` property.
  *
  * ```ts title="sst.config.ts" {3-5}
  * new sst.aws.Function("MyFunction", {
@@ -1245,7 +1297,7 @@ export class Function extends Component implements Link.Linkable {
       }),
   );
 
-  private static readonly appsync = lazy(() =>
+  public static readonly appsync = lazy(() =>
     rpc.call("Provider.Aws.Appsync", {}),
   );
 
@@ -1477,10 +1529,10 @@ export class Function extends Component implements Link.Linkable {
             : url.cors === true || url.cors === undefined
               ? defaultCors
               : {
-                  ...defaultCors,
-                  ...url.cors,
-                  maxAge: url.cors.maxAge && toSeconds(url.cors.maxAge),
-                };
+                ...defaultCors,
+                ...url.cors,
+                maxAge: url.cors.maxAge && toSeconds(url.cors.maxAge),
+              };
 
         return { authorization, cors };
       });
@@ -1570,7 +1622,7 @@ export class Function extends Component implements Link.Linkable {
                 if (result.type === "error") {
                   throw new VisibleError(
                     `Failed to build function "${args.handler}": ` +
-                      result.errors.join("\n").trim(),
+                    result.errors.join("\n").trim(),
                   );
                 }
                 return result;
@@ -1582,7 +1634,7 @@ export class Function extends Component implements Link.Linkable {
               if (result.type === "error") {
                 throw new VisibleError(
                   `Failed to build function "${args.handler}": ` +
-                    result.errors.join("\n").trim(),
+                  result.errors.join("\n").trim(),
                 );
               }
               return result;
@@ -1683,21 +1735,21 @@ export class Function extends Component implements Link.Linkable {
               name: path.posix.join(handlerDir, `${newHandlerFileName}.mjs`),
               content: streaming
                 ? [
-                    ...split.outer,
-                    `export const ${newHandlerFunction} = awslambda.streamifyResponse(async (event, responseStream, context) => {`,
-                    ...split.inner,
-                    `  const { ${oldHandlerFunction}: rawHandler} = await import("./${oldHandlerFileName}${newHandlerFileExt}");`,
-                    `  return rawHandler(event, responseStream, context);`,
-                    `});`,
-                  ].join("\n")
+                  ...split.outer,
+                  `export const ${newHandlerFunction} = awslambda.streamifyResponse(async (event, responseStream, context) => {`,
+                  ...split.inner,
+                  `  const { ${oldHandlerFunction}: rawHandler} = await import("./${oldHandlerFileName}${newHandlerFileExt}");`,
+                  `  return rawHandler(event, responseStream, context);`,
+                  `});`,
+                ].join("\n")
                 : [
-                    ...split.outer,
-                    `export const ${newHandlerFunction} = async (event, context) => {`,
-                    ...split.inner,
-                    `  const { ${oldHandlerFunction}: rawHandler} = await import("./${oldHandlerFileName}${newHandlerFileExt}");`,
-                    `  return rawHandler(event, context);`,
-                    `};`,
-                  ].join("\n"),
+                  ...split.outer,
+                  `export const ${newHandlerFunction} = async (event, context) => {`,
+                  ...split.inner,
+                  `  const { ${oldHandlerFunction}: rawHandler} = await import("./${oldHandlerFileName}${newHandlerFileExt}");`,
+                  `  return rawHandler(event, context);`,
+                  `};`,
+                ].join("\n"),
             },
           };
         },
@@ -1729,22 +1781,22 @@ export class Function extends Component implements Link.Linkable {
               })),
               ...(dev
                 ? [
-                    {
-                      actions: ["appsync:*"],
-                      resources: ["*"],
-                    },
-                    {
-                      actions: ["iot:*"],
-                      resources: ["*"],
-                    },
-                    {
-                      actions: ["s3:*"],
-                      resources: [
-                        interpolate`arn:${partition}:s3:::${bootstrapData.asset}`,
-                        interpolate`arn:${partition}:s3:::${bootstrapData.asset}/*`,
-                      ],
-                    },
-                  ]
+                  {
+                    actions: ["appsync:*"],
+                    resources: ["*"],
+                  },
+                  {
+                    actions: ["iot:*"],
+                    resources: ["*"],
+                  },
+                  {
+                    actions: ["s3:*"],
+                    resources: [
+                      interpolate`arn:${partition}:s3:::${bootstrapData.asset}`,
+                      interpolate`arn:${partition}:s3:::${bootstrapData.asset}/*`,
+                    ],
+                  },
+                ]
                 : []),
             ],
           }),
@@ -1755,31 +1807,30 @@ export class Function extends Component implements Link.Linkable {
           args.transform?.role,
           `${name}Role`,
           {
-            assumeRolePolicy: !$dev
+            assumeRolePolicy: !dev
               ? iam.assumeRolePolicyForPrincipal({
-                  Service: "lambda.amazonaws.com",
-                })
+                Service: "lambda.amazonaws.com",
+              })
               : iam.getPolicyDocumentOutput({
-                  statements: [
-                    {
-                      actions: ["sts:AssumeRole"],
-                      principals: [
-                        {
-                          type: "Service",
-                          identifiers: ["lambda.amazonaws.com"],
-                        },
-                        {
-                          type: "AWS",
-                          identifiers: [
-                            interpolate`arn:${partition}:iam::${
-                              getCallerIdentityOutput({}, opts).accountId
+                statements: [
+                  {
+                    actions: ["sts:AssumeRole"],
+                    principals: [
+                      {
+                        type: "Service",
+                        identifiers: ["lambda.amazonaws.com"],
+                      },
+                      {
+                        type: "AWS",
+                        identifiers: [
+                          interpolate`arn:${partition}:iam::${getCallerIdentityOutput({}, opts).accountId
                             }:root`,
-                          ],
-                        },
-                      ],
-                    },
-                  ],
-                }).json,
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              }).json,
             // if there are no statements, do not add an inline policy.
             // adding an inline policy with no statements will cause an error.
             inlinePolicies: policy.apply(({ statements }) =>
@@ -1788,13 +1839,13 @@ export class Function extends Component implements Link.Linkable {
             managedPolicyArns: logging.apply((logging) => [
               ...(logging
                 ? [
-                    interpolate`arn:${partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole`,
-                  ]
+                  interpolate`arn:${partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole`,
+                ]
                 : []),
               ...(vpc
                 ? [
-                    interpolate`arn:${partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole`,
-                  ]
+                  interpolate`arn:${partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole`,
+                ]
                 : []),
             ]),
           },
@@ -1882,6 +1933,7 @@ export class Function extends Component implements Link.Linkable {
         copyFiles,
         isContainer,
         logGroup.apply((l) => l?.arn),
+        dev,
       ]).apply(
         async ([
           bundle,
@@ -1890,6 +1942,7 @@ export class Function extends Component implements Link.Linkable {
           copyFiles,
           isContainer,
           logGroupArn,
+          dev,
         ]) => {
           if (isContainer) return;
 
@@ -1941,14 +1994,18 @@ export class Function extends Component implements Link.Linkable {
             }
 
             // Add copyFiles into the zip
-            copyFiles.forEach(async (entry) => {
-              entry.isDir
-                ? archive.directory(entry.from, entry.to, { date: new Date(0) })
-                : archive.file(entry.from, {
+            if (!dev) {
+              for (const entry of copyFiles) {
+                entry.isDir
+                  ? archive.directory(entry.from, entry.to, {
+                    date: new Date(0),
+                  })
+                  : archive.file(entry.from, {
                     name: entry.to,
                     date: new Date(0),
                   });
-            });
+              }
+            }
             await archive.finalize();
           });
 
@@ -2000,9 +2057,8 @@ export class Function extends Component implements Link.Linkable {
             args.transform?.logGroup,
             `${name}LogGroup`,
             {
-              name: interpolate`/aws/lambda/${
-                args.name ?? physicalName(64, `${name}Function`)
-              }`,
+              name: interpolate`/aws/lambda/${args.name ?? physicalName(64, `${name}Function`)
+                }`,
               retentionInDays: RETENTION[logging.retention],
             },
             { parent },
@@ -2066,21 +2122,23 @@ export class Function extends Component implements Link.Linkable {
               reservedConcurrentExecutions: concurrency?.reserved,
               ...(isContainer
                 ? {
-                    packageType: "Image",
-                    imageUri: imageAsset!.ref.apply(
-                      (ref) => ref?.replace(":latest", ""),
-                    ),
-                    imageConfig: {
-                      commands: [handler],
-                    },
-                  }
+                  packageType: "Image",
+                  imageUri: imageAsset!.ref.apply(
+                    (ref) => ref?.replace(":latest", ""),
+                  ),
+                  imageConfig: {
+                    commands: [handler],
+                  },
+                }
                 : {
-                    packageType: "Zip",
-                    s3Bucket: zipAsset!.bucket,
-                    s3Key: zipAsset!.key,
-                    handler: unsecret(handler),
-                    runtime,
-                  }),
+                  packageType: "Zip",
+                  s3Bucket: zipAsset!.bucket,
+                  s3Key: zipAsset!.key,
+                  handler: unsecret(handler),
+                  runtime: runtime.apply((v) =>
+                    v === "go" ? "provided.al2023" : v,
+                  ),
+                }),
             },
             { parent },
           );
@@ -2090,14 +2148,14 @@ export class Function extends Component implements Link.Linkable {
               ...transformed[1],
               ...(dev
                 ? {
-                    description: transformed[1].description
-                      ? output(transformed[1].description).apply(
-                          (v) => `${v.substring(0, 240)} (live)`,
-                        )
-                      : "live",
-                    runtime: "provided.al2023",
-                    architectures: ["x86_64"],
-                  }
+                  description: transformed[1].description
+                    ? output(transformed[1].description).apply(
+                      (v) => `${v.substring(0, 240)} (live)`,
+                    )
+                    : "live",
+                  runtime: "provided.al2023",
+                  architectures: ["x86_64"],
+                }
                 : {}),
             },
             transformed[2],

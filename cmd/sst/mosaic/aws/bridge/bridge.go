@@ -8,8 +8,8 @@ import (
 	"iter"
 	"log/slog"
 
-	"github.com/sst/ion/cmd/sst/mosaic/aws/appsync"
-	"github.com/sst/ion/pkg/id"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/aws/appsync"
+	"github.com/sst/sst/v3/pkg/id"
 )
 
 type Packet struct {
@@ -31,6 +31,9 @@ const (
 	MessageError
 	MessageReboot
 	MessageInitError
+
+	MessageTaskStart
+	MessageTaskComplete
 )
 
 type Message struct {
@@ -55,6 +58,14 @@ type Writer struct {
 type InitBody struct {
 	FunctionID  string   `json:"functionID"`
 	Environment []string `json:"environment"`
+}
+
+type TaskStartBody struct {
+	TaskID      string   `json:"taskID"`
+	Environment []string `json:"environment"`
+}
+
+type TaskCompleteBody struct {
 }
 
 type PingBody struct {

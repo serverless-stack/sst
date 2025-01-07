@@ -15,8 +15,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
-	"github.com/sst/ion/cmd/sst/mosaic/deployer"
-	"github.com/sst/ion/pkg/project"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/deployer"
+	"github.com/sst/sst/v3/pkg/project"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -182,6 +182,9 @@ func (m *footer) Update(msg any) {
 	case *deployer.DeployFailedEvent:
 		m.Reset()
 		break
+	case *project.SkipEvent:
+		m.Reset()
+		break
 	case *apitype.ResourcePreEvent:
 		if slices.Contains(IGNORED_RESOURCES, msg.Metadata.Type) {
 			break
@@ -223,7 +226,7 @@ var TEXT_HIGHLIGHT_BOLD = TEXT_HIGHLIGHT.Copy().Bold(true)
 var TEXT_DIM = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 var TEXT_DIM_BOLD = TEXT_DIM.Copy().Bold(true)
 
-var TEXT_NORMAL = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
+var TEXT_NORMAL = lipgloss.NewStyle()
 var TEXT_NORMAL_BOLD = TEXT_NORMAL.Copy().Bold(true)
 
 var TEXT_WARNING = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))

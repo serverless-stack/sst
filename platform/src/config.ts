@@ -136,24 +136,34 @@ export interface App {
    */
   name: string;
   /**
-   * Configure how your resources are handled on `sst remove`:
+   * Configure how your resources are handled when they have to be removed.
    *
-   * - `remove`: Remove all your resources on remove.
-   * - `retain`: Retains S3 buckets and DynamoDB tables, and remove all other resources.
-   * - `retain-all`: Retains all your resources on remove.
+   * - `remove`: Removes the underlying resource.
+   * - `retain`: Retains resources like S3 buckets and DynamoDB tables. Removes everything else.
+   * - `retain-all`: Retains all resources.
    *
    * :::tip
-   * If you change your removal policy, you'll need to deploy your app once for it to take effect.
+   * If you change your removal policy, you'll need to deploy your app once for it to take
+   * effect.
    * :::
    *
-   * @default `"retain"`
-   * @example
-   * Retain resources if it's the _production_ stage, otherwise remove all resources.
+   * For example, retain resources if it's the _production_ stage, otherwise remove all
+   * resources.
+   *
    * ```ts
    * {
    *   removal: input.stage === "production" ? "retain" : "remove"
    * }
    * ```
+   *
+   * This applies to not just the `sst remove` command but also cases where you remove a
+   * resource from the `sst.config.ts` and run `sst dev` or `sst deploy`.
+   *
+   * <VideoAside title="Watch a video on how to protect your prod resources" href="https://youtu.be/fb6UBGwgDuA" />
+   *
+   * To control how a stage is handled on `sst remove`, check out the `protected` prop.
+   *
+   * @default `"retain"`
    */
   removal?: "remove" | "retain" | "retain-all";
   /**
@@ -169,7 +179,7 @@ export interface App {
    * }
    * ```
    *
-   * Check out the full list in the [Directory](/docs/providers#directory).
+   * Check out the full list in the [Directory](/docs/all-providers#directory).
    *
    * :::tip
    * You'll need to run `sst install` after you update the `providers` in your config.
@@ -234,15 +244,29 @@ export interface App {
   home: "aws" | "cloudflare" | "local";
 
   /**
-   * Prevents `sst remove` from being executed on this stage.
+   * If set to `true`, the `sst remove` CLI will not run and will error out.
    *
-   * @example
-   * Prevent the "production" stage from being removed.
+   * This is useful for preventing cases where you run `sst remove --stage <stage>` for the
+   * wrong stage.
+   *
+   * :::tip
+   * Protect your production stages from being accidentally removed.
+   * :::
+   *
+   * For example, prevent the _production_ stage from being removed.
+   *
    * ```ts
    * {
    *   protected: input.stage === "production"
    * }
    * ```
+   *
+   * However, this only applies to `sst remove` for stages.
+   *
+   * <VideoAside title="Watch a video on how to protect your prod resources" href="https://youtu.be/fb6UBGwgDuA" />
+   *
+   * If you accidentally remove a resource from the `sst.config.ts` and run `sst deploy` or
+   * `sst dev`, it'll still get removed. To avoid this, check out the `removal` prop.
    */
   protected?: boolean;
 }

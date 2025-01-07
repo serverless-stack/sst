@@ -16,11 +16,11 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
-	"github.com/sst/ion/cmd/sst/mosaic/aws"
-	"github.com/sst/ion/cmd/sst/mosaic/cloudflare"
-	"github.com/sst/ion/cmd/sst/mosaic/deployer"
-	"github.com/sst/ion/cmd/sst/mosaic/ui/common"
-	"github.com/sst/ion/pkg/project"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/aws"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/cloudflare"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/deployer"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/ui/common"
+	"github.com/sst/sst/v3/pkg/project"
 
 	"golang.org/x/crypto/ssh/terminal"
 )
@@ -153,6 +153,23 @@ func (u *UI) Event(unknown interface{}) {
 	case *common.StdoutEvent:
 		u.println(evt.Line)
 
+	case *aws.TaskProvisionEvent:
+		u.printEvent(u.getColor(""), TEXT_NORMAL_BOLD.Render(fmt.Sprintf("%-11s", "Provision")), evt.Name)
+
+	case *aws.TaskStartEvent:
+		u.workerTime[evt.WorkerID] = time.Now()
+		u.printEvent(u.getColor(evt.WorkerID), fmt.Sprintf("%-11s", "Start"), evt.Command)
+
+	case *aws.TaskLogEvent:
+		duration := time.Since(u.workerTime[evt.WorkerID]).Round(time.Millisecond)
+		formattedDuration := fmt.Sprintf("%.9s", fmt.Sprintf("+%v", duration))
+		u.printEvent(u.getColor(evt.WorkerID), formattedDuration, evt.Line)
+
+	case *aws.TaskCompleteEvent:
+		duration := time.Since(u.workerTime[evt.WorkerID]).Round(time.Millisecond)
+		formattedDuration := fmt.Sprintf("took %.9s", fmt.Sprintf("+%v", duration))
+		u.printEvent(u.getColor(evt.WorkerID), "Done", formattedDuration)
+
 	case *aws.FunctionInvokedEvent:
 		u.workerTime[evt.WorkerID] = time.Now()
 		u.printEvent(u.getColor(evt.WorkerID), TEXT_NORMAL_BOLD.Render(fmt.Sprintf("%-11s", "Invoke")), u.functionName(evt.FunctionID))
@@ -193,7 +210,9 @@ func (u *UI) Event(unknown interface{}) {
 
 	case *deployer.DeployFailedEvent:
 		u.reset()
-		u.printEvent(TEXT_DANGER, "Error", evt.Error)
+		if evt.Error != "" {
+			u.printEvent(TEXT_DANGER, "Error", evt.Error)
+		}
 
 	case *project.StackCommandEvent:
 		u.reset()
@@ -232,6 +251,15 @@ func (u *UI) Event(unknown interface{}) {
 	case *project.BuildFailedEvent:
 		u.reset()
 		u.printEvent(TEXT_DANGER, "Error", evt.Error)
+		break
+
+	case *project.SkipEvent:
+		u.println(
+			TEXT_INFO_BOLD.Render("~"),
+			TEXT_NORMAL_BOLD.Render("  No changes"),
+		)
+		u.reset()
+		break
 
 	case *apitype.ResourcePreEvent:
 		u.timing[evt.Metadata.URN] = time.Now()
@@ -423,6 +451,7 @@ func (u *UI) Event(unknown interface{}) {
 					}
 					u.println(TEXT_NORMAL.Render("   " + line))
 				}
+
 				importDiffs, ok := evt.ImportDiffs[status.URN]
 				if ok {
 					isSSTComponent := strings.Contains(status.URN, "::sst")
@@ -444,10 +473,10 @@ func (u *UI) Event(unknown interface{}) {
 						if !isSSTComponent {
 							u.print(TEXT_INFO.Render("`" + string(diff.Input) + ": " + string(value) + ",`"))
 						}
-						u.println()
+						u.blank()
 					}
 				} else {
-					u.println()
+					u.blank()
 				}
 			}
 		}
@@ -536,12 +565,12 @@ func (u *UI) printEvent(barColor lipgloss.Style, label string, message ...string
 		u.print(TEXT_DIM.Render(fmt.Sprint(fmt.Sprintf("%-11s", label), " ")))
 	}
 	if len(message) > 0 {
-		u.print(TEXT_DIM.Render(message[0]))
+		u.print(TEXT_NORMAL.Render(message[0]))
 	}
 	u.println()
 	for _, msg := range message[1:] {
 		u.print(barColor.Copy().Bold(true).Render("|  "))
-		u.println(TEXT_DIM.Render(msg))
+		u.println(TEXT_NORMAL.Render(msg))
 	}
 }
 
@@ -615,9 +644,9 @@ func (u *UI) FormatURN(urn string) string {
 }
 
 func Success(msg string) {
-	fmt.Fprint(os.Stderr, strings.TrimSpace(TEXT_SUCCESS_BOLD.Render(IconCheck)+"  "+TEXT_NORMAL.Render(fmt.Sprintln(msg))))
+	fmt.Fprintln(os.Stderr, strings.TrimSpace(TEXT_SUCCESS_BOLD.Render(IconCheck)+"  "+TEXT_NORMAL.Render(msg)))
 }
 
 func Error(msg string) {
-	fmt.Fprint(os.Stderr, strings.TrimSpace(TEXT_DANGER_BOLD.Render(IconX)+"  "+TEXT_NORMAL.Render(fmt.Sprintln(msg))))
+	fmt.Fprintln(os.Stderr, strings.TrimSpace(TEXT_DANGER_BOLD.Render(IconX)+"  "+TEXT_NORMAL.Render(msg)))
 }

@@ -11,9 +11,9 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/workspace"
-	"github.com/sst/ion/pkg/global"
-	"github.com/sst/ion/pkg/project/common"
-	"github.com/sst/ion/pkg/project/provider"
+	"github.com/sst/sst/v3/pkg/global"
+	"github.com/sst/sst/v3/pkg/project/common"
+	"github.com/sst/sst/v3/pkg/project/provider"
 )
 
 func (p *Project) GetCompleted(ctx context.Context) (*CompleteEvent, error) {
@@ -83,6 +83,7 @@ func getCompletedEvent(ctx context.Context, stack auto.Stack) (*CompleteEvent, e
 		Tunnels:     map[string]Tunnel{},
 		Hints:       map[string]string{},
 		Outputs:     map[string]interface{}{},
+		Tasks:       map[string]Task{},
 		Errors:      []Error{},
 		Finished:    false,
 		Resources:   []apitype.ResourceV3{},
@@ -115,6 +116,14 @@ func getCompletedEvent(ctx context.Context, stack auto.Stack) (*CompleteEvent, e
 			json.Unmarshal(data, &entry)
 			entry.Name = resource.URN.Name()
 			complete.Devs[entry.Name] = entry
+		}
+
+		if match, ok := outputs["_task"].(map[string]interface{}); ok {
+			data, _ := json.Marshal(match)
+			var entry Task
+			json.Unmarshal(data, &entry)
+			entry.Name = resource.URN.Name()
+			complete.Tasks[entry.Name] = entry
 		}
 
 		if match, ok := outputs["_tunnel"].(map[string]interface{}); ok {

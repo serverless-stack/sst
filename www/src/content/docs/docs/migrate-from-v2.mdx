@@ -27,16 +27,15 @@ Join `#migrate-from-v2` on <a href={config.discord}>Discord</a>.
 
 #### Not supported
 
-While the goal with v3 is to support most of what's in v2, there are a couple of things that haven't been supported yet. If you rely on these heavily in your app, we recommend waiting a bit longer till we support them.
+While the goal with v3 is to support most of what's in v2, there are a few things that haven't been supported yet. There are also a couple of them that are currently in beta and will be released in the near future.
 
 | Construct | GitHub Issue |
 |----------|-------|
-| `Job` | [#170](https://github.com/sst/sst/issues/4834) |
-| `Auth` | [#90](https://github.com/sst/sst/issues/4893) |
+| `Auth` | [In beta](https://github.com/sst/sst/issues/4893) |
 | `Script` | [#811](https://github.com/sst/sst/issues/4323) |
 | `EventBus` | [#67](https://github.com/sst/sst/issues/4699) |
 | `RDS` MySQL | [#812](https://github.com/sst/sst/issues/4322) |
-| `Function` non-Node.js runtimes | [Python](https://github.com/sst/sst/issues/4669), [Container](https://github.com/sst/sst/issues/4462), [Custom](https://github.com/sst/sst/issues/4826), [Go](https://github.com/sst/sst/issues/4138) |
+| `Function` non-Node.js runtimes | [Python](https://github.com/sst/sst/issues/4669), [Container](https://github.com/sst/sst/issues/4462), [Custom](https://github.com/sst/sst/issues/4826) |
 
 :::note
 Currently, v3 only support WSL. Windows support is on the roadmap — [#347](https://github.com/sst/ion/issues/347)
@@ -68,7 +67,7 @@ No CloudFormation, means a couple of things:
 
 And moving away from CDK means:
 
-1. You cannot fall back to CDK constructs if something isn't supported by SST. Instead there is the [AWS Classic](https://www.pulumi.com/registry/packages/aws/) provider from Pulumi that's built on Terraform. There are also 150+ other providers that allow you to build on any cloud. Check out the [Directory](/docs/providers/#directory).
+1. You cannot fall back to CDK constructs if something isn't supported by SST. Instead there is the [AWS](https://www.pulumi.com/registry/packages/aws/) provider from Pulumi that's built on Terraform. There are also 150+ other providers that allow you to build on any cloud. Check out the [Directory](/docs/all-providers#directory).
 
    If you are using a lot of higher level CDK constructs in your v2 app, it's going to be really hard to migrate to v3. The Pulumi/Terraform ecosystem is fairly complete but it's mainly made up of low level resources. You might not have ready replacements for your CDK constructs.
 
@@ -756,6 +755,43 @@ Below shows the v3 component version of a v2 construct.
 
 ---
 
+### Job
+
+The `Task` component that replaces `Job` is based on AWS Fargate. It runs a container task in the background.
+
+<Tabs>
+  <TabItem label="v3">
+  ```ts title="sst.config.ts"
+  const cluster = new sst.aws.Cluster("MyCluster", { vpc });
+
+  cluster.addTask("MyTask", {
+    image: {
+      context: "./src",
+      dockerfile: "Dockerfile"
+    }
+  });
+  ```
+  </TabItem>
+  <TabItem label="v2">
+  ```ts title="sst.config.ts"
+  new Job(stack, "MyJob", {
+    handler: "src/job.main"
+  });
+  ```
+  </TabItem>
+</Tabs>
+
+There are some key differences between `Job` and `Task`.
+
+1. `Task` is based on AWS Fargate. `Job` used a combination of AWS CodeBuild and Lambda.
+2. Since `Task` is natively based on Fargate, you can use the AWS SDK to interact with it, even in runtimes the SST SDK doesn't support.
+3. In dev mode, `Task` uses Fargate only, whereas `Job` used Lambda.
+4. While CodeBuild is billed per minute, Fargate is a lot cheaper than CodeBuild. Roughly **$0.02 per hour** vs **$0.3 per hour** on X86 machines.
+
+Learn more about [`Task`](/blog/tasks-in-v3).
+
+---
+
 ### RDS
 
 <Tabs>
@@ -789,7 +825,7 @@ For migrations, we recommend using [Drizzle Kit](https://orm.drizzle.team/kit-do
   ```ts title="sst.config.ts"
   new sst.aws.Cron("MyCronJob", {
     schedule: "rate(1 minute)",
-    job: "src/cron.handler"
+    function: "src/cron.handler"
   });
   ```
   </TabItem>

@@ -348,6 +348,8 @@ removal: input?.stage === "production" ? "retain" : "remove",
 
 This is telling SST that if the stage is called `production` then on remove, retain critical resources like buckets and databases. This should avoid any accidental data loss.
 
+<VideoAside title="Watch a video on how to protect your prod resources" href="https://youtu.be/fb6UBGwgDuA" />
+
 Learn more about [removal policies](/docs/reference/config/#removal).
 
 ---
@@ -355,6 +357,8 @@ Learn more about [removal policies](/docs/reference/config/#removal).
 ## With a team
 
 This workflow really shines when working with a team. Let's look at what it looks like with a basic git workflow.
+
+<VideoAside title="Watch a video about preview environments and the team workflow" href="https://youtu.be/Pvg_AiTfWeY" />
 
 1. Every developer on the team uses `sst dev` to work in their own isolated personal stage.
 2. You commit your changes to a branch called `dev`.

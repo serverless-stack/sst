@@ -6,12 +6,16 @@
 .sl-markdown-content :is(h1, h2, h3, h4, h5, h6) > a:not([class]) {
   text-decoration: none;
   cursor: none;
-  color: var(--__sl-font-headings);
+  color: var(--color-text);
+
+  & code {
+    color: var(--color-text);
+  }
 
   &:hover {
     cursor: pointer;
     text-decoration: none;
-    color: var(--__sl-font-headings);
+    color: var(--color-text);
   }
 
   &:hover::after {

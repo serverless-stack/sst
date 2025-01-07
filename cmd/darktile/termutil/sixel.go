@@ -1,7 +1,7 @@
 package termutil
 
 import (
-	"github.com/sst/ion/cmd/darktile/sixel"
+	"github.com/sst/sst/v3/cmd/darktile/sixel"
 	"image"
 	"math"
 	"strings"

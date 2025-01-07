@@ -1,70 +1,51 @@
-import fs from "fs";
-import path from "path";
 import {
   ComponentResourceOptions,
-  Input,
   Output,
   all,
   interpolate,
   output,
-  secret,
 } from "@pulumi/pulumi";
-import { Platform } from "@pulumi/docker-build";
-import { Component, transform } from "../component.js";
-import { toGBs, toMBs } from "../size.js";
-import { toNumber } from "../cpu.js";
+import { Component, Prettify, transform } from "../component.js";
 import { dns as awsDns } from "./dns.js";
 import { VisibleError } from "../error.js";
 import { DnsValidatedCertificate } from "./dns-validated-certificate.js";
 import { Link } from "../link.js";
-import { bootstrap } from "./helpers/bootstrap.js";
 import {
-  ClusterArgs,
+  Cluster,
   ClusterServiceArgs,
-  supportedCpus,
-  supportedMemories,
+  ClusterVpcsNormalizedArgs,
+  createExecutionRole,
+  createTaskDefinition,
+  createTaskRole,
+  normalizeArchitecture,
+  normalizeContainers,
+  normalizeCpu,
+  normalizeMemory,
+  normalizeStorage,
 } from "./cluster.js";
-import { RETENTION } from "./logging.js";
 import { URL_UNAVAILABLE } from "./linkable.js";
 import {
   appautoscaling,
-  cloudwatch,
   ec2,
-  ecr,
   ecs,
-  getCallerIdentityOutput,
-  getPartitionOutput,
   getRegionOutput,
   iam,
   lb,
   servicediscovery,
 } from "@pulumi/aws";
-import { Permission } from "./permission.js";
 import { Vpc } from "./vpc.js";
-import { Vpc as VpcV1 } from "./vpc-v1";
 import { DevCommand } from "../experimental/dev-command.js";
-import { Efs } from "./efs.js";
 import { toSeconds } from "../duration.js";
-import { imageBuilder } from "./helpers/container-builder.js";
 
 export interface ServiceArgs extends ClusterServiceArgs {
   /**
    * The cluster to use for the service.
    */
-  cluster: Input<{
-    /**
-     * The name of the cluster.
-     */
-    name: Input<string>;
-    /**
-     * The ARN of the cluster.
-     */
-    arn: Input<string>;
-  }>;
+  cluster: Cluster;
   /**
    * The VPC to use for the cluster.
    */
-  vpc: ClusterArgs["vpc"];
+  vpc: Vpc | Output<Prettify<ClusterVpcsNormalizedArgs>>;
 }
 
 /**
@@ -94,25 +75,26 @@ export class Service extends Component implements Link.Linkable {
   constructor(
     name: string,
     args: ServiceArgs,
-    opts?: ComponentResourceOptions,
+    opts: ComponentResourceOptions = {},
   ) {
     super(__pulumiType, name, args, opts);
 
     const self = this;
-    const partition = getPartitionOutput({}, opts).partition;
+    const clusterArn = args.cluster.nodes.cluster.arn;
+    const clusterName = args.cluster.nodes.cluster.name;
     const region = getRegionOutput({}, opts).name;
     const dev = normalizeDev();
-    const cluster = output(args.cluster);
-    const architecture = normalizeArchitecture();
-    const cpu = normalizeCpu();
-    const memory = normalizeMemory();
-    const storage = normalizeStorage();
-    const scaling = normalizeScaling();
-    const containers = normalizeContainers();
+    const architecture = normalizeArchitecture(args);
+    const cpu = normalizeCpu(args);
+    const memory = normalizeMemory(cpu, args);
+    const storage = normalizeStorage(args);
+    const containers = normalizeContainers("service", args, name, architecture);
     const lbArgs = normalizeLoadBalancer();
+    const scaling = normalizeScaling();
+    const capacity = normalizeCapacity();
     const vpc = normalizeVpc();
 
-    const taskRole = createTaskRole();
+    const taskRole = createTaskRole(name, args, opts, self);
 
     this.dev = !!dev;
     this.cloudmapNamespace = vpc.cloudmapNamespaceName;
@@ -124,12 +106,23 @@ export class Service extends Component implements Link.Linkable {
       return;
     }
 
-    const bootstrapData = region.apply((region) => bootstrap.forRegion(region));
-    const executionRole = createExecutionRole();
-    const taskDefinition = createTaskDefinition();
+    const executionRole = createExecutionRole(name, args, opts, self);
+    const taskDefinition = createTaskDefinition(
+      name,
+      args,
+      opts,
+      self,
+      containers,
+      architecture,
+      cpu,
+      memory,
+      storage,
+      taskRole,
+      executionRole,
+    );
     const certificateArn = createSsl();
     const loadBalancer = createLoadBalancer();
-    const targets = createTargets();
+    const targetGroups = createTargets();
     createListeners();
     const cloudmapService = createCloudmapService();
     const service = createService();
@@ -165,13 +158,6 @@ export class Service extends Component implements Link.Linkable {
     }
 
     function normalizeVpc() {
-      // "vpc" is a Vpc.v1 component
-      if (args.vpc instanceof VpcV1) {
-        throw new VisibleError(
-          `You are using the "Vpc.v1" component. Please migrate to the latest "Vpc" component.`,
-        );
-      }
-
       // "vpc" is a Vpc component
       if (args.vpc instanceof Vpc) {
         const vpc = args.vpc;
@@ -181,7 +167,7 @@ export class Service extends Component implements Link.Linkable {
           loadBalancerSubnets: lbArgs?.pub.apply((v) =>
             v ? vpc.publicSubnets : vpc.privateSubnets,
           ),
-          serviceSubnets: vpc.publicSubnets,
+          containerSubnets: vpc.publicSubnets,
           securityGroups: vpc.securityGroups,
           cloudmapNamespaceId: vpc.nodes.cloudmapNamespace.id,
           cloudmapNamespaceName: vpc.nodes.cloudmapNamespace.name,
@@ -192,241 +178,137 @@ export class Service extends Component implements Link.Linkable {
       return output(args.vpc).apply((vpc) => ({ isSstVpc: false, ...vpc }));
     }
 
-    function normalizeArchitecture() {
-      return output(args.architecture ?? "x86_64").apply((v) => v);
-    }
-
-    function normalizeCpu() {
-      return output(args.cpu ?? "0.25 vCPU").apply((v) => {
-        if (!supportedCpus[v]) {
-          throw new Error(
-            `Unsupported CPU: ${v}. The supported values for CPU are ${Object.keys(
-              supportedCpus,
-            ).join(", ")}`,
-          );
-        }
-        return v;
-      });
-    }
-
-    function normalizeMemory() {
-      return all([cpu, args.memory ?? "0.5 GB"]).apply(([cpu, v]) => {
-        if (!(v in supportedMemories[cpu])) {
-          throw new Error(
-            `Unsupported memory: ${v}. The supported values for memory for a ${cpu} CPU are ${Object.keys(
-              supportedMemories[cpu],
-            ).join(", ")}`,
-          );
-        }
-        return v;
-      });
-    }
-
-    function normalizeStorage() {
-      return output(args.storage ?? "20 GB").apply((v) => {
-        const storage = toGBs(v);
-        if (storage < 20 || storage > 200)
-          throw new Error(
-            `Unsupported storage: ${v}. The supported value for storage is between "20 GB" and "200 GB"`,
-          );
-        return v;
-      });
-    }
-
     function normalizeScaling() {
-      return output(args.scaling).apply((v) => ({
-        min: v?.min ?? 1,
-        max: v?.max ?? 1,
-        cpuUtilization: v?.cpuUtilization ?? 70,
-        memoryUtilization: v?.memoryUtilization ?? 70,
-      }));
+      return all([lbArgs?.type, args.scaling]).apply(([type, v]) => {
+        if (type !== "application" && v?.requestCount)
+          throw new VisibleError(
+            `Request count scaling is only supported for http/https protocols.`,
+          );
+
+        return {
+          min: v?.min ?? 1,
+          max: v?.max ?? 1,
+          cpuUtilization: v?.cpuUtilization ?? 70,
+          memoryUtilization: v?.memoryUtilization ?? 70,
+          requestCount: v?.requestCount ?? false,
+        };
+      });
     }
 
-    function normalizeContainers() {
-      if (
-        args.containers &&
-        (args.image ||
-          args.logging ||
-          args.environment ||
-          args.volumes ||
-          args.health ||
-          args.ssm)
-      ) {
-        throw new VisibleError(
-          `You cannot provide both "containers" and "image", "logging", "environment", "volumes", "health" or "ssm".`,
-        );
-      }
+    function normalizeCapacity() {
+      if (!args.capacity) return;
 
-      // Standardize containers
-      const containers = args.containers ?? [
-        {
-          name: name,
-          cpu: undefined,
-          memory: undefined,
-          image: args.image,
-          logging: args.logging,
-          environment: args.environment,
-          ssm: args.ssm,
-          volumes: args.volumes,
-          command: args.command,
-          entrypoint: args.entrypoint,
-          health: args.health,
-          dev: args.dev,
-        },
-      ];
-
-      // Normalize container props
-      return output(containers).apply((containers) =>
-        containers.map((v) => {
-          return {
-            ...v,
-            volumes: normalizeVolumes(),
-            image: normalizeImage(),
-            logging: normalizeLogging(),
-          };
-
-          function normalizeVolumes() {
-            return output(v.volumes).apply(
-              (volumes) =>
-                volumes?.map((volume) => ({
-                  path: volume.path,
-                  efs:
-                    volume.efs instanceof Efs
-                      ? {
-                          fileSystem: volume.efs.id,
-                          accessPoint: volume.efs.accessPoint,
-                        }
-                      : volume.efs,
-                })),
-            );
-          }
-
-          function normalizeImage() {
-            return all([v.image, architecture]).apply(
-              ([image, architecture]) => {
-                if (typeof image === "string") return image;
-
-                return {
-                  ...image,
-                  context: image?.context ?? ".",
-                  platform:
-                    architecture === "arm64"
-                      ? Platform.Linux_arm64
-                      : Platform.Linux_amd64,
-                };
-              },
-            );
-          }
-
-          function normalizeLogging() {
-            return output(v.logging).apply((logging) => ({
-              ...logging,
-              retention: logging?.retention ?? "1 month",
-            }));
-          }
-        }),
-      );
+      return output(args.capacity).apply((v) => {
+        if (v === "spot")
+          return { spot: { weight: 1 }, fargate: { weight: 0 } };
+        return v;
+      });
     }
 
     function normalizeLoadBalancer() {
-      if (!args.loadBalancer && !args.public) return;
+      const loadBalancer = ((args.loadBalancer ??
+        args.public) as typeof args.loadBalancer)!;
+      if (!loadBalancer) return;
 
-      if (args.loadBalancer && args.public)
-        throw new VisibleError(
-          `You cannot provide both "loadBalancer" and "public". "public" is deprecated. Use "loadBalancer" to configure the load balancer.`,
-        );
-
-      // normalize ports
-      const ports = all([
-        (args.loadBalancer ?? args.public)!,
-        containers,
-      ]).apply(([lb, containers]) => {
-        // validate ports
-        if (!lb.ports || lb.ports.length === 0)
-          throw new VisibleError(
-            `You must provide the ports to expose via "loadBalancer.ports".`,
-          );
-
-        // validate container defined when multiple containers exists
-        if (containers.length > 1) {
-          lb.ports.forEach((v) => {
-            if (!v.container)
-              throw new VisibleError(
-                `You must provide a container name in "loadBalancer.ports" when there is more than one container.`,
-              );
-          });
-        }
-
-        // parse protocols and ports
-        const ports = lb.ports.map((v) => {
-          const listenParts = v.listen.split("/");
-          const listenPort = parseInt(listenParts[0]);
-          const listenProtocol = listenParts[1];
-          const listenPath = v.path;
-          if (protocolType(listenProtocol) === "network" && listenPath)
+      // normalize rules
+      const rules = all([loadBalancer, containers]).apply(
+        ([lb, containers]) => {
+          // validate rules
+          const lbRules = lb.rules ?? lb.ports;
+          if (!lbRules || lbRules.length === 0)
             throw new VisibleError(
-              `Invalid path "${v.path}" for listen protocol "${v.listen}". Only "http" protocols support path-based routing.`,
+              `You must provide the ports to expose via "loadBalancer.rules".`,
             );
 
-          const redirectParts = v.redirect?.split("/");
-          const redirectPort = redirectParts && parseInt(redirectParts[0]);
-          const redirectProtocol = redirectParts && redirectParts[1];
-          if (redirectPort && redirectProtocol) {
-            if (protocolType(listenProtocol) !== protocolType(redirectProtocol))
+          // validate container defined when multiple containers exists
+          if (containers.length > 1) {
+            lbRules.forEach((v) => {
+              if (!v.container)
+                throw new VisibleError(
+                  `You must provide a container name in "loadBalancer.rules" when there is more than one container.`,
+                );
+            });
+          }
+
+          // parse protocols and ports
+          const rules = lbRules.map((v) => {
+            const listenParts = v.listen.split("/");
+            const listenPort = parseInt(listenParts[0]);
+            const listenProtocol = listenParts[1];
+            const listenConditions =
+              v.conditions || v.path
+                ? {
+                    path: v.conditions?.path ?? v.path,
+                    query: v.conditions?.query,
+                  }
+                : undefined;
+            if (protocolType(listenProtocol) === "network" && listenConditions)
               throw new VisibleError(
-                `The listen protocol "${v.listen}" must match the redirect protocol "${v.redirect}".`,
+                `Invalid rule conditions for listen protocol "${v.listen}". Only "http" protocols support conditions.`,
+              );
+
+            const redirectParts = v.redirect?.split("/");
+            const redirectPort = redirectParts && parseInt(redirectParts[0]);
+            const redirectProtocol = redirectParts && redirectParts[1];
+            if (redirectPort && redirectProtocol) {
+              if (
+                protocolType(listenProtocol) !== protocolType(redirectProtocol)
+              )
+                throw new VisibleError(
+                  `The listen protocol "${v.listen}" must match the redirect protocol "${v.redirect}".`,
+                );
+              return {
+                type: "redirect" as const,
+                listenPort,
+                listenProtocol,
+                listenConditions,
+                redirectPort,
+                redirectProtocol,
+              };
+            }
+
+            const forwardParts = v.forward ? v.forward.split("/") : listenParts;
+            const forwardPort = forwardParts && parseInt(forwardParts[0]);
+            const forwardProtocol = forwardParts && forwardParts[1];
+            if (protocolType(listenProtocol) !== protocolType(forwardProtocol))
+              throw new VisibleError(
+                `The listen protocol "${v.listen}" must match the forward protocol "${v.forward}".`,
               );
             return {
-              type: "redirect" as const,
+              type: "forward" as const,
               listenPort,
               listenProtocol,
-              listenPath,
-              redirectPort,
-              redirectProtocol,
+              listenConditions,
+              forwardPort,
+              forwardProtocol,
+              container: v.container ?? containers[0].name,
             };
-          }
+          });
 
-          const forwardParts = v.forward ? v.forward.split("/") : listenParts;
-          const forwardPort = forwardParts && parseInt(forwardParts[0]);
-          const forwardProtocol = forwardParts && forwardParts[1];
-          if (protocolType(listenProtocol) !== protocolType(forwardProtocol))
-            throw new VisibleError(
-              `The listen protocol "${v.listen}" must match the forward protocol "${v.forward}".`,
-            );
-          return {
-            type: "forward" as const,
-            listenPort,
-            listenProtocol,
-            listenPath,
-            forwardPort,
-            forwardProtocol,
-            container: v.container ?? containers[0].name,
-          };
-        });
-
-        // validate protocols are consistent
-        const appProtocols = ports.filter(
-          (port) => protocolType(port.listenProtocol) === "application",
-        );
-        if (appProtocols.length > 0 && appProtocols.length < ports.length)
-          throw new VisibleError(
-            `Protocols must be either all http/https, or all tcp/udp/tcp_udp/tls.`,
+          // validate protocols are consistent
+          const appProtocols = rules.filter(
+            (rule) => protocolType(rule.listenProtocol) === "application",
           );
-
-        // validate certificate exists for https/tls protocol
-        ports.forEach((port) => {
-          if (["https", "tls"].includes(port.listenProtocol) && !lb.domain) {
+          if (appProtocols.length > 0 && appProtocols.length < rules.length)
             throw new VisibleError(
-              `You must provide a custom domain for ${port.listenProtocol.toUpperCase()} protocol.`,
+              `Protocols must be either all http/https, or all tcp/udp/tcp_udp/tls.`,
             );
-          }
-        });
 
-        return ports;
-      });
+          // validate certificate exists for https/tls protocol
+          rules.forEach((rule) => {
+            if (["https", "tls"].includes(rule.listenProtocol) && !lb.domain) {
+              throw new VisibleError(
+                `You must provide a custom domain for ${rule.listenProtocol.toUpperCase()} protocol.`,
+              );
+            }
+          });
+
+          return rules;
+        },
+      );
 
       // normalize domain
-      const domain = output((args.loadBalancer ?? args.public)!).apply((lb) => {
+      const domain = output(loadBalancer).apply((lb) => {
         if (!lb.domain) return undefined;
 
         // normalize domain
@@ -441,21 +323,21 @@ export class Service extends Component implements Link.Linkable {
       });
 
       // normalize type
-      const type = output(ports).apply((ports) =>
-        ports[0].listenProtocol.startsWith("http") ? "application" : "network",
+      const type = output(rules).apply((rules) =>
+        rules[0].listenProtocol.startsWith("http") ? "application" : "network",
       );
 
       // normalize public/private
-      const pub = output(args.loadBalancer).apply((lb) => lb?.public ?? true);
+      const pub = output(loadBalancer).apply((lb) => lb?.public ?? true);
 
       // normalize health check
-      const health = all([type, ports, args.loadBalancer]).apply(
-        ([type, ports, lb]) =>
+      const health = all([type, rules, loadBalancer]).apply(
+        ([type, rules, lb]) =>
           Object.fromEntries(
             Object.entries(lb?.health ?? {}).map(([k, v]) => {
               if (
-                !ports.find(
-                  (p) => `${p.forwardPort}/${p.forwardProtocol}` === k,
+                !rules.find(
+                  (r) => `${r.forwardPort}/${r.forwardProtocol}` === k,
                 )
               )
                 throw new VisibleError(
@@ -480,7 +362,7 @@ export class Service extends Component implements Link.Linkable {
           ),
       );
 
-      return { type, ports, domain, pub, health };
+      return { type, rules, domain, pub, health };
     }
 
     function createLoadBalancer() {
@@ -533,15 +415,15 @@ export class Service extends Component implements Link.Linkable {
     function createTargets() {
       if (!loadBalancer || !lbArgs) return;
 
-      return all([lbArgs.ports, lbArgs.health]).apply(([ports, health]) => {
+      return all([lbArgs.rules, lbArgs.health]).apply(([rules, health]) => {
         const targets: Record<string, lb.TargetGroup> = {};
 
-        ports.forEach((p) => {
-          if (p.type !== "forward") return;
+        rules.forEach((r) => {
+          if (r.type !== "forward") return;
 
-          const container = p.container;
-          const forwardProtocol = p.forwardProtocol.toUpperCase();
-          const forwardPort = p.forwardPort;
+          const container = r.container;
+          const forwardProtocol = r.forwardProtocol.toUpperCase();
+          const forwardPort = r.forwardPort;
           const targetId = `${container}${forwardProtocol}${forwardPort}`;
           const target =
             targets[targetId] ??
@@ -562,7 +444,7 @@ export class Service extends Component implements Link.Linkable {
                   protocol: forwardProtocol,
                   targetType: "ip",
                   vpcId: vpc.id,
-                  healthCheck: health[`${p.forwardPort}/${p.forwardProtocol}`],
+                  healthCheck: health[`${r.forwardPort}/${r.forwardProtocol}`],
                 },
                 { parent: self },
               ),
@@ -574,30 +456,30 @@ export class Service extends Component implements Link.Linkable {
     }
 
     function createListeners() {
-      if (!lbArgs || !loadBalancer || !targets) return;
+      if (!lbArgs || !loadBalancer || !targetGroups) return;
 
-      return all([lbArgs.ports, targets, certificateArn]).apply(
-        ([ports, targets, cert]) => {
+      return all([lbArgs.rules, targetGroups, certificateArn]).apply(
+        ([rules, targets, cert]) => {
           // Group listeners by protocol and port
           // Because listeners with the same protocol and port but different path
           // are just rules of the same listener.
-          const listenersById: Record<string, typeof ports> = {};
-          ports.forEach((p) => {
-            const listenProtocol = p.listenProtocol.toUpperCase();
-            const listenPort = p.listenPort;
+          const listenersById: Record<string, typeof rules> = {};
+          rules.forEach((r) => {
+            const listenProtocol = r.listenProtocol.toUpperCase();
+            const listenPort = r.listenPort;
             const listenerId = `${listenProtocol}${listenPort}`;
             listenersById[listenerId] = listenersById[listenerId] ?? [];
-            listenersById[listenerId].push(p);
+            listenersById[listenerId].push(r);
           });
 
           // Create listeners
-          return Object.entries(listenersById).map(([listenerId, ports]) => {
-            const listenProtocol = ports[0].listenProtocol.toUpperCase();
-            const listenPort = ports[0].listenPort;
-            const defaultRule = ports.find((p) => !p.listenPath);
-            const customRules = ports.filter((p) => p.listenPath);
-            const buildActions = (p?: (typeof ports)[number]) => [
-              ...(!p
+          return Object.entries(listenersById).map(([listenerId, rules]) => {
+            const listenProtocol = rules[0].listenProtocol.toUpperCase();
+            const listenPort = rules[0].listenPort;
+            const defaultRule = rules.find((r) => !r.listenConditions);
+            const customRules = rules.filter((r) => r.listenConditions);
+            const buildActions = (r?: (typeof rules)[number]) => [
+              ...(!r
                 ? [
                     {
                       type: "fixed-response",
@@ -609,26 +491,26 @@ export class Service extends Component implements Link.Linkable {
                     },
                   ]
                 : []),
-              ...(p?.type === "forward"
+              ...(r?.type === "forward"
                 ? [
                     {
                       type: "forward",
                       targetGroupArn:
                         targets[
-                          `${p.container}${p.forwardProtocol.toUpperCase()}${
-                            p.forwardPort
+                          `${r.container}${r.forwardProtocol.toUpperCase()}${
+                            r.forwardPort
                           }`
                         ].arn,
                     },
                   ]
                 : []),
-              ...(p?.type === "redirect"
+              ...(r?.type === "redirect"
                 ? [
                     {
                       type: "redirect",
                       redirect: {
-                        port: p.redirectPort.toString(),
-                        protocol: p.redirectProtocol.toUpperCase(),
+                        port: r.redirectPort.toString(),
+                        protocol: r.redirectProtocol.toUpperCase(),
                         statusCode: "HTTP_301",
                       },
                     },
@@ -653,17 +535,20 @@ export class Service extends Component implements Link.Linkable {
             );
 
             customRules.forEach(
-              (p) =>
+              (r) =>
                 new lb.ListenerRule(
-                  `${name}Listener${listenerId}Rule${p.listenPath}`,
+                  `${name}Listener${listenerId}Rule${
+                    r.listenConditions!.path ?? ""
+                  }${r.listenConditions!.query ?? ""}`,
                   {
                     listenerArn: listener.arn,
-                    actions: buildActions(p),
+                    actions: buildActions(r),
                     conditions: [
                       {
-                        pathPattern: {
-                          values: [p.listenPath!],
-                        },
+                        pathPattern: r.listenConditions!.path
+                          ? { values: [r.listenConditions!.path!] }
+                          : undefined,
+                        queryStrings: r.listenConditions!.query,
                       },
                     ],
                   },
@@ -696,303 +581,6 @@ export class Service extends Component implements Link.Linkable {
       });
     }
 
-    function createTaskRole() {
-      if (args.taskRole)
-        return iam.Role.get(
-          `${name}TaskRole`,
-          args.taskRole,
-          {},
-          { parent: self },
-        );
-
-      const policy = all([
-        args.permissions || [],
-        Link.getInclude<Permission>("aws.permission", args.link),
-      ]).apply(([argsPermissions, linkPermissions]) =>
-        iam.getPolicyDocumentOutput({
-          statements: [
-            ...argsPermissions,
-            ...linkPermissions.map((item) => ({
-              actions: item.actions,
-              resources: item.resources,
-            })),
-            {
-              actions: [
-                "ssmmessages:CreateControlChannel",
-                "ssmmessages:CreateDataChannel",
-                "ssmmessages:OpenControlChannel",
-                "ssmmessages:OpenDataChannel",
-              ],
-              resources: ["*"],
-            },
-          ],
-        }),
-      );
-
-      return new iam.Role(
-        ...transform(
-          args.transform?.taskRole,
-          `${name}TaskRole`,
-          {
-            assumeRolePolicy: !dev
-              ? iam.assumeRolePolicyForPrincipal({
-                  Service: "ecs-tasks.amazonaws.com",
-                })
-              : iam.assumeRolePolicyForPrincipal({
-                  AWS: interpolate`arn:${partition}:iam::${
-                    getCallerIdentityOutput({}, opts).accountId
-                  }:root`,
-                }),
-            inlinePolicies: policy.apply(({ statements }) =>
-              statements ? [{ name: "inline", policy: policy.json }] : [],
-            ),
-          },
-          { parent: self },
-        ),
-      );
-    }
-
-    function createExecutionRole() {
-      if (args.executionRole)
-        return iam.Role.get(
-          `${name}ExecutionRole`,
-          args.executionRole,
-          {},
-          { parent: self },
-        );
-
-      return new iam.Role(
-        ...transform(
-          args.transform?.executionRole,
-          `${name}ExecutionRole`,
-          {
-            assumeRolePolicy: iam.assumeRolePolicyForPrincipal({
-              Service: "ecs-tasks.amazonaws.com",
-            }),
-            managedPolicyArns: [
-              interpolate`arn:${partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy`,
-            ],
-            inlinePolicies: [
-              {
-                name: "inline",
-                policy: iam.getPolicyDocumentOutput({
-                  statements: [
-                    {
-                      sid: "ReadSsmAndSecrets",
-                      actions: [
-                        "ssm:GetParameters",
-                        "ssm:GetParameter",
-                        "ssm:GetParameterHistory",
-                        "secretsmanager:GetSecretValue",
-                      ],
-                      resources: ["*"],
-                    },
-                  ],
-                }).json,
-              },
-            ],
-          },
-          { parent: self },
-        ),
-      );
-    }
-
-    function createTaskDefinition() {
-      const containerDefinitions = all([
-        containers,
-        Link.propertiesToEnv(Link.getProperties(args.link)),
-      ]).apply(([containers, linkEnvs]) =>
-        containers.map((container) => ({
-          name: container.name,
-          image: (() => {
-            if (typeof container.image === "string")
-              return output(container.image);
-
-            const contextPath = path.join(
-              $cli.paths.root,
-              container.image.context,
-            );
-            const dockerfile = container.image.dockerfile ?? "Dockerfile";
-            const dockerfilePath = container.image.dockerfile
-              ? path.join($cli.paths.root, container.image.dockerfile)
-              : path.join(
-                  $cli.paths.root,
-                  container.image.context,
-                  "Dockerfile",
-                );
-            const dockerIgnorePath = fs.existsSync(
-              path.join(contextPath, `${dockerfile}.dockerignore`),
-            )
-              ? path.join(contextPath, `${dockerfile}.dockerignore`)
-              : path.join(contextPath, ".dockerignore");
-
-            // add .sst to .dockerignore if not exist
-            const lines = fs.existsSync(dockerIgnorePath)
-              ? fs.readFileSync(dockerIgnorePath).toString().split("\n")
-              : [];
-            if (!lines.find((line) => line === ".sst")) {
-              fs.writeFileSync(
-                dockerIgnorePath,
-                [...lines, "", "# sst", ".sst"].join("\n"),
-              );
-            }
-
-            // Build image
-            const image = imageBuilder(
-              ...transform(
-                args.transform?.image,
-                `${name}Image${container.name}`,
-                {
-                  context: { location: contextPath },
-                  dockerfile: { location: dockerfilePath },
-                  buildArgs: {
-                    ...container.image.args,
-                    ...linkEnvs,
-                  },
-                  platforms: [container.image.platform],
-                  tags: [container.name, ...(container.image.tags ?? [])].map(
-                    (tag) => interpolate`${bootstrapData.assetEcrUrl}:${tag}`,
-                  ),
-                  registries: [
-                    ecr
-                      .getAuthorizationTokenOutput(
-                        {
-                          registryId: bootstrapData.assetEcrRegistryId,
-                        },
-                        { parent: self },
-                      )
-                      .apply((authToken) => ({
-                        address: authToken.proxyEndpoint,
-                        password: secret(authToken.password),
-                        username: authToken.userName,
-                      })),
-                  ],
-                  cacheFrom: [
-                    {
-                      registry: {
-                        ref: interpolate`${bootstrapData.assetEcrUrl}:${container.name}-cache`,
-                      },
-                    },
-                  ],
-                  cacheTo: [
-                    {
-                      registry: {
-                        ref: interpolate`${bootstrapData.assetEcrUrl}:${container.name}-cache`,
-                        imageManifest: true,
-                        ociMediaTypes: true,
-                        mode: "max",
-                      },
-                    },
-                  ],
-                  push: true,
-                },
-                { parent: self },
-              ),
-            );
-
-            return interpolate`${bootstrapData.assetEcrUrl}@${image.digest}`;
-          })(),
-          cpu: container.cpu ? toNumber(container.cpu) : undefined,
-          memory: container.memory ? toMBs(container.memory) : undefined,
-          command: container.command,
-          entrypoint: container.entrypoint,
-          healthCheck: container.health && {
-            command: container.health.command,
-            startPeriod: toSeconds(container.health.startPeriod ?? "0 seconds"),
-            timeout: toSeconds(container.health.timeout ?? "5 seconds"),
-            interval: toSeconds(container.health.interval ?? "30 seconds"),
-            retries: container.health.retries ?? 3,
-          },
-          pseudoTerminal: true,
-          portMappings: [{ containerPortRange: "1-65535" }],
-          logConfiguration: {
-            logDriver: "awslogs",
-            options: {
-              "awslogs-group": (() => {
-                return new cloudwatch.LogGroup(
-                  ...transform(
-                    args.transform?.logGroup,
-                    `${name}LogGroup${container.name}`,
-                    {
-                      name: interpolate`/sst/cluster/${cluster.name}/${name}/${container.name}`,
-                      retentionInDays: RETENTION[container.logging.retention],
-                    },
-                    { parent: self },
-                  ),
-                );
-              })().name,
-              "awslogs-region": region,
-              "awslogs-stream-prefix": "/service",
-            },
-          },
-          environment: Object.entries({
-            ...container.environment,
-            ...linkEnvs,
-          }).map(([name, value]) => ({ name, value })),
-          linuxParameters: {
-            initProcessEnabled: true,
-          },
-          mountPoints: container.volumes?.map((volume) => ({
-            sourceVolume: volume.efs.accessPoint,
-            containerPath: volume.path,
-          })),
-          secrets: Object.entries(container.ssm ?? {}).map(
-            ([name, valueFrom]) => ({ name, valueFrom }),
-          ),
-        })),
-      );
-
-      return storage.apply(
-        (storage) =>
-          new ecs.TaskDefinition(
-            ...transform(
-              args.transform?.taskDefinition,
-              `${name}Task`,
-              {
-                family: interpolate`${cluster.name}-${name}`,
-                trackLatest: true,
-                cpu: cpu.apply((v) => toNumber(v).toString()),
-                memory: memory.apply((v) => toMBs(v).toString()),
-                networkMode: "awsvpc",
-                ephemeralStorage: (() => {
-                  const sizeInGib = toGBs(storage);
-                  return sizeInGib === 20 ? undefined : { sizeInGib };
-                })(),
-                requiresCompatibilities: ["FARGATE"],
-                runtimePlatform: {
-                  cpuArchitecture: architecture.apply((v) => v.toUpperCase()),
-                  operatingSystemFamily: "LINUX",
-                },
-                executionRoleArn: executionRole.arn,
-                taskRoleArn: taskRole.arn,
-                volumes: output(containers).apply((containers) => {
-                  const uniqueAccessPoints: Set<string> = new Set();
-                  return containers.flatMap((container) =>
-                    (container.volumes ?? []).flatMap((volume) => {
-                      if (uniqueAccessPoints.has(volume.efs.accessPoint))
-                        return [];
-                      uniqueAccessPoints.add(volume.efs.accessPoint);
-                      return {
-                        name: volume.efs.accessPoint,
-                        efsVolumeConfiguration: {
-                          fileSystemId: volume.efs.fileSystem,
-                          transitEncryption: "ENABLED",
-                          authorizationConfig: {
-                            accessPointId: volume.efs.accessPoint,
-                          },
-                        },
-                      };
-                    }),
-                  );
-                }),
-                containerDefinitions: $jsonStringify(containerDefinitions),
-              },
-              { parent: self },
-            ),
-          ),
-      );
-    }
-
     function createCloudmapService() {
       return new servicediscovery.Service(
         `${name}CloudmapService`,
@@ -1019,15 +607,45 @@ export class Service extends Component implements Link.Linkable {
           `${name}Service`,
           {
             name,
-            cluster: cluster.arn,
+            cluster: clusterArn,
             taskDefinition: taskDefinition.arn,
             desiredCount: scaling.min,
-            launchType: "FARGATE",
+            ...(capacity
+              ? {
+                  // setting `forceNewDeployment` ensures that the service is not recreated
+                  // when the capacity provider config changes.
+                  forceNewDeployment: true,
+                  capacityProviderStrategies: capacity.apply((v) => [
+                    ...(v.fargate
+                      ? [
+                          {
+                            capacityProvider: "FARGATE",
+                            base: v.fargate?.base,
+                            weight: v.fargate?.weight,
+                          },
+                        ]
+                      : []),
+                    ...(v.spot
+                      ? [
+                          {
+                            capacityProvider: "FARGATE_SPOT",
+                            base: v.spot?.base,
+                            weight: v.spot?.weight,
+                          },
+                        ]
+                      : []),
+                  ]),
+                }
+              : // @deprecated do not use `launchType`, set `capacityProviderStrategies`
+                // to `[{ capacityProvider: "FARGATE", weight: 1 }]` instead
+                {
+                  launchType: "FARGATE",
+                }),
             networkConfiguration: {
               // If the vpc is an SST vpc, services are automatically deployed to the public
               // subnets. So we need to assign a public IP for the service to be accessible.
               assignPublicIp: vpc.isSstVpc,
-              subnets: vpc.serviceSubnets,
+              subnets: vpc.containerSubnets,
               securityGroups: vpc.securityGroups,
             },
             deploymentCircuitBreaker: {
@@ -1036,12 +654,12 @@ export class Service extends Component implements Link.Linkable {
             },
             loadBalancers:
               lbArgs &&
-              all([lbArgs.ports, targets!]).apply(([ports, targets]) =>
+              all([lbArgs.rules, targetGroups!]).apply(([rules, targets]) =>
                 Object.values(targets).map((target) => ({
                   targetGroupArn: target.arn,
                   containerName: target.port.apply(
                     (port) =>
-                      ports.find((p) => p.forwardPort === port)!.container!,
+                      rules.find((r) => r.forwardPort === port)!.container!,
                   ),
                   containerPort: target.port.apply((port) => port!),
                 })),
@@ -1067,7 +685,7 @@ export class Service extends Component implements Link.Linkable {
           {
             serviceNamespace: "ecs",
             scalableDimension: "ecs:service:DesiredCount",
-            resourceId: interpolate`service/${cluster.name}/${service.name}`,
+            resourceId: interpolate`service/${clusterName}/${service.name}`,
             maxCapacity: scaling.max,
             minCapacity: scaling.min,
           },
@@ -1114,6 +732,49 @@ export class Service extends Component implements Link.Linkable {
           { parent: self },
         );
       });
+
+      all([scaling.requestCount, targetGroups]).apply(
+        ([requestCount, targetGroups]) => {
+          if (requestCount === false) return;
+          if (!targetGroups) return;
+
+          const targetGroup = Object.values(targetGroups)[0];
+
+          new appautoscaling.Policy(
+            `${name}AutoScalingRequestCountPolicy`,
+            {
+              serviceNamespace: target.serviceNamespace,
+              scalableDimension: target.scalableDimension,
+              resourceId: target.resourceId,
+              policyType: "TargetTrackingScaling",
+              targetTrackingScalingPolicyConfiguration: {
+                predefinedMetricSpecification: {
+                  predefinedMetricType: "ALBRequestCountPerTarget",
+                  resourceLabel: all([
+                    loadBalancer?.arn,
+                    targetGroup.arn,
+                  ]).apply(([loadBalancerArn, targetGroupArn]) => {
+                    // arn:...:loadbalancer/app/frank-MyServiceLoadBalan/005af2ad12da1e52
+                    // => app/frank-MyServiceLoadBalan/005af2ad12da1e52
+                    const lbPart = loadBalancerArn
+                      ?.split(":")
+                      .pop()
+                      ?.split("/")
+                      .slice(1)
+                      .join("/");
+                    // arn:...:targetgroup/HTTP20250103004618450100000001/e0811b8cf3a60762
+                    // => targetgroup/HTTP20250103004618450100000001
+                    const tgPart = targetGroupArn?.split(":").pop();
+                    return `${lbPart}/${tgPart}`;
+                  }),
+                },
+                targetValue: requestCount,
+              },
+            },
+            { parent: self },
+          );
+        },
+      );
 
       return target;
     }
