@@ -145,4 +145,4 @@ function createCfHandler(build) {
   };
 }
 
-export const handler = createCfHandler(remixServerBuild);
+export const handler = createCfHandler(reactRouterServerBuild);

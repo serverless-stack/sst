@@ -151,4 +151,4 @@ const streamToNodeStream = async (reader, writer) => {
   writer.end();
 };
 
-export const handler = createApigHandler(remixServerBuild);
+export const handler = createApigHandler(reactRouterServerBuild);
