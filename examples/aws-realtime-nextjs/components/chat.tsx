@@ -48,7 +48,7 @@ export default function Chat(
       {connection && messages.length > 0 &&
         <div className={styles.messages}>
           {messages.map((msg, i) => (
-            <div key={i}>{msg}</div>
+            <div key={i}>{JSON.parse(msg).message}</div>
           ))}
         </div>
       }
@@ -59,7 +59,7 @@ export default function Chat(
 
           const input = (e.target as HTMLFormElement).message;
 
-          connection!.publish(topic, input.value, { qos: 1 });
+          connection!.publish(topic, JSON.stringify({ message: input.value }), { qos: 1 });
           input.value = "";
         }}
       >
