@@ -1,0 +1,34 @@
+{
+  "name": "@aws-zero/data",
+  "version": "1.0.0",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "scripts": {
+    "upstream-db:generate": "sst shell -- drizzle-kit generate --config=drizzle-upstream.config.ts",
+    "upstream-db:migrate": "sst shell -- drizzle-kit migrate --config=drizzle-upstream.config.ts",
+    "upstream-db:push": "sst shell -- drizzle-kit push --config=drizzle-upstream.config.ts",
+    "upstream-db:studio": "sst shell -- drizzle-kit studio --config=drizzle-upstream.config.ts",
+    "upstream-db:seed": "sst shell -- tsx seed.ts --config=drizzle-upstream.config.ts",
+    "cvr-db:generate": "sst shell -- drizzle-kit generate --config=drizzle-cvr.config.ts",
+    "cvr-db:migrate": "sst shell -- drizzle-kit migrate --config=drizzle-cvr.config.ts",
+    "cvr-db:push": "sst shell -- drizzle-kit push --config=drizzle-cvr.config.ts",
+    "cvr-db:studio": "sst shell -- drizzle-kit studio --config=drizzle-cvr.config.ts",
+    "change-db:generate": "sst shell -- drizzle-kit generate --config=drizzle-change.config.ts",
+    "change-db:migrate": "sst shell -- drizzle-kit migrate --config=drizzle-change.config.ts",
+    "change-db:push": "sst shell -- drizzle-kit push --config=drizzle-change.config.ts",
+    "change-db:studio": "sst shell -- drizzle-kit studio --config=drizzle-change.config.ts",
+    "typecheck": "npx tsc --noEmit",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.38.3",
+    "pg": "^8.13.1",
+    "sst": "3.4.32"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10",
+    "drizzle-kit": "^0.30.1",
+    "tsx": "^4.19.2"
+  }
+}

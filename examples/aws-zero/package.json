@@ -1,8 +1,14 @@
 {
-  "name": "base-ts",
+  "name": "aws-zero",
   "version": "0.0.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "sst dev"
+  },
   "dependencies": {
-    "@rocicorp/zero": "^0.7.2024120400",
+    "@rocicorp/zero": "0.10.2024122404",
     "sst": "^3.3.63"
   },
   "trustedDependencies": [
