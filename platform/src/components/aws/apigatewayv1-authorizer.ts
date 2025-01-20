@@ -49,7 +49,7 @@ export class ApiGatewayV1Authorizer extends Component {
   constructor(
     name: string,
     args: AuthorizerArgs,
-    opts?: ComponentResourceOptions,
+    opts: ComponentResourceOptions = {}
   ) {
     super(__pulumiType, name, args, opts);
 
@@ -99,7 +99,9 @@ export class ApiGatewayV1Authorizer extends Component {
 
       return Function.fromDefinition(`${name}Function`, fn, {
         description: interpolate`${api.name} authorizer`,
-      });
+      },
+      undefined,
+      { parent: self, provider: opts.provider });
     }
 
     function createPermission() {
@@ -113,7 +115,7 @@ export class ApiGatewayV1Authorizer extends Component {
           principal: "apigateway.amazonaws.com",
           sourceArn: interpolate`${api.executionArn}/authorizers/${authorizer.id}`,
         },
-        { parent: self },
+        { parent: self, provider: opts.provider },
       );
     }
 
@@ -131,7 +133,7 @@ export class ApiGatewayV1Authorizer extends Component {
             authorizerResultTtlInSeconds: args.ttl,
             identitySource: args.identitySource,
           },
-          { parent: self },
+          { parent: self, provider: opts.provider },
         ),
       );
     }
