@@ -417,6 +417,11 @@ interface TaskContainerArgs {
      * [`logging.retention`](#logging-retention).
      */
     retention?: Input<keyof typeof RETENTION>;
+     /**
+     * The name of the log group. If omitted, this provider will assign a name based on own.
+     * [`logging.name`](#logging-name).
+     */
+     name?: Input<string>;
   }>;
   /**
    * Key-value pairs of AWS Systems Manager Parameter Store parameter ARNs or AWS Secrets
@@ -753,6 +758,10 @@ interface ClusterBaseArgs {
      * @default `"1 month"`
      */
     retention?: Input<keyof typeof RETENTION>;
+     /**
+     * The CloudWatch's log group name.
+     */
+     name?: Input<string>;
   }>;
   /**
    * Mount Amazon EFS file systems into the container.
@@ -2779,6 +2788,7 @@ export function normalizeContainers(
         return output(v.logging).apply((logging) => ({
           ...logging,
           retention: logging?.retention ?? "1 month",
+          name: logging?.name,
         }));
       }
     }),
@@ -3021,7 +3031,7 @@ export function createTaskDefinition(
                 args.transform?.logGroup,
                 `${name}LogGroup${container.name}`,
                 {
-                  name: interpolate`/sst/cluster/${clusterName}/${name}/${container.name}`,
+                  name: container.logging.name ?? interpolate`/sst/cluster/${clusterName}/${name}/${container.name}`,
                   retentionInDays: RETENTION[container.logging.retention],
                 },
                 { parent },
