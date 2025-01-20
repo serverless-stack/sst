@@ -88,7 +88,7 @@ func (w *Runtime) Build(ctx context.Context, input *runtime.BuildInput) (*runtim
 	}
 
 	options := esbuild.BuildOptions{
-		Platform: esbuild.PlatformNode,
+		Platform: build.ESBuild.Platform,
 		Stdin: &esbuild.StdinOptions{
 			Contents: fmt.Sprintf(`
       import handler from "%s"
