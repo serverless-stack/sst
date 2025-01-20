@@ -303,6 +303,7 @@ export interface FunctionArgs {
     | "python3.10"
     | "python3.11"
     | "python3.12"
+    | "python3.13"
   >;
   /**
    * Path to the source code directory for the function. By default, the handler is
