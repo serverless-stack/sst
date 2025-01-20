@@ -522,6 +522,30 @@ interface BucketRef {
  *  });
  *  await getSignedUrl(new S3Client({}), command);
  * ```
+ *
+ * #### Add object lifecycle
+ * 
+ * If you want for example to delete files after 1 hour, you can write something like this:
+ * 
+ * ```
+ * const bucket = new sst.aws.Bucket("MyBucket");
+ * // Delete files after 1 hour (using Pulumi directly)
+ * const lifecycleRule = new aws.s3.BucketLifecycleConfigurationV2(
+ *   "lifecycleRule",
+ *   {
+ *     bucket: bucket.name,
+ *     rules: [
+ *         {
+ *            id: "delete-after-24-hours",
+ *            status: "Enabled",
+ *            expiration: {
+ *              days: 1, // 1 day (minimum allowed)
+ *            },
+ *         },
+ *     ],
+ *   },
+ * );
+ * ```
  */
 export class Bucket extends Component implements Link.Linkable {
   private constructorName: string;
