@@ -1,12 +1,6 @@
 import fs from "fs";
 import path from "path";
-import {
-  ComponentResourceOptions,
-  Output,
-  all,
-  interpolate,
-  output,
-} from "@pulumi/pulumi";
+import { ComponentResourceOptions, Output, all, output } from "@pulumi/pulumi";
 import { Function } from "./function.js";
 import {
   SsrSiteArgs,
@@ -141,10 +135,10 @@ export interface ReactArgs extends SsrSiteArgs {
    */
   invalidation?: SsrSiteArgs["invalidation"];
   /**
-   * Set [environment variables](https://remix.run/docs/en/main/guides/envvars) in your React app. These are made available:
+   * Set environment variables in your React app. These are made available:
    *
-   * 1. In `remix build`, they are loaded into `process.env`.
-   * 2. Locally while running `sst dev remix dev`.
+   * 1. In `react-router build`, they are loaded into `process.env`.
+   * 2. Locally while running `sst dev react-router dev`.
    *
    * :::tip
    * You can also `link` resources to your React app and access them in a type-safe way with the [SDK](/docs/reference/sdk/). We recommend linking since it's more secure.
@@ -277,7 +271,7 @@ export interface ReactArgs extends SsrSiteArgs {
 }
 
 /**
- * The `React` component lets you deploy a [Remix](https://remix.run) app to AWS.
+ * The `React` component lets you deploy a [React Router](https://reactrouter.com) app to AWS.
  *
  * @example
  *
@@ -291,11 +285,11 @@ export interface ReactArgs extends SsrSiteArgs {
  *
  * #### Change the path
  *
- * Deploys the React app in the `my-remix-app/` directory.
+ * Deploys the React app in the `my-react-app/` directory.
  *
  * ```js {2}
  * new sst.aws.React("MyWeb", {
- *   path: "my-remix-app/"
+ *   path: "my-react-app/"
  * });
  * ```
  *
@@ -439,9 +433,7 @@ export class React extends Component implements Link.Linkable {
 
     function loadBuildMetadata() {
       return all([outputPath]).apply(([outputPath]) => {
-        // The path for all files that need to be in the "/" directory (static assets)
-        // is different when using Vite. These will be located in the "build/client"
-        // path of the output. It will be the "public" folder when using remix config.
+        // The path for all files that need to be in the "/" directory (static assets) is the "build/client" directory
         const assetsPath = path.join("build", "client");
         const serverPath = path.join("build", "server");
         return {
@@ -466,7 +458,6 @@ export class React extends Component implements Link.Linkable {
             ? createServerLambdaBundle(outputPath, edge)
             : undefined;
 
-          const indexPage = "index.html";
           return validatePlan({
             edge,
             cloudFrontFunctions: {
@@ -475,45 +466,44 @@ export class React extends Component implements Link.Linkable {
               },
               staticCfFunction: {
                 injections: [
-                  // Note: When using libraries like remix-flat-routes the file can
+                  // Note: When using libraries like @react-router/fs-routes the file can
                   // contains special characters like "+". It needs to be encoded.
                   `event.request.uri = event.request.uri.split('/').map(encodeURIComponent).join('/');`,
                 ],
               },
             },
-            defaultRootObject: indexPage,
             errorResponses: !serverConfig
               ? [
-                {
-                  errorCode: 403,
-                  responsePagePath: interpolate`/${indexPage}`,
-                  responseCode: 200,
-                },
-                {
-                  errorCode: 404,
-                  responsePagePath: interpolate`/${indexPage}`,
-                  responseCode: 200,
-                },
-              ]
+                  {
+                    errorCode: 403,
+                    responsePagePath: "/",
+                    responseCode: 200,
+                  },
+                  {
+                    errorCode: 404,
+                    responsePagePath: "/",
+                    responseCode: 200,
+                  },
+                ]
               : [],
             edgeFunctions:
               edge && serverConfig
                 ? {
-                  server: {
-                    function: serverConfig,
-                  },
-                }
+                    server: {
+                      function: serverConfig,
+                    },
+                  }
                 : undefined,
             origins: {
               ...(edge || !serverConfig
                 ? {}
                 : {
-                  server: {
                     server: {
-                      function: serverConfig,
+                      server: {
+                        function: serverConfig,
+                      },
                     },
-                  },
-                }),
+                  }),
               s3: {
                 s3: {
                   copy: [
@@ -529,35 +519,35 @@ export class React extends Component implements Link.Linkable {
             behaviors: [
               ...(!serverConfig
                 ? [
-                  {
-                    cacheType: "static",
-                    cfFunction: "serverCfFunction",
-                    origin: "s3",
-                  } as const,
-                ]
-                : [
-                  edge
-                    ? ({
-                      cacheType: "server",
+                    {
+                      cacheType: "static",
                       cfFunction: "serverCfFunction",
-                      edgeFunction: "server",
                       origin: "s3",
-                    } as const)
-                    : ({
-                      cacheType: "server",
-                      cfFunction: "serverCfFunction",
-                      origin: "server",
-                    } as const),
-                  ...buildMeta.staticRoutes.map(
-                    (route) =>
-                      ({
-                        cacheType: "static",
-                        pattern: route,
-                        cfFunction: "staticCfFunction",
-                        origin: "s3",
-                      }) as const,
-                  ),
-                ]),
+                    } as const,
+                  ]
+                : [
+                    edge
+                      ? ({
+                          cacheType: "server",
+                          cfFunction: "serverCfFunction",
+                          edgeFunction: "server",
+                          origin: "s3",
+                        } as const)
+                      : ({
+                          cacheType: "server",
+                          cfFunction: "serverCfFunction",
+                          origin: "server",
+                        } as const),
+                    ...buildMeta.staticRoutes.map(
+                      (route) =>
+                        ({
+                          cacheType: "static",
+                          pattern: route,
+                          cfFunction: "staticCfFunction",
+                          origin: "s3",
+                        }) as const,
+                    ),
+                  ]),
             ],
           });
         },
@@ -576,7 +566,7 @@ export class React extends Component implements Link.Linkable {
 
       // In this path we are assuming that the React build only outputs the
       // "core server build". We can safely assume this as we have guarded the
-      // remix.config.js to ensure it matches our expectations for the build
+      // react-router.config.js to ensure it matches our expectations for the build
       // configuration.
       // We need to ensure that the "core server build" is wrapped with an
       // appropriate Lambda@Edge handler. We will utilise an internal asset
@@ -591,9 +581,8 @@ export class React extends Component implements Link.Linkable {
       // on the config file used.
       const content = [
         // When using Vite config, the output build will be "server/index.js"
-        // and when using React config it will be `server.js`.
-        `// Import the server build that was produced by 'remix build'`,
-        `import * as remixServerBuild from "./server/index.js";`,
+        `// Import the server build that was produced by 'react-router build'`,
+        `import * as reactRouterServerBuild from "./server/index.js";`,
         fs.readFileSync(
           path.join(
             $cli.paths.platform,
@@ -605,31 +594,8 @@ export class React extends Component implements Link.Linkable {
       ].join("\n");
       fs.writeFileSync(path.join(buildPath, "server.mjs"), content);
 
-      // Copy the React polyfil to the server build directory
-      //
-      // Note: We need to ensure that the polyfills are injected above other code that
-      // will depend on them when not using Vite. Importing them within the top of the
-      // lambda code doesn't appear to guarantee this, we therefore leverage ESBUild's
-      // `inject` option to ensure that the polyfills are injected at the top of
-      // the bundle.
-      const polyfillDest = path.join(buildPath, "polyfill.mjs");
-      fs.copyFileSync(
-        path.join(
-          $cli.paths.platform,
-          "functions",
-          "react-server",
-          "polyfill.mjs",
-        ),
-        polyfillDest,
-      );
-
       return {
         handler: path.join(buildPath, "server.handler"),
-        nodejs: {
-          esbuild: {
-            inject: [path.resolve(polyfillDest)],
-          },
-        },
         streaming: !isEdge,
       };
     }
