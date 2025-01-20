@@ -244,6 +244,15 @@ export interface App {
   home: "aws" | "cloudflare" | "local";
 
   /**
+   * Additional directories to watch for changes in `sst dev`.
+   *
+   * By default, SST watches the directory where the `sst.config.ts` file is located and all its subdirectories.
+   * If you have additional directories that you want to watch for changes, you can add them here.
+   * This is useful if SST is not on the root of your project.
+   *
+   */
+  devAdditionalWatchPaths?: string[];
+
    * If set to `true`, the `sst remove` CLI will not run and will error out.
    *
    * This is useful for preventing cases where you run `sst remove --stage <stage>` for the
