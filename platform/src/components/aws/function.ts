@@ -764,7 +764,7 @@ export interface FunctionArgs {
      * function package.
      *
      * :::tip
-     * If esbuild is giving you an error about a package, try adding it to the `install` list.
+     * If esbuild is giving you an error about a package, try adding it to `install`.
      * :::
      *
      * This will allow your functions to be able to use these dependencies when deployed. They
@@ -782,12 +782,14 @@ export interface FunctionArgs {
      * ```js
      * {
      *   nodejs: {
-     *     install: ["pg"]
+     *     install: { pg: "8.13.1" }
      *   }
      * }
      * ```
+     * 
+     * Passing `["packageName"]` is the same as passing { packageName: "*" }.
      */
-    install?: Input<string[]>;
+    install?: Input<string[]> | Input<Record<string, string>>;
     /**
      * Use this to insert a string at the beginning of the generated JS file.
      *
@@ -1353,6 +1355,7 @@ export class Function extends Component implements Link.Linkable {
     const url = normalizeUrl();
     const copyFiles = normalizeCopyFiles();
     const vpc = normalizeVpc();
+    const nodejs = normalizeNodeJs()
 
     const linkData = buildLinkData();
     const linkPermissions = buildLinkPermissions();
@@ -1384,9 +1387,9 @@ export class Function extends Component implements Link.Linkable {
         Object.fromEntries(input.map((item) => [item.name, item.properties])),
       ),
       copyFiles,
-      properties: output({ nodejs: args.nodejs, python: args.python }).apply(
+      properties: output({ nodejs, python: args.python }).apply(
         (val) => ({
-          ...(val.nodejs || val.python),
+          ...(nodejs || val.python),
           architecture,
         }),
       ),
@@ -1408,7 +1411,7 @@ export class Function extends Component implements Link.Linkable {
             args.handler,
             args.bundle,
             args.runtime,
-            args.nodejs,
+            nodejs,
             copyFiles,
           ]).apply(
             ([name, links, handler, bundle, runtime, nodejs, copyFiles]) => {
@@ -1438,6 +1441,14 @@ export class Function extends Component implements Link.Linkable {
     function normalizeDev() {
       return all([args.dev, args.live]).apply(
         ([d, l]) => $dev && d !== false && l !== false,
+      );
+    }
+
+    function normalizeNodeJs() {
+      return output(args.nodejs).apply((nodejs) =>
+        nodejs?.install && Array.isArray(nodejs.install)
+          ? Object.fromEntries(nodejs.install.map((dep) => [dep, '*']))
+          : nodejs
       );
     }
 

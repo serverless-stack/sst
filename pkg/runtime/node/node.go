@@ -114,7 +114,7 @@ func (w *Worker) Logs() io.ReadCloser {
 
 type NodeProperties struct {
 	Loader       map[string]string    `json:"loader"`
-	Install      []string             `json:"install"`
+	Install      map[string]string    `json:"install"`
 	Banner       string               `json:"banner"`
 	ESBuild      esbuild.BuildOptions `json:"esbuild"`
 	Minify       bool                 `json:"minify"`
