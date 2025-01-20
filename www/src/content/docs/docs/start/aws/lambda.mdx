@@ -1,0 +1,226 @@
+---
+title: Python and Node.js Lambdas on AWS with SST  
+description: Show you how to deploy either a Python or a Node.js Lambda that respond to a JSON payload.
+---
+
+You can choose either Python or Node.js for this example, and we'll show you both examples below.
+
+---
+
+## Python Lambda
+
+We are going to create a Python Lambda function that responds to a JSON payload.
+
+---
+
+### 1. Create a Python Lambda project
+
+Let's start by creating our Python function.
+
+```bash
+uv init hello-world-python
+cd hello-world-python
+```
+
+This will create several files.
+
+---
+
+#### Editing the files
+
+First, rename `hello.py` to `handler.py` (naming convention).
+
+Open the file and change the contents to the following Lambda format:
+
+```python title="handler.py"
+import json
+
+def main(event, context):
+    try:
+        body = json.loads(event['body'])
+        param = body.get('param')
+        return {
+            "statusCode": 200,
+            "body": json.dumps(f"Got: {param}"),
+        }
+    except Exception as e:
+        return {
+            "statusCode": 500,
+            "body": json.dumps(f"An error occurred: {str(e)}"),
+        }
+```
+
+---
+
+#### Adding dependencies (Optional)
+
+To add a dependency like `boto3`, run:
+
+```bash
+uv add boto3
+```
+
+This will add the dependency to `pyproject.toml`, and it will automatically be installed on the Lambda when deployed.
+
+---
+
+### 2. Adding to SST
+
+To add the Python Lambda to SST, edit your `sst.config.ts` file. Here's the part you need to add inside the `run()` function:
+
+```typescript title="sst.config.ts"
+const pythonLambda = new sst.aws.Function("PythonLambda", {
+  handler: "hello-world-python/handler.main",
+  runtime: "python3.10",
+  url: true,
+});
+```
+
+---
+
+#### Running
+
+Run the following command to start the SST dev environment:
+
+```bash
+sst dev
+```
+
+You will notice it will output a URL for the Lambda, something like:
+
+`https://<random-string>.lambda-url.<region>.on.aws/`
+
+Now you can use Postman or any HTTP client to invoke your Lambda function by sending a `POST` request with the body `{"param": "123"}`.
+
+---
+
+#### Connecting to your project
+
+This is an example of using Node.js to fetch the Python Lambda:
+
+```javascript
+import { Resource } from "sst";
+
+const response = await fetch(Resource.PythonLambda.url, {
+  method: "POST",
+  body: JSON.stringify({ param: "123" }),
+});
+
+const data = await response.json();
+console.log(data);
+```
+
+---
+
+## Node.js Lambda
+
+We are going to create a Node.js Lambda function that responds to a JSON payload.
+
+---
+
+### 1. Create a Node.js Lambda project
+
+For Node.js, we'll use `npm` to manage dependencies and setup.
+
+First, initialize a Node.js project:
+
+```bash
+mkdir hello-world-nodejs
+cd hello-world-nodejs
+npm init -y
+```
+
+---
+
+### 2. Add AWS SDK dependency (Optional)
+
+If your function needs to use AWS services (like S3 or DynamoDB), install the AWS SDK:
+
+```bash
+npm install aws-sdk
+```
+
+---
+
+#### Editing the files
+
+Create a file named `index.js` and modify the function to handle a JSON payload:
+
+```javascript title="index.js"
+export const handler = async (event) => {
+  try {
+    const body = JSON.parse(event.body);
+    const param = body.param;
+    return {
+      statusCode: 200,
+      body: JSON.stringify(`Got: ${param}`),
+    };
+  } catch (error) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify(`An error occurred: ${error.message}`),
+    };
+  }
+};
+```
+
+---
+
+### 3. Adding to SST
+
+To add the Node.js Lambda to SST, edit your `sst.config.ts` file. Here's the part you need to add inside the `run()` function:
+
+```typescript title="sst.config.ts"
+const nodejsLambda = new sst.aws.Function("NodejsLambda", {
+  handler: "hello-world-nodejs/index.handler",
+  url: true,
+});
+```
+
+Note that we did **not** specify the runtime, as Node.js is the default runtime.
+
+---
+
+#### Running
+
+Run the following command to start the SST dev environment:
+
+```bash
+sst dev
+```
+
+You will notice it will output a URL for the Lambda, something like:
+
+`https://<random-string>.lambda-url.<region>.on.aws/`
+
+Now you can use Postman or any HTTP client to invoke your Lambda function by sending a `POST` request with the body `{"param": "123"}`.
+
+---
+
+#### Connecting to your project
+
+Here’s how you can connect to the Node.js Lambda using the SST SDK:
+
+```javascript
+import { Resource } from "sst";
+
+const response = await fetch(Resource.NodejsLambda.url, {
+  method: "POST",
+  body: JSON.stringify({ param: "123" }),
+});
+
+const data = await response.json();
+console.log(data);
+```
+
+---
+
+## Connect the Console
+
+As a next step, you can set up the [SST Console](/docs/console/) to _**git push to deploy**_ your app and monitor it for any issues.
+
+![SST Console Autodeploy](../../../../../assets/docs/start/sst-console-autodeploy.png)
+
+You can [create a free account](https://console.sst.dev) and connect it to your AWS account.
+
+---
