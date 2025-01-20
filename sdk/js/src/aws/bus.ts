@@ -1,7 +1,7 @@
 import { AwsOptions, client } from "../aws/client.js";
 import { Resource } from "../resource.js";
 import { event } from "../event/index.js";
-import { EventBridgeEvent, EventBridgeHandler } from "aws-lambda";
+import { EventBridgeEvent, EventBridgeHandler, type Context } from "aws-lambda";
 
 export module bus {
   export type Name = Extract<typeof Resource, { type: "sst.aws.Bus" }>["name"];
@@ -18,15 +18,16 @@ export module bus {
         [K in Events["type"]]: Extract<Events, { type: K }>["$payload"];
       }[Events["type"]],
       raw: EventBridgeEvent<string, any>,
+      context: Context,
     ) => Promise<void>,
   ): EventBridgeHandler<string, any, void> {
-    return async function (event) {
+    return async function (event, context) {
       const payload = {
         type: event["detail-type"],
         properties: event.detail.properties,
         metadata: event.detail.metadata,
       };
-      return cb(payload, event);
+      return cb(payload, event, context);
     };
   }
 
