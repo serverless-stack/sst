@@ -1,125 +1,104 @@
+import os
 import json
-import inspect
-from typing import Dict, Any, Type, Union
-from pathlib import Path
+import base64
+from typing import Dict, Any
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+raw: Dict[str, Any] = {}
+
+# Load links from environment
+if "$SST_LINKS" in globals():
+    raw.update(globals()["$SST_LINKS"])
+
+# Load environment variables
+environment = os.environ
+for key, value in environment.items():
+    if key.startswith("SST_RESOURCE_") and value:
+        raw[key[len("SST_RESOURCE_") :]] = json.loads(value)
+
+# Check if SST_KEY_FILE and SST_KEY are in environment variables
+# and SST_KEY_FILE_DATA is not already set in globals()
+if (
+    "SST_KEY_FILE" in os.environ
+    and "SST_KEY" in os.environ
+    and "SST_KEY_FILE_DATA" not in globals()
+):
+    # Decode the base64-encoded key from the environment variable
+    key = base64.b64decode(os.environ["SST_KEY"])
+
+    # Read the encrypted data from the file specified in the environment variable
+    with open(os.environ["SST_KEY_FILE"], "rb") as f:
+        encryptedData = f.read()
+
+    # Create a nonce of 12 zero bytes (as per your original code)
+    nonce = bytes(12)
+
+    # Extract the authentication tag and the actual ciphertext
+    authTag = encryptedData[-16:]
+    actualCiphertext = encryptedData[:-16]
+
+    # Concatenate the ciphertext and authTag as required by AESGCM
+    ciphertext_with_tag = actualCiphertext + authTag
+
+    # Create an AESGCM cipher object with the key
+    aesgcm = AESGCM(key)
+
+    # Decrypt the ciphertext
+    plaintext = aesgcm.decrypt(nonce, ciphertext_with_tag, associated_data=None)
+
+    # Parse the decrypted plaintext as JSON
+    decryptedData = json.loads(plaintext.decode("utf-8"))
+
+    # Update the 'raw' dictionary with the decrypted data
+    raw.update(decryptedData)
+
+    # **Set SST_KEY_FILE_DATA to the decrypted data**
+    globals()["SST_KEY_FILE_DATA"] = decryptedData
 
 
-# Define a base class for dynamic resource objects
-class DynamicResource:
-    def __init__(self, data: Dict[str, Any]):
-        self._data = data
-
-    def __getattr__(self, name: str) -> Any:
-        if name in self._data:
-            return self._data[name]
-        raise AttributeError(f"Attribute '{name}' not found in resource.")
-
-    def to_dict(self) -> Dict[str, Any]:
-        return self._data
+if "SST_KEY_FILE_DATA" in globals():
+    raw.update(globals()["SST_KEY_FILE_DATA"])
 
 
-def create_resource_class(attributes: Dict[str, Type]) -> Type[DynamicResource]:
-    return DynamicResource
+class AttrDict:
+    def __init__(self, data):
+        for key, value in data.items():
+            self.__dict__[key] = self._wrap(value)
+
+    def _wrap(self, value):
+        if isinstance(value, dict):
+            return AttrDict(value)
+        elif isinstance(value, list):
+            return [self._wrap(item) for item in value]
+        else:
+            return value
+
+    def __getattr__(self, item):
+        if item in self.__dict__:
+            return self.__dict__[item]
+        raise AttributeError(f"'AttrDict' object has no attribute '{item}'")
+
+    def __setattr__(self, key, value):
+        self.__dict__[key] = value
+
+
+raw = AttrDict(raw)
 
 
 class ResourceProxy:
-    _cached_config_path = None
+    def __getattr__(self, prop):
+        if hasattr(raw, prop):
+            return getattr(raw, prop)
 
-    def __init__(
-        self, config_filename: str = "resources.json", config_path: str = None
-    ):
-        self._raw: Dict[str, Any] = {}
-        self._resource_classes: Dict[str, Type[DynamicResource]] = {}
-        if config_path:
-            # If a custom path is provided, use it
-            self._load_resources_from_path(config_path)
-        else:
-            # Otherwise, search for the default config file
-            if not ResourceProxy._cached_config_path:
-                ResourceProxy._cached_config_path = self._find_resources_file(
-                    config_filename
-                )
-            self._load_resources_from_path(ResourceProxy._cached_config_path)
+        if "SST_RESOURCE_App" not in os.environ:
+            raise Exception(
+                "It does not look like SST links are active. If this is in local development and you are not starting this process through the multiplexer, wrap your command with `sst dev -- <command>`"
+            )
 
-    def _find_resources_file(self, filename: str) -> str:
-        """
-        Search for the resources.json file relative to the module that imports ResourceProxy.
-        """
-        stack = inspect.stack()
-        current_file = Path(__file__).resolve()
-
-        # Iterate through the call stack to find the first frame outside this module
-        for index, frame_info in enumerate(
-            stack[1:], start=1
-        ):  # Skip the current frame
-            frame_path = Path(frame_info.filename).resolve()
-
-            # Skip frames that are part of this module/package
-            if frame_path == current_file:
-                continue
-
-            # Optionally, skip other internal frames if your package has multiple modules
-            # For example, if your package is named 'your_package', skip frames from it
-            # Uncomment and modify the following lines if necessary:
-            # if 'your_package' in frame_info.filename:
-            #     logger.debug(f"Skipping frame {index} as it belongs to 'your_package'.")
-            #     continue
-
-            # Use this frame's directory as the base path
-            base_path = frame_path.parent
-
-            # Traverse up from the base path to find the config file
-            for parent_index, parent in enumerate(
-                [base_path] + list(base_path.parents), start=1
-            ):
-                potential_path = parent / filename
-                if potential_path.is_file():
-                    return str(potential_path)
-
-        # Fallback to current working directory if not found in any frame
-        cwd = Path.cwd()
-        for parent_index, parent in enumerate([cwd] + list(cwd.parents), start=1):
-            potential_path = parent / filename
-            if potential_path.is_file():
-                return str(potential_path)
-
-        # If still not found, raise an error
-        error_message = (
-            f"Configuration file '{filename}' not found relative to the importing module "
-            f"or in the current working directory."
-        )
-        raise FileNotFoundError(error_message)
-
-    def _load_resources_from_path(self, path: str):
-        try:
-            with open(path, "r") as f:
-                resources_data = json.load(f)
-        except FileNotFoundError as e:
-            raise FileNotFoundError(
-                f"Unable to locate configuration file at '{path}'. Please ensure it exists."
-            ) from e
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in '{path}': {e}") from e
-
-        if not isinstance(resources_data, dict):
-            error_message = f"Configuration file '{path}' must contain a JSON object at the top level."
-            raise ValueError(error_message)
-
-        for resource_key, data in resources_data.items():
-            if isinstance(data, dict):
-                # Create a resource class based on the keys in the data
-                attributes = {k: type(v) for k, v in data.items()}
-                self._resource_classes[resource_key] = create_resource_class(attributes)
-                self._raw[resource_key] = self._resource_classes[resource_key](data)
-            else:
-                self._raw[resource_key] = data
-
-    def __getattr__(self, name: str) -> Union[DynamicResource, Any]:
-        if name in self._raw:
-            return self._raw[name]
-        error_message = f"Resource '{name}' not found."
-        raise AttributeError(error_message)
+        msg = f'"{prop}" is not linked in your sst.config.ts'
+        if "AWS_LAMBDA_FUNCTION_NAME" in os.environ:
+            msg += f' to {os.environ["AWS_LAMBDA_FUNCTION_NAME"]}'
+        raise Exception(msg)
 
 
-# Initialize the proxy object with the default configuration file name
-Resource = ResourceProxy("resources.json")
+Resource = ResourceProxy()

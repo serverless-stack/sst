@@ -1,0 +1,13 @@
+[project]
+name = "core"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "Nick Wall", email = "46641379+walln@users.noreply.github.com" },
+]
+requires-python = "==3.11.*"
+dependencies = ["requests>=2.32.3"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

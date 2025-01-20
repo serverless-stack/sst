@@ -1,0 +1,14 @@
+[project]
+name = "functions"
+version = "0.1.0"
+description = "Lambda function (container-mode)handlers"
+dependencies = ["core", "sst"]
+requires-python = "==3.11.*"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv.sources]
+core = { workspace = true }
+sst = { git = "https://github.com/walln/sst", branch = "walln/python-improvements", subdirectory = "sdk/python" }

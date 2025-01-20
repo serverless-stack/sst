@@ -5,7 +5,7 @@ Similar the to the JS SDK, the Python SDK provides a way to access resources in 
 ## Usage
 
 ```python
-from sst_sdk import Resource
+from sst import Resource
 
 print(Resource.MyBucket.name)
 ```

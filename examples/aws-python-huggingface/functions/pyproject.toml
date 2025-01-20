@@ -1,0 +1,22 @@
+[project]
+name = "functions"
+version = "0.1.0"
+description = "A SST app"
+authors = [{ name = "Nick Wall", email = "mail@walln.dev" }]
+dependencies = ["transformers>=4.44.2", "torch==2.3.1"]
+
+# It is recommended to specify your python version to match your Lambda runtime otherwise you may
+# encounter issues with dependencies.
+requires-python = "==3.12.*"
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "platform_system != 'Darwin'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

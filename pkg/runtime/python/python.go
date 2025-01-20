@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -80,148 +79,37 @@ func New() *PythonRuntime {
 }
 
 func (r *PythonRuntime) Build(ctx context.Context, input *runtime.BuildInput) (*runtime.BuildOutput, error) {
-	slog.Info("building python function", "handler", input.Handler)
+	/// Workspaces are the most challenging part of the build process
+	/// UV currently does not support --include-workspace-deps for builds
+	/// See: https://github.com/astral-sh/uv/issues/6935 hopefully this lands soon
 
-	file, ok := r.getFile(input)
-	if !ok {
-		return nil, fmt.Errorf("handler not found: %v", input.Handler)
-	}
-	targetDir := filepath.Join(input.Out(), filepath.Dir(input.Handler))
-	if err := os.MkdirAll(targetDir, os.ModePerm); err != nil {
-		return nil, fmt.Errorf("failed to create target directory: %v", err)
-	}
+	/// As a result, we have to manually construct the dependency tree
+	/// So we need to:
+	///
+	/// 1. Build all packages (future tree shaking would be nice)
+	/// 2. Ensure local packages are built for lambdaric acccess (remove src/ nesting)
+	///			To future readers: we need to do this because of the way python packages are resolved
+	///			if you have a package called "mypackage" and it contains a sub-package called "src/mypackage"
+	///			then within the package you can resolve code via "import mypackage" but not "import mypackage.src.mypackage"
+	///			this means that builds get a little strange for aws lambda which does module level imports via lambdaric
+	///			so we need to ensure that the package is built such that lambdaric can resolve paths in the output bundle
+	///			but the full package is available for local development
+	/// 3. Export the uv package index to requirements.txt
+	/// 4. Install the dependencies into the artifact directory as a target (local for zip and delegate to the dockerfile for containers)
 
-	baseDir := filepath.Dir(file)
-	absTargetDir, err := filepath.Abs(targetDir)
+	file, err := r.getFile(input)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get absolute path: %v", err)
+		return nil, fmt.Errorf("handler not found: %v", err)
 	}
 
-	pythonFiles, err := getPythonFiles(file)
-	if err != nil {
-		return nil, err
-	}
-	for _, file := range pythonFiles {
-		relPath, err := filepath.Rel(baseDir, file)
-		if err != nil {
-			slog.Info("Skipping file %s: unable to determine relative path: %v", file, err)
-			continue
-		}
-
-		// Determine the target path
-		destPath := filepath.Join(absTargetDir, relPath)
-
-		// Copy the file to the target directory
-		err = copyFile(file, destPath)
-		if err != nil {
-			slog.Error("Error copying file", "from", file, "to", destPath, "err", err)
-			continue
-		}
-
-		slog.Info("Copied file %s to %s", file, destPath)
-	}
-
-	// Find the closest pyproject.toml
-	startingPath := filepath.Dir(file)
-	pyProjectFile, err := FindClosestPyProjectToml(startingPath)
+	build, err := r.CreateBuildAsset(ctx, input)
 	if err != nil {
 		return nil, err
 	}
-
-	// Copy pyproject.toml to the output directory
-	if err := copyFile(pyProjectFile, filepath.Join(targetDir, filepath.Base(pyProjectFile))); err != nil {
-		return nil, err
-	}
-
-	// Write the links to resources.json file at the root of the output directory
-	resourcesFile := filepath.Join(targetDir, "resources.json")
-	if err := writeResourcesFile(resourcesFile, input.Links); err != nil {
-		return nil, err
-	}
-
-	// We need to check if a deployment instead of dev
-	rpcBuildEnabled := false
-	if !input.Dev && rpcBuildEnabled {
-		// Handle zip and containers differently
-		// TODO: walln - handle container flag (not sure how the RPC call is shaped from component?)
-
-		containerDeployment := false
-		if containerDeployment {
-			// Copy the Dockerfile to the output directory if it exists
-			dockerFile := filepath.Join(filepath.Dir(pyProjectFile), "Dockerfile")
-			if _, err := os.Stat(dockerFile); err == nil {
-				if err := copyFile(dockerFile, filepath.Join(targetDir, "Dockerfile")); err != nil {
-					return nil, err
-				}
-			} else {
-				// Copy the default Dockerfile
-				defaultDockefilePath := filepath.Join(path.ResolvePlatformDir(input.CfgPath), "functions", "docker", "python.Dockerfile")
-				if err := copyFile(defaultDockefilePath, filepath.Join(targetDir, "Dockerfile")); err != nil {
-					return nil, err
-				}
-			}
-		} else {
-			// In a zip deployment we have to manage the dependency packing without uv's virtualenv since
-			// uv is not available in the lambda environment
-
-			// 1. Install python dependencies locally with the correct versions
-			// TOOD: walln - when uv supports specifying the platform that would be a good idea
-			// but its not there yet
-			uvSyncCmd := process.Command(
-				"uv",
-				"sync")
-
-			// use the output pyproject.toml directory as the working directory
-			workDir := filepath.Dir(filepath.Join(targetDir, filepath.Base(pyProjectFile)))
-
-			slog.Info("starting build uv sync", "env", uvSyncCmd.Env, "args", uvSyncCmd.Args)
-			uvSyncCmd.Dir = workDir
-
-			err := uvSyncCmd.Run()
-			if err != nil {
-				return nil, fmt.Errorf("failed to run uv sync: %v", err)
-			}
-
-			// 2. Convert the virtualenv to site-packages so that lambda can find the packages
-			sitePackagesCmd := process.Command(
-				"cp",
-				"-r",
-				filepath.Join(workDir, ".venv", "lib", "python3.*", "site-packages", "*"),
-				filepath.Join(targetDir))
-
-			slog.Info("starting build site packages", "env", sitePackagesCmd.Env, "args", sitePackagesCmd.Args)
-			sitePackagesCmd.Dir = workDir
-
-			err = sitePackagesCmd.Run()
-			if err != nil {
-				return nil, fmt.Errorf("failed to run site packages: %v", err)
-			}
-
-			// 3. Remove the virtualenv because it does not need to be included in the zip
-			removeVirtualEnvCmd := process.Command(
-				"rm",
-				"-rf",
-				filepath.Join(workDir, ".venv"))
-
-			slog.Info("starting build remove virtual env", "env", removeVirtualEnvCmd.Env, "args", removeVirtualEnvCmd.Args)
-			removeVirtualEnvCmd.Dir = workDir
-
-			err = removeVirtualEnvCmd.Run()
-			if err != nil {
-				return nil, fmt.Errorf("failed to run remove virtual env: %v", err)
-			}
-		}
-
-	}
-
 	r.lastBuiltHandler[input.FunctionID] = file
 
-	errors := []string{}
+	return build, nil
 
-	return &runtime.BuildOutput{
-		Handler: input.Handler,
-		Errors:  errors,
-	}, nil
 }
 
 func (r *PythonRuntime) Match(runtime string) bool {
@@ -237,101 +125,35 @@ type Source struct {
 
 type PyProject struct {
 	Project struct {
-		Dependencies []string `toml:"dependencies"`
+		Name string `toml:"name"`
 	} `toml:"project"`
-	Tool struct {
-		Uv struct {
-			Sources map[string]Source `toml:"sources"`
-		} `toml:"uv"`
-	} `toml:"tool"`
 }
 
 func (r *PythonRuntime) Run(ctx context.Context, input *runtime.RunInput) (runtime.Worker, error) {
-	// Get the directory of the Handler
-	handlerDir := filepath.Dir(filepath.Join(input.Build.Out, input.Build.Handler))
+	// We need the lambda bridge in the artifact directory so that we can run the handler
+	// without having to manually isolate the runtime, So if it is not present then we need to copy it from
+	// the platform directory into the artifact directory
 
-	// We have to manually construct the dependencies to install because uv currently does not support importing a
-	// foreign pyproject.toml as a configuration file and we have to run the python-runtime file rather than
-	// the handler file
-
-	// Get the absolute path of the pyproject.toml file
-	pyprojectFile, err := FindClosestPyProjectToml(handlerDir)
-	if err != nil {
-		return nil, err
+	// Check if the lambda bridge is present
+	lambdaBridgePath := filepath.Join(input.Build.Out, "lambdaric_python_bridge.py")
+	if _, err := os.Stat(lambdaBridgePath); os.IsNotExist(err) {
+		// Copy the lambda bridge from the platform directory into the artifact directory
+		err := copyFile(filepath.Join(path.ResolvePlatformDir(input.CfgPath), "/dist/python-runtime/index.py"), lambdaBridgePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to copy lambda bridge: %v", err)
+		}
 	}
 
-	// Decode the TOML file
-	var pyProject PyProject
-	if _, err := toml.DecodeFile(pyprojectFile, &pyProject); err != nil {
-		slog.Error("Error decoding TOML file", "err", err)
-	}
-
-	// Extract the dependencies
-	dependencies := pyProject.Project.Dependencies
-
-	// Extract the sources
-	sources := pyProject.Tool.Uv.Sources
-
-	args := []string{
+	cmd := process.CommandContext(
+		ctx,
+		"uv",
 		"run",
-		"--no-project",
-		"--with",
-		"requests",
-	}
-
-	// We need to check if the dependency is a git dependency
-	// If it is, we can confirm if its in the uv.sources as a git dependency
-	// then we need to remove it from the dependencies list
-	filteredDependencies := []string{}
-	// Iterate over each dependency
-	for _, dep := range dependencies {
-		// Check if the dependency is in the sources map
-		if source, exists := sources[dep]; exists {
-			if source.Git != "" {
-				// It's a Git dependency listed in sources, so skip it
-				slog.Debug("Skipping dependency: %s (Git: %s)\n", dep, source.Git)
-				continue
-			}
-		}
-		// Add the dependency to the filtered list if it's not a Git dependency
-		filteredDependencies = append(filteredDependencies, dep)
-	}
-	dependencies = filteredDependencies
-
-	for _, dep := range dependencies {
-		args = append(args, "--with", dep)
-	}
-
-	// If sources are specified, use them
-	if len(sources) > 0 {
-		for _, source := range sources {
-			if source.URL != "" {
-				args = append(args, "--find-links", source.URL)
-			} else if source.Git != "" {
-				repo_url := "git+" + source.Git
-				if source.Branch != "" {
-					repo_url = repo_url + "@" + source.Branch
-				}
-				if source.Subdirectory != nil {
-					repo_url = repo_url + "#subdirectory=" + *source.Subdirectory
-				}
-				// uv run --with git+https://github.com/sst/sst/v3.git#subdirectory=sdk/python python.py
-				args = append(args, "--with", repo_url)
-			}
-		}
-	}
-
-	args = append(args,
-		filepath.Join(path.ResolvePlatformDir(input.CfgPath), "/dist/python-runtime/index.py"),
+		"--with=requests",
+		lambdaBridgePath,
 		filepath.Join(input.Build.Out, input.Build.Handler),
 		input.WorkerID,
 	)
-
-	cmd := process.Command(
-		"uv",
-		args...)
 	cmd.Env = append(input.Env, "AWS_LAMBDA_RUNTIME_API="+input.Server)
-	slog.Info("starting worker", "env", cmd.Env, "args", cmd.Args)
 	cmd.Dir = input.Build.Out
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -341,150 +163,352 @@ func (r *PythonRuntime) Run(ctx context.Context, input *runtime.RunInput) (runti
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stderr pipe: %v", err)
 	}
+
+	slog.Info("starting worker", "env", cmd.Env, "args", cmd.Args)
 	cmd.Start()
+
 	return &Worker{
 		stdout,
 		stderr,
 		cmd,
 	}, nil
+
 }
 
 func (r *PythonRuntime) ShouldRebuild(functionID string, file string) bool {
+	// Assume that the build is always stale. We could do a better job here but bc of how the build
+	// process actually works its not a slowdown as the real slow part is starting the python interpreter
+	// This is neglible for now and will get faster when we can move to uv's native build system.
+	// We could also pre-warm the runtime - custom watcher paths would be useful here.
 	return true
 }
 
-var PYTHON_EXTENSIONS = []string{".py"}
+func (r *PythonRuntime) CreateBuildAsset(ctx context.Context, input *runtime.BuildInput) (*runtime.BuildOutput, error) {
+	// Get the architecture from the input.properties.architecture json field
+	slog.Info("input properties", "json", string(input.Properties))
 
-func (r *PythonRuntime) getFile(input *runtime.BuildInput) (string, bool) {
-	slog.Info("getting python file", "handler", input.Handler)
-	dir := filepath.Dir(input.Handler)
-	base := strings.TrimSuffix(filepath.Base(input.Handler), filepath.Ext(input.Handler))
-	for _, ext := range PYTHON_EXTENSIONS {
-		file := filepath.Join(path.ResolveRootDir(input.CfgPath), dir, base+ext)
-		if _, err := os.Stat(file); err == nil {
-			return file, true
+	type Properties struct {
+		Architecture string `json:"architecture"`
+		Container    bool   `json:"container"`
+	}
+	var props Properties
+	if err := json.Unmarshal(input.Properties, &props); err != nil {
+		return nil, fmt.Errorf("failed to parse properties: %v", err)
+	}
+
+	arch := props.Architecture
+	if arch == "" {
+		arch = "x86_64" // Default to x86_64
+	}
+
+	if arch != "x86_64" && arch != "arm64" {
+		return nil, fmt.Errorf("invalid architecture %q - must be x86_64 or arm64 - %v", arch, string(input.Properties))
+	}
+	workingDir := path.ResolveRootDir(input.CfgPath)
+
+	// 1. Generate non-local package index
+	syncCmd := process.CommandContext(ctx, "uv", "sync", "--all-packages")
+	syncCmd.Dir = workingDir
+	slog.Info("running uv sync in dir", "dir", syncCmd.Dir)
+
+	// capture the output of the sync command
+	syncOutput, err := syncCmd.CombinedOutput()
+	if err != nil {
+		slog.Error("failed to run uv sync", "error", err, "output", string(syncOutput))
+		return nil, fmt.Errorf("failed to run uv sync: %v\n%s", err, string(syncOutput))
+	}
+	slog.Error("uv sync output", "output", string(syncOutput))
+
+	outputRequirementsFile := filepath.Join(input.Out(), "requirements.txt")
+	packageName, err := r.getPackageName(input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get package name: %v", err)
+	}
+	exportCmd := process.CommandContext(ctx, "uv", "export", "--package="+packageName, "--output-file="+outputRequirementsFile, "--no-emit-workspace")
+	exportCmd.Dir = workingDir
+	err = exportCmd.Run()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run uv export: %v", err)
+	}
+
+	// 2. Build the entire workspace - this should cache and be fast thank you astral
+	buildCmd := process.CommandContext(ctx, "uv", "build", "--all", "--sdist", "--out-dir="+input.Out())
+	buildCmd.Dir = workingDir
+	buildOutput, err := buildCmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run uv build: %v\n%s", err, string(buildOutput))
+	}
+	slog.Error("uv build output", "output", string(buildOutput))
+
+	// 3. Decode each tar.gz file in the dist directory and remove the trailing "-{version}"
+	files, err := filepath.Glob(filepath.Join(input.Out(), "*.tar.gz"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to glob tar.gz files: %v", err)
+	}
+
+	for _, file := range files {
+		// Extract the tar.gz file
+		cmd := process.CommandContext(ctx, "tar", "-xzf", file, "-C", input.Out())
+		cmd.Dir = input.Out()
+		err = cmd.Run()
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract tar.gz file: %v", err)
+		}
+
+		// Get the directory name without version number
+		dirName := strings.TrimSuffix(filepath.Base(file), ".tar.gz")
+		lastHyphen := strings.LastIndex(dirName, "-")
+		baseName := dirName[:lastHyphen]
+
+		extractedDir := filepath.Join(input.Out(), dirName)
+		targetDir := filepath.Join(input.Out(), baseName)
+
+		// Check if the package has a src/{package_name} structure
+		srcPath := filepath.Join(extractedDir, "src", baseName)
+		if _, err := os.Stat(srcPath); err == nil {
+			// Remove old directory if it exists
+			if err := os.RemoveAll(targetDir); err != nil {
+				return nil, fmt.Errorf("failed to remove old directory: %v", err)
+			}
+			// Move the contents from src/{package_name} directly to the target
+			if err := os.Rename(srcPath, targetDir); err != nil {
+				return nil, fmt.Errorf("failed to move src directory contents: %v", err)
+			}
+			// Clean up the original extracted directory
+			if err := os.RemoveAll(extractedDir); err != nil {
+				return nil, fmt.Errorf("failed to clean up extracted directory: %v", err)
+			}
+		} else {
+			// Handle the regular case (no src directory)
+			if err := os.RemoveAll(targetDir); err != nil {
+				return nil, fmt.Errorf("failed to remove old directory: %v", err)
+			}
+			if err := os.Rename(extractedDir, targetDir); err != nil {
+				return nil, fmt.Errorf("failed to rename directory: %v", err)
+			}
 		}
 	}
-	return "", false
+
+	// 4. Remove the tar.gz files (non-recursive)
+	for _, file := range files {
+		err = os.Remove(file)
+		if err != nil {
+			return nil, fmt.Errorf("failed to remove tar.gz file: %v", err)
+		}
+	}
+
+	// If making a zip build or a local build then we need to install the dependencies and adjust the handler path
+	if !input.IsContainer || input.Dev {
+
+		// 5. Install the dependencies as a target
+		args := []string{"pip", "install", "-r", outputRequirementsFile, "--target", input.Out()}
+		if !input.Dev {
+			// If we are not in dev mode then we need to install the dependencies for the target platform
+			// which is amazon linux for the correct architecture
+			pythonPlatform := "x86_64-unknown-linux-gnu"
+			if arch == "arm64" {
+				pythonPlatform = "aarch64-unknown-linux-gnu"
+			}
+			args = append(args, "--python-platform", pythonPlatform)
+		}
+		installCmd := process.CommandContext(ctx, "uv", args...)
+		installCmd.Dir = input.Out()
+		installOutput, err := installCmd.CombinedOutput()
+		if err != nil {
+			return nil, fmt.Errorf("failed to run uv pip install: %v\n%s", err, string(installOutput))
+		}
+		slog.Error("uv pip install output", "output", string(installOutput), "error", err)
+
+		// Adjust handler path if it contains the pattern {package_name}/src/{package_name}
+		adjustedHandler, err := r.adjustHandlerPath(input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to adjust handler path: %v", err)
+		}
+		slog.Info("built python function", "handler", adjustedHandler, "out", input.Out())
+
+		errors := []string{}
+		sourcemaps := []string{}
+
+		return &runtime.BuildOutput{
+			Handler:    adjustedHandler,
+			Errors:     errors,
+			Sourcemaps: sourcemaps,
+		}, nil
+	} else {
+		// 5. Check if there is a Dockerfile in the handler directory
+		// 	If not then copy over the default one from the platform directory
+		workspaceDir, err := r.getWorkspaceDirectory(input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get workspace directory: %v", err)
+		}
+
+		slog.Info("checking for Dockerfile in workspace directory", "dir", workspaceDir)
+		_, err = os.Stat(filepath.Join(workspaceDir, "Dockerfile"))
+		if err != nil {
+			slog.Error("workspace directory does not contain Dockerfile", "dir", workspaceDir)
+			// Check if the Dockerfile exists in the platform directory
+			defaultDockerfilePath := filepath.Join(path.ResolvePlatformDir(input.CfgPath), "/dist/dockerfiles/python.Dockerfile")
+			_, err = os.Stat(defaultDockerfilePath)
+			if err != nil {
+				slog.Error("failed to check for Dockerfile in platform directory", "error", err)
+				return nil, fmt.Errorf("failed to check for Dockerfile in platform directory: %v", err)
+			} else {
+				slog.Info("dockerfile exists in platform directory", "dir", path.ResolvePlatformDir(input.CfgPath))
+			}
+
+			slog.Info("copying default Dockerfile from platform directory to output directory", "dir", path.ResolvePlatformDir(input.CfgPath))
+
+			// Copy over the default Dockerfile from the platform directory
+			copyFile(defaultDockerfilePath, filepath.Join(input.Out(), "Dockerfile"))
+			slog.Info("copied default Dockerfile to output directory", "dir", input.Out())
+		} else {
+			slog.Info("Dockerfile already exists in workspace directory", "dir", workspaceDir)
+			copyFile(filepath.Join(workspaceDir, "Dockerfile"), filepath.Join(input.Out(), "Dockerfile"))
+		}
+
+		adjustedHandler, err := r.adjustHandlerPath(input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to adjust handler path: %v", err)
+		}
+
+		errors := []string{}
+		sourcemaps := []string{}
+
+		return &runtime.BuildOutput{
+			Handler:    adjustedHandler,
+			Errors:     errors,
+			Sourcemaps: sourcemaps,
+		}, nil
+	}
+}
+
+func (r *PythonRuntime) getFile(input *runtime.BuildInput) (string, error) {
+	slog.Info("looking for python handler file", "handler", input.Handler)
+
+	dir := filepath.Dir(input.Handler)
+	base := strings.TrimSuffix(filepath.Base(input.Handler), filepath.Ext(input.Handler))
+	rootDir := path.ResolveRootDir(input.CfgPath)
+
+	// Look for .py file
+	pythonFile := filepath.Join(rootDir, dir, base+".py")
+	if _, err := os.Stat(pythonFile); err == nil {
+		return pythonFile, nil
+	}
+
+	// No Python file found for the handler
+	return "", fmt.Errorf("could not find Python file '%s.py' in directory '%s'",
+		base,
+		filepath.Join(rootDir, dir))
 }
 
 func copyFile(src, dst string) error {
-	// Open the source file
-	sourceFile, err := os.Open(src)
+	srcFile, err := os.Open(src)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open source file: %v", err)
 	}
-	defer sourceFile.Close()
+	defer srcFile.Close()
 
-	// Ensure the destination directory exists
-	destDir := filepath.Dir(dst)
-	if err := os.MkdirAll(destDir, os.ModePerm); err != nil {
-		return fmt.Errorf("failed to create destination directories for %s: %v", dst, err)
-	}
-
-	// Create the destination file
-	destinationFile, err := os.Create(dst)
+	dstFile, err := os.Create(dst)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create destination file: %v", err)
 	}
-	defer destinationFile.Close()
+	defer dstFile.Close()
 
-	// Copy the content from source to destination
-	_, err = io.Copy(destinationFile, sourceFile)
+	_, err = io.Copy(dstFile, srcFile)
 	if err != nil {
-		return err
-	}
-
-	// Flush the writes to stable storage
-	err = destinationFile.Sync()
-	if err != nil {
-		return err
+		return fmt.Errorf("failed to copy file contents: %v", err)
 	}
 
 	return nil
 }
 
-// FindClosestPyProjectToml traverses up the directory tree to find the closest pyproject.toml file.
-func FindClosestPyProjectToml(startingPath string) (string, error) {
-	dir := startingPath
+func (r *PythonRuntime) getWorkspaceDirectory(input *runtime.BuildInput) (string, error) {
+	file, err := r.getFile(input)
+	if err != nil {
+		return "", err
+	}
+
+	projectRoot := path.ResolveRootDir(input.CfgPath)
+	currentDir := filepath.Dir(file)
+
+	// First verify that the current directory is within the project root
+	if !strings.HasPrefix(currentDir, projectRoot) {
+		return "", fmt.Errorf("handler file %s is not within the project root %s", file, projectRoot)
+	}
+
+	// Traverse up the file tree to find the pyproject.toml file
+	// If we reach the project root then return an error
 	for {
-		pyProjectFile := filepath.Join(dir, "pyproject.toml")
-		if _, err := os.Stat(pyProjectFile); err == nil {
-			return pyProjectFile, nil
+		pyprojectPath := filepath.Join(currentDir, "pyproject.toml")
+		if _, err := os.Stat(pyprojectPath); err == nil {
+			// We found the pyproject.toml file
+			return currentDir, nil
 		}
 
-		// Move up one directory
-		parentDir := filepath.Dir(dir)
-		if parentDir == dir {
-			// Reached the root directory
-			break
+		// Move up the directory tree
+		parentDir := filepath.Dir(currentDir)
+
+		// Check if we have reached the project root or cannot move up anymore
+		if parentDir == currentDir || currentDir == projectRoot {
+			return "", fmt.Errorf("no pyproject.toml found in directory tree from %s up to project root %s", filepath.Dir(file), projectRoot)
 		}
-		dir = parentDir
+
+		currentDir = parentDir
 	}
-	return "", fmt.Errorf("pyproject.toml not found")
 }
 
-func getPythonFiles(filePath string) ([]string, error) {
-	// Get the absolute path of the file
-	absPath, err := filepath.Abs(filePath)
+func (r *PythonRuntime) getPackageName(input *runtime.BuildInput) (string, error) {
+	workspaceDir, err := r.getWorkspaceDirectory(input)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get absolute path: %v", err)
+		return "", err
 	}
 
-	// Get the directory of the file
-	dir := filepath.Dir(absPath)
+	// Read the pyproject.toml file
+	pyproject, err := os.ReadFile(filepath.Join(workspaceDir, "pyproject.toml"))
+	if err != nil {
+		return "", fmt.Errorf("failed to read pyproject.toml file: %v", err)
+	}
 
-	var pythonFiles []string
+	// Parse the pyproject.toml file
+	pyprojectData := PyProject{}
+	err = toml.Unmarshal(pyproject, &pyprojectData)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse pyproject.toml file: %v", err)
+	}
 
-	// Walk through the directory
-	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			// If there's an error accessing the path, skip it
-			return nil
-		}
+	return pyprojectData.Project.Name, nil
 
-		// Skip any directory named "__pycache__"
-		if d.IsDir() && d.Name() == "__pycache__" {
-			return filepath.SkipDir
-		}
+}
 
-		// If it's a file, check the extension
-		if !d.IsDir() {
-			ext := strings.ToLower(filepath.Ext(d.Name()))
-			if ext == ".py" || ext == ".pyi" {
-				pythonFiles = append(pythonFiles, path)
+func (r *PythonRuntime) adjustHandlerPath(input *runtime.BuildInput) (string, error) {
+	handlerParts := strings.Split(input.Handler, "/")
+	adjustedHandler := input.Handler
+	if len(handlerParts) >= 3 {
+		// Start from the back, using a sliding window of 3
+		for i := len(handlerParts) - 3; i >= 0; i-- {
+			// Check if we have enough parts left to match the pattern
+			if i+2 >= len(handlerParts) {
+				continue
+			}
+
+			pkgName := handlerParts[i]
+			if handlerParts[i+1] == "src" && handlerParts[i+2] == pkgName {
+				// Found the pattern, now remove the middle two parts (src/{package_name})
+				newParts := append(
+					handlerParts[:i+1],
+					handlerParts[i+3:]...,
+				)
+				adjustedHandler = strings.Join(newParts, "/")
+				slog.Info("adjusted handler path", "original", input.Handler, "adjusted", adjustedHandler)
+				break
+			}
+
+			// Stop if we would go beyond the project root
+			absPath := filepath.Join(path.ResolveRootDir(input.CfgPath), strings.Join(handlerParts[:i], "/"))
+			if !strings.HasPrefix(absPath, path.ResolveRootDir(input.CfgPath)) {
+				break
 			}
 		}
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("error walking the path: %v", err)
 	}
-
-	return pythonFiles, nil
-}
-
-func writeResourcesFile(resourcesFile string, links map[string]json.RawMessage) error {
-	jsonData, err := json.MarshalIndent(links, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal links to JSON: %v", err)
-	}
-
-	// determine the directory of the resources file
-	dir := filepath.Dir(resourcesFile)
-
-	// create the directory if it doesn't exist
-	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-		return fmt.Errorf("failed to create directory %s: %v", dir, err)
-	}
-
-	// write the JSON data to the resources file
-	err = os.WriteFile(resourcesFile, jsonData, os.ModePerm)
-	if err != nil {
-		return fmt.Errorf("failed to write JSON data to %s: %v", resourcesFile, err)
-	}
-
-	return nil
+	return adjustedHandler, nil
 }

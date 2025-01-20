@@ -1,13 +1,15 @@
 # ❍ Python Example with Containers
 
-Deploy python applications using sst ion.
+Deploy python applications using sst.
 
-SST uses [uv](https://github.com/astral-sh/uv) to manage your python runtime. If you do not have uv installed, it will be installed for you and will install a compatible version of python. You can configure the version of python used by SST when creating your function:
+SST uses [uv](https://github.com/astral-sh/uv) to manage your python runtime. If you do not have uv installed, you can install it [here](https://docs.astral.sh/uv/getting-started/installation/). Any sst workspace package can be built and deployed to aws lambda using sst. In this example we deploy an API handler to lambda from the `functions` directory. The handler depends on shared code from the `shared` directory using uv's workspaces feature. (Note: builds currently do not tree shake so lots of workspaces can make larger builds than necessary.) We also deploy another function from `custom-dockerfile` to show how you can use a custom Dockerfile to deploy your python code.
+
+Python functions can be deployed just like other SST functions, the only difference is that the functions themselves must be configured within a uv workspace, there is no drop-in-mode.
 
 ```typescript title="sst.config.ts"
 const python = new sst.aws.Function("MyPythonFunction", {
   python: { container: true },
-  handler: "src/python.handler",
+  handler: "functions/src/functions/api.handler",
   runtime: "python3.11",
   url: true
 });
@@ -23,33 +25,24 @@ description = "A SST app"
 authors = [
     {name = "<your_name_here>", email = "<your_email_here>" },
 ]
-requires-python = ">=3.11"
+requires-python = "==3.11.*"
 ```
 
-Live lambda will locally run your python code with the environment specified in the closes `pyproject.toml` file. If you have multiple environments, you can create multiple `pyproject.toml` files and specify the environment in your function:
+Live lambda will locally run your python code by building the workspace and running the specified handler. You can have multiple handlers in the same workspace and have multiple workspaces in the same project.
 
 ```markdown
 .
-├── function_a
+├── workspace_a
 │   ├── pyproject.toml
-│   └── index.py
-└── function_b
+│   └── src
+│       └── workspace_a
+│           ├── __init__.py
+│           ├── api_a.py
+│           └── api_b.py
+└── workspace_b
     ├── pyproject.toml
-    └── index.py
+    └── src
+        └── workspace_b
+            ├── __init__.py
+            └── index.py
 ```
-
-## Dependencies
-
-Since SST packages and manages your environment, you can easily add dependencies with [uv](https://docs.astral.sh/uv/concepts/dependencies/#dependency-sources) and they will be automatically installed when you deploy your function. 
-
-```sh title="src/function_a/"
-uv add requests
-```
-
-or
-
-```sh title="src/function_a/"
-uv pip install requests
-```
-
-This example will deploy the python function using a container instead of the native python runtime. This means you can customize the build if you need and you have bigger limits for dependencies. This is great for use cases such as the SciPy ecosystem, which is challenging to use with the native runtime.

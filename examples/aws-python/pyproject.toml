@@ -1,0 +1,16 @@
+[project]
+name = "aws-python"
+version = "0.1.0"
+description = "A SST app"
+authors = [{ name = "Nick Wall", email = "mail@walln.dev" }]
+dependencies = []
+
+# It is recommended to specify your python version to match your Lambda runtime otherwise you may
+# encounter issues with dependencies.
+requires-python = "==3.11.*"
+
+[tool.uv.workspace]
+members = ["functions", "core"]
+
+[tool.uv.sources]
+sst = { git = "https://github.com/walln/sst.git", subdirectory = "sdk/python", branch = "walln/python-improvements" }

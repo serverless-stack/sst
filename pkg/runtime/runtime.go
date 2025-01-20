@@ -41,6 +41,7 @@ type BuildInput struct {
 		From string `json:"from"`
 		To   string `json:"to"`
 	} `json:"copyFiles"`
+	IsContainer bool `json:"isContainer,omitempty"`
 }
 
 func (input *BuildInput) Out() string {

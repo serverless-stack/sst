@@ -5,7 +5,7 @@ export default $config({
 		return {
 			name: "aws-python",
 			removal: input?.stage === "production" ? "retain" : "remove",
-			home: "local",
+			home: "aws",
 			providers: {
 				aws: true,
 			},
@@ -19,7 +19,7 @@ export default $config({
 		});
 
 		const python = new sst.aws.Function("MyPythonFunction", {
-			handler: "src/python.handler",
+			handler: "functions/src/functions/api.handler",
 			runtime: "python3.11",
 			url: true,
 			link: [linkableValue],

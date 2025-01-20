@@ -1,10 +1,10 @@
 [project]
 name = "sst"
-version = "0.1.0"
+version = "0.2.0"
 description = "SST SDK"
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = []
+dependencies = ["cryptography>=43.0.3"]
 
 [build-system]
 requires = ["hatchling"]
