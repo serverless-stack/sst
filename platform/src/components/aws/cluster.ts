@@ -906,6 +906,17 @@ export interface ClusterArgs {
   };
 }
 
+export interface ClusterGetArgs {
+  /**
+   * The id of the cluster.
+   */
+  id: Input<string>;
+  /**
+   * The default VPC where service / task added to this cluster will be placed.
+   */
+  vpc: Vpc | Input<Prettify<ClusterVpcArgs>>;
+}
+
 export interface ClusterServiceArgs extends ClusterBaseArgs {
   /**
    * Configure how this component works in `sst dev`.
@@ -2149,6 +2160,12 @@ export interface ClusterTaskArgs extends ClusterBaseArgs {
   };
 }
 
+interface ClusterRef {
+  ref: true,
+  id: Input<string>,
+  executionRoleArn: string,
+}
+
 /**
  * The `Cluster` component lets you create a cluster of containers to your app. It uses
  * [Amazon ECS](https://aws.amazon.com/ecs/) on [AWS Fargate](https://aws.amazon.com/fargate/).
@@ -2441,24 +2458,24 @@ export class Cluster extends Component {
     const _version = 2;
     const self = this;
 
-    self.registerVersion({
-      new: _version,
-      old: $cli.state.version[name],
-      message: [
-        `There is a new version of "Cluster" that has breaking changes.`,
-        ``,
-        `What changed:`,
-        `  - In the old version, load balancers were deployed in public subnets, and services were deployed in private subnets. The VPC was required to have NAT gateways.`,
-        `  - In the latest version, both the load balancer and the services are deployed in public subnets. The VPC is not required to have NAT gateways. So the new default makes this cheaper to run.`,
-        ``,
-        `To upgrade:`,
-        `  - Set \`forceUpgrade: "v${_version}"\` on the "Cluster" component. Learn more https://sst.dev/docs/component/aws/cluster#forceupgrade`,
-        ``,
-        `To continue using v${$cli.state.version[name]}:`,
-        `  - Rename "Cluster" to "Cluster.v${$cli.state.version[name]}". Learn more about versioning - https://sst.dev/docs/components/#versioning`,
-      ].join("\n"),
-      forceUpgrade: args.forceUpgrade,
-    });
+    if (args && "ref" in args) {
+      const ref = args as unknown as ClusterRef;
+      this.constructorOpts = opts;
+      this.vpc = normalizeVpc();
+
+      const clusterRef = ecs.Cluster.get(`${name}Cluster`, ref.id, undefined, opts);
+      clusterRef.tags.apply((tags) => {
+        registerVersion(
+          tags?.["sst:component-version"]
+            ? parseInt(tags["sst:component-version"])
+            : undefined,
+        );
+      });
+      this.cluster = clusterRef;
+      return;
+    }
+
+    registerVersion();
 
     const vpc = normalizeVpc();
     const cluster = createCluster();
@@ -2509,6 +2526,27 @@ export class Cluster extends Component {
           { parent: self },
         ),
       );
+    }
+
+    function registerVersion(overrideVersion?: number) {
+      self.registerVersion({
+        new: _version,
+        old: overrideVersion ?? $cli.state.version[name],
+        message: [
+          `There is a new version of "Cluster" that has breaking changes.`,
+          ``,
+          `What changed:`,
+          `  - In the old version, load balancers were deployed in public subnets, and services were deployed in private subnets. The VPC was required to have NAT gateways.`,
+          `  - In the latest version, both the load balancer and the services are deployed in public subnets. The VPC is not required to have NAT gateways. So the new default makes this cheaper to run.`,
+          ``,
+          `To upgrade:`,
+          `  - Set \`forceUpgrade: "v${_version}"\` on the "Cluster" component. Learn more https://sst.dev/docs/component/aws/cluster#forceupgrade`,
+          ``,
+          `To continue using v${$cli.state.version[name]}:`,
+          `  - Rename "Cluster" to "Cluster.v${$cli.state.version[name]}". Learn more about versioning - https://sst.dev/docs/components/#versioning`,
+        ].join("\n"),
+        forceUpgrade: args.forceUpgrade,
+      });
     }
 
     function createCapacityProviders() {
@@ -2647,6 +2685,60 @@ export class Cluster extends Component {
       },
       { provider: this.constructorOpts.provider },
     );
+  }
+
+  /**
+   * The generated id of the ECS Cluster.
+   */
+  public get id() {
+    return this.cluster.id;
+  }
+
+  /**
+   * Reference an existing ECS Cluster with the given id. This is useful when you
+   * create a Cluster in one stage and want to share it in another. It avoids
+   * having to create a new Cluster in the other stage.
+   *
+   * :::tip
+   * You can use the `static get` method to share Cluster across stages / projects.
+   * :::
+   *
+   * @param name The name of the component.
+   * @param args The arguments to get the Cluster.
+   * @param opts? Resource options.
+   *
+   * @example
+   * Imagine you create a cluster in the `preprod` stage. And in your dev stage `dev`,
+   * instead of creating a new cluster, you want to share the same cluster from `preprod`.
+   *
+   * ```ts title="sst.config.ts"
+   * const vpc = new sst.aws.Vpc("MyVpc");
+   * 
+   * const cluster = $app.stage === "dev"
+   *   ? sst.aws.Cluster.get("MyCluster", {
+   *       id: "app-preprod-mycluster",
+   *        vpc
+   *     })
+   *   : new sst.aws.Cluster("MyCluster", {
+   *        vpc
+   *     });
+   * ```
+   *
+   * Here `app-preprod-mycluster` is the ID of the cluster created in the `preprod` stage. 
+   * You can find these by outputting the cluster ID in the `preprod` stage.
+   *
+   * ```ts title="sst.config.ts"
+   * return {
+   *   id: cluster.id,
+   * };
+   * ```
+   */
+  public static get(
+    name: string,
+    args: ClusterGetArgs,
+    opts?: ComponentResourceOptions,
+  ) {
+    return new Cluster(name, args as ClusterArgs, opts);
   }
 }
 
