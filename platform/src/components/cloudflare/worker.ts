@@ -17,7 +17,7 @@ import type { Input } from "../input.js";
 import { ZoneLookup } from "./providers/zone-lookup.js";
 import { iam } from "@pulumi/aws";
 import { Permission } from "../aws/permission.js";
-import { Binding, binding } from "./binding.js";
+import { Binding, binding, toWorkerScriptBinding } from "./binding.js";
 import { DEFAULT_ACCOUNT_ID } from "./account-id.js";
 import { rpc } from "../rpc/rpc.js";
 
@@ -327,15 +327,14 @@ export class Worker extends Component implements Link.Linkable {
           if (!Link.isLinkable(link)) continue;
           const name = output(link.urn).apply((uri) => uri.split("::").at(-1)!);
           const item = link.getSSTLink();
-          const b = item.include?.find(
+          const cfBinding = item.include?.find(
             (i) => i.type === "cloudflare.binding",
           ) as ReturnType<typeof binding>;
-          if (b) {
-            if (!result[b.binding]) result[b.binding] = [];
-            result[b.binding].push({
-              name,
-              ...b.properties,
-            });
+          if (cfBinding) {
+            if (!result[cfBinding.binding]) result[cfBinding.binding] = [];
+            const binding = toWorkerScriptBinding(name, cfBinding);
+            result[cfBinding.binding].push(binding);
+
             continue;
           }
           if (!result.secretTextBindings) result.secretTextBindings = [];
