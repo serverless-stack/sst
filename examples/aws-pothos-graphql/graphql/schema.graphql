@@ -1,0 +1,12 @@
+"""Long necks, cool patterns, taller than you."""
+type Giraffe {
+  name: String!
+}
+
+type Mutation {
+  createGiraffe(name: String!): Giraffe!
+}
+
+type Query {
+  giraffe: Giraffe!
+}

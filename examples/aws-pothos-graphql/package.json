@@ -1,0 +1,22 @@
+{
+  "name": "aws-pothos-graphql",
+  "version": "1.0.0",
+  "main": "index.js", 
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@pothos/core": "^3.41.1",
+    "@urql/core": "^5.0.4",
+    "graphql-yoga": "^5.3.1",
+    "react": "^18.3.1",
+    "sst": "latest",
+    "urql": "^4.1.0",
+    "wonka": "^6.3.4"
+  },
+  "devDependencies": {
+    "@genql/cli": "^6.3.3",
+    "@types/aws-lambda": "8.10.138",
+    "@types/react": "^18.3.3"
+  }
+}
