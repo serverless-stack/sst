@@ -3,7 +3,7 @@
 /**
  * ## Subscribe to queues
  *
- * Create an SQS queue, subscribe to it, and publish to it from a function.
+ * Create an SQS queue, subscribe to it, publish to it from a function, with dead-letter queue fallback.
  */
 export default $config({
   app(input) {
